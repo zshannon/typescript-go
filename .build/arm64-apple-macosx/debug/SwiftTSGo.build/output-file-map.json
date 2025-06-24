@@ -1,0 +1,11 @@
+{
+  "": {
+    "swift-dependencies": "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/SwiftTSGo.build/master.swiftdeps"
+  },
+  "/Users/zcs/Code/zshannon/2025/typescript-go/Sources/SwiftTSGo/build.swift": {
+    "dependencies": "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/SwiftTSGo.build/build.d",
+    "object": "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/SwiftTSGo.build/build.swift.o",
+    "swiftmodule": "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/SwiftTSGo.build/build~partial.swiftmodule",
+    "swift-dependencies": "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/SwiftTSGo.build/build.swiftdeps"
+  }
+}

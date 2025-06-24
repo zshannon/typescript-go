@@ -1,0 +1,259 @@
+{
+  "builtTestProducts" : [
+
+  ],
+  "copyCommands" : {
+    "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/TSGoBindings.framework" : {
+      "inputs" : [
+        {
+          "kind" : "directory",
+          "name" : "/Users/zcs/Code/zshannon/2025/typescript-go/Sources/TSGoBindings.xcframework/macos-arm64_x86_64/TSGoBindings.framework"
+        }
+      ],
+      "outputs" : [
+        {
+          "kind" : "directory",
+          "name" : "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/TSGoBindings.framework"
+        }
+      ]
+    }
+  },
+  "explicitTargetDependencyImportCheckingMode" : {
+    "none" : {
+
+    }
+  },
+  "generatedSourceTargetSet" : [
+
+  ],
+  "pluginDescriptions" : [
+
+  ],
+  "swiftCommands" : {
+    "C.SwiftTSGo-arm64-apple-macosx15.0-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/SwiftTSGo.build/sources",
+      "importPath" : "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/zcs/Code/zshannon/2025/typescript-go/Sources/SwiftTSGo/build.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "directory",
+          "name" : "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/TSGoBindings.framework"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/SwiftTSGo.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "SwiftTSGo",
+      "moduleOutputPath" : "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/Modules/SwiftTSGo.swiftmodule",
+      "objects" : [
+        "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/SwiftTSGo.build/build.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-enable-batch-mode",
+        "-index-store-path",
+        "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-j16",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-I",
+        "/Users/zcs/Code/zshannon/2025/typescript-go/Sources/TSGoBindings.xcframework/macos-arm64_x86_64",
+        "-Xcc",
+        "-I",
+        "-Xcc",
+        "/Users/zcs/Code/zshannon/2025/typescript-go/Sources/TSGoBindings.xcframework/macos-arm64_x86_64",
+        "-module-cache-path",
+        "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-F",
+        "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug",
+        "-emit-objc-header",
+        "-emit-objc-header-path",
+        "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/SwiftTSGo.build/SwiftTSGo-Swift.h",
+        "-color-diagnostics",
+        "-swift-version",
+        "6",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "typescript_go"
+      ],
+      "outputFileMapPath" : "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/SwiftTSGo.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/SwiftTSGo.build/build.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/Modules/SwiftTSGo.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/zcs/Code/zshannon/2025/typescript-go/Sources/SwiftTSGo/build.swift"
+      ],
+      "tempsPath" : "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/SwiftTSGo.build",
+      "wholeModuleOptimization" : false
+    }
+  },
+  "swiftFrontendCommands" : {
+
+  },
+  "swiftTargetScanArgs" : {
+    "SwiftTSGo" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "SwiftTSGo",
+      "-package-name",
+      "typescript_go",
+      "-incremental",
+      "-c",
+      "/Users/zcs/Code/zshannon/2025/typescript-go/Sources/SwiftTSGo/build.swift",
+      "-I",
+      "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-enable-batch-mode",
+      "-index-store-path",
+      "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-j16",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-I",
+      "/Users/zcs/Code/zshannon/2025/typescript-go/Sources/TSGoBindings.xcframework/macos-arm64_x86_64",
+      "-Xcc",
+      "-I",
+      "-Xcc",
+      "/Users/zcs/Code/zshannon/2025/typescript-go/Sources/TSGoBindings.xcframework/macos-arm64_x86_64",
+      "-module-cache-path",
+      "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-F",
+      "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug",
+      "-emit-objc-header",
+      "-emit-objc-header-path",
+      "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/SwiftTSGo.build/SwiftTSGo-Swift.h",
+      "-color-diagnostics",
+      "-swift-version",
+      "6",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "typescript_go",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ]
+  },
+  "targetDependencyMap" : {
+    "SwiftTSGo" : [
+      "SwiftTSGoMobile"
+    ]
+  },
+  "testDiscoveryCommands" : {
+
+  },
+  "testEntryPointCommands" : {
+
+  },
+  "traitConfiguration" : {
+    "enableAllTraits" : false
+  },
+  "writeCommands" : {
+    "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/SwiftTSGo.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/zcs/Code/zshannon/2025/typescript-go/Sources/SwiftTSGo/build.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/SwiftTSGo.build/sources"
+    },
+    "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt" : {
+      "alwaysOutOfDate" : true,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<swift-get-version>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+        }
+      ],
+      "outputFilePath" : "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+    }
+  }
+}
