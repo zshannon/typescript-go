@@ -1,4 +1,0 @@
-module SwiftTSGo {
-    header "/Users/zcs/Code/zshannon/2025/typescript-go/.build/arm64-apple-macosx/debug/SwiftTSGo.build/SwiftTSGo-Swift.h"
-    requires objc
-}

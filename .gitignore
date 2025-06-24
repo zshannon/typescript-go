@@ -198,3 +198,5 @@ custom-gcl.hash
 !NOTICE.txt
 
 !internal/fourslash/_scripts/failingTests.txt
+
+.build
