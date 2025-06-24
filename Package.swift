@@ -22,12 +22,15 @@ let package = Package(
                 // .byName(name: "ESBuildMobile")
             ]
         ),
-        // .testTarget(
-        //     name: "ESBuildMobileTests",
-        //     dependencies: [
-        //         .target(name: "ESBuild"),
-        //         .target(name: "ESBuildMobile"),
-        //     ]
-        // ),
+        .testTarget(
+            name: "SwiftTSGoTests",
+            dependencies: [
+                .target(name: "SwiftTSGo"),
+                .target(name: "SwiftTSGoMobile"),
+            ],
+            resources: [
+                .copy("Resources")
+            ]
+        ),
     ]
 )

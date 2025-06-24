@@ -1,6 +1,13 @@
 import TSGoBindings
 
-func build() {
+public func build(projectPath: String = ".") -> Bool {
     var error: NSError?
-    BridgeBuild("", &error)
+    let success = BridgeBuild(projectPath, &error)
+
+    if let error = error {
+        print("Build failed with error: \(error.localizedDescription)")
+        return false
+    }
+
+    return success
 }
