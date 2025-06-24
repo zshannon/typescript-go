@@ -8,7 +8,7 @@ let package = Package(
         .library(
             name: "SwiftTSGo",
             targets: ["SwiftTSGo"]
-        )
+        ),
     ],
     targets: [
         .binaryTarget(
@@ -18,7 +18,7 @@ let package = Package(
         .target(
             name: "SwiftTSGo",
             dependencies: [
-                .target(name: "SwiftTSGoMobile")
+                .target(name: "SwiftTSGoMobile"),
                 // .byName(name: "ESBuildMobile")
             ]
         ),
@@ -29,7 +29,7 @@ let package = Package(
                 .target(name: "SwiftTSGoMobile"),
             ],
             resources: [
-                .copy("Resources")
+                .copy("Resources"),
             ]
         ),
     ]
