@@ -1,8 +1,0 @@
-framework module "TSGoBindings" {
-	header "ref.h"
-    header "Bridge.objc.h"
-    header "Universe.objc.h"
-    header "TSGoBindings.h"
-
-    export *
-}
