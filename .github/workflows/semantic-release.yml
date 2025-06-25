@@ -36,7 +36,7 @@ jobs:
         run: make test
 
       - name: Build framework
-        run: make build
+        run: make setup && make build
 
       - name: Run Swift tests
         run: swift test
