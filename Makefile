@@ -7,4 +7,4 @@ setup:
 	gomobile init
 
 test:
-	@cd lib/esbuildmobile && go test
+	@cd bridge && go test
