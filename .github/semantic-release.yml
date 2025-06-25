@@ -1,0 +1,180 @@
+name: Semantic Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.23"
+
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run Go tests
+        run: make test
+
+      - name: Build framework
+        run: make build
+
+      - name: Run Swift tests
+        run: swift test
+
+      - name: Verify build output
+        run: |
+          ls -la Sources/
+          if [ ! -d "Sources/TSGoBindings.xcframework" ]; then
+            echo "TSGoBindings.xcframework not found!"
+            exit 1
+          fi
+
+      - name: Create framework archive
+        run: |
+          cd Sources
+          zip -r TSGoBindings.xcframework.zip TSGoBindings.xcframework/
+          cd ..
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSGoBindings.xcframework
+          path: Sources/TSGoBindings.xcframework.zip
+
+  semantic-release:
+    needs: build
+    runs-on: macos-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Install semantic-release
+        run: |
+          npm install -g semantic-release
+          npm install -g @semantic-release/changelog
+          npm install -g @semantic-release/git
+          npm install -g @semantic-release/github
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: TSGoBindings.xcframework
+          path: ./
+
+      - name: Create .releaserc.json
+        run: |
+          cat > .releaserc.json << 'EOF'
+          {
+            "branches": ["main"],
+            "plugins": [
+              "@semantic-release/commit-analyzer",
+              "@semantic-release/release-notes-generator",
+              [
+                "@semantic-release/changelog",
+                {
+                  "changelogFile": "CHANGELOG.md"
+                }
+              ],
+              [
+                "@semantic-release/github",
+                {
+                  "assets": [
+                    {
+                      "path": "TSGoBindings.xcframework.zip",
+                      "name": "TSGoBindings.xcframework.zip",
+                      "label": "TSGoBindings XCFramework"
+                    }
+                  ]
+                }
+              ],
+              [
+                "@semantic-release/git",
+                {
+                  "assets": ["CHANGELOG.md", "Package.swift"],
+                  "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+                }
+              ]
+            ]
+          }
+          EOF
+
+      - name: Run semantic-release
+        run: semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: github-actions[bot]@users.noreply.github.com
+
+  # update-package-swift:
+  #   needs: semantic-release
+  #   runs-on: macos-latest
+  #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
+  #         token: ${{ secrets.GITHUB_TOKEN }}
+
+  #     - name: Get latest tag
+  #       id: latest_tag
+  #       run: |
+  #         TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+  #         echo "tag=$TAG" >> $GITHUB_OUTPUT
+  #         echo "Latest tag: $TAG"
+
+  #     - name: Update Package.swift with version
+  #       run: |
+  #         # Add or update version comment in Package.swift
+  #         if grep -q "// Version:" Package.swift; then
+  #           sed -i '' "s/\/\/ Version:.*/\/\/ Version: ${{ steps.latest_tag.outputs.tag }}/" Package.swift
+  #         else
+  #           # Add version comment at the top after any existing comments
+  #           sed -i '' '1i\
+  #         // Version: ${{ steps.latest_tag.outputs.tag }}
+  #         ' Package.swift
+  #         fi
+
+  #         # Check if there are changes to commit
+  #         if ! git diff --quiet Package.swift; then
+  #           git config --local user.email "github-actions[bot]@users.noreply.github.com"
+  #           git config --local user.name "github-actions[bot]"
+  #           git add Package.swift
+  #           git commit -m "docs: update Package.swift version to ${{ steps.latest_tag.outputs.tag }} [skip ci]"
+  #           git push
+  #         fi
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
