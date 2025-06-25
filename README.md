@@ -1,129 +1,482 @@
-# TypeScript 7
+# SwiftTSGo
 
-[Not sure what this is? Read the announcement post!](https://devblogs.microsoft.com/typescript/typescript-native-port/)
+A Swift package that exposes TypeScript compilation capabilities to Swift applications. This package provides a native bridge to the TypeScript compiler, allowing you to compile TypeScript code directly from Swift with rich diagnostic information and structured results.
 
-## Preview
+## Features
 
-A preview build is available on npm as [`@typescript/native-preview`](https://www.npmjs.com/package/@typescript/native-preview).
+- ✅ **Native TypeScript Compilation**: Compile TypeScript code directly from Swift
+- ✅ **Rich Diagnostics**: Detailed error information with file locations, error codes, and categories
+- ✅ **Structured Results**: Type-safe compilation results with success status and emitted files
+- ✅ **Flexible Configuration**: Customizable build options including error reporting and config file paths
+- ✅ **Cross-Platform**: Works on iOS, macOS, and other Swift-supported platforms
+- ✅ **Silent by Default**: No unwanted console output during compilation
 
-```sh
-npm install @typescript/native-preview
-npx tsgo # Use this as you would tsc.
+## Installation
+
+### Swift Package Manager
+
+Add SwiftTSGo to your project using Swift Package Manager:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/microsoft/typescript-go.git", from: "1.0.0")
+]
 ```
 
-A preview VS Code extension is [available on the VS Code marketplace](https://marketplace.visualstudio.com/items?itemName=TypeScriptTeam.native-preview).
+Then add it to your target dependencies:
 
-To use this, set this in your VS Code settings:
+```swift
+targets: [
+    .target(
+        name: "YourTarget",
+        dependencies: ["SwiftTSGo"]
+    )
+]
+```
 
-```json
-{
-    "typescript.experimental.useTsgo": true
+## Usage
+
+### Basic Example
+
+```swift
+import SwiftTSGo
+
+// Configure the TypeScript compilation
+let config = BuildConfig(
+    projectPath: "/path/to/your/typescript/project",
+    printErrors: false
+)
+
+// Compile the TypeScript project
+let result = buildWithConfig(config)
+
+// Check the result
+if result.success {
+    print("✅ Compilation successful!")
+    print("Config used: \(result.configFile)")
+    print("Files emitted: \(result.emittedFiles.count)")
+} else {
+    print("❌ Compilation failed with \(result.diagnostics.count) diagnostics")
+
+    // Handle errors
+    for diagnostic in result.diagnostics where diagnostic.category == "error" {
+        print("Error TS\(diagnostic.code): \(diagnostic.message)")
+        if !diagnostic.file.isEmpty {
+            print("  at \(diagnostic.file):\(diagnostic.line):\(diagnostic.column)")
+        }
+    }
 }
 ```
 
-## How to Build and Run
+### Advanced Error Handling
 
-This repo uses [Go 1.24 or higher](https://go.dev/dl/), [Rust 1.85 or higher](https://www.rust-lang.org/tools/install), [Node.js with npm](https://nodejs.org/), and [`hereby`](https://www.npmjs.com/package/hereby).
+```swift
+import SwiftTSGo
 
-For tests and code generation, this repo contains a git submodule to the main TypeScript repo pointing to the commit being ported.
-When cloning, you'll want to clone with submodules:
+func compileTypeScript(projectPath: String) -> CompilationResult {
+    let config = BuildConfig(
+        projectPath: projectPath,
+        printErrors: false
+    )
 
-```sh
-git clone --recurse-submodules https://github.com/microsoft/typescript-go.git
+    let result = buildWithConfig(config)
+
+    // Categorize diagnostics
+    let errors = result.diagnostics.filter { $0.category == "error" }
+    let warnings = result.diagnostics.filter { $0.category == "warning" }
+
+    // Create detailed result
+    return CompilationResult(
+        success: result.success,
+        errorCount: errors.count,
+        warningCount: warnings.count,
+        outputFiles: result.emittedFiles,
+        detailedErrors: errors.map { diagnostic in
+            ErrorDetail(
+                code: diagnostic.code,
+                message: diagnostic.message,
+                location: diagnostic.file.isEmpty ? nil :
+                    FileLocation(
+                        file: diagnostic.file,
+                        line: diagnostic.line,
+                        column: diagnostic.column
+                    )
+            )
+        }
+    )
+}
+
+struct CompilationResult {
+    let success: Bool
+    let errorCount: Int
+    let warningCount: Int
+    let outputFiles: [String]
+    let detailedErrors: [ErrorDetail]
+}
+
+struct ErrorDetail {
+    let code: Int
+    let message: String
+    let location: FileLocation?
+}
+
+struct FileLocation {
+    let file: String
+    let line: Int
+    let column: Int
+}
 ```
 
-If you have already cloned the repo, you can initialize the submodule with:
+### Custom Configuration
 
-```sh
-git submodule update --init --recursive
+```swift
+import SwiftTSGo
+
+// Using custom tsconfig.json location
+let config = BuildConfig(
+    projectPath: "/path/to/project",
+    printErrors: true,  // Enable console output for debugging
+    configFile: "/path/to/custom/tsconfig.json"
+)
+
+let result = buildWithConfig(config)
 ```
 
-With the submodule in place and `npm ci`, you can run tasks via `hereby`, similar to the TypeScript repo:
+### Batch Processing
 
-```sh
-hereby build          # Verify that the project builds
-hereby test           # Run all tests
-hereby install-tools  # Install additional tools such as linters
-hereby lint           # Run all linters
-hereby format         # Format all code
-hereby generate       # Generate all Go code (e.g. diagnostics, committed to repo)
+```swift
+import SwiftTSGo
+
+func compileMultipleProjects(_ projectPaths: [String]) async -> [String: BuildResult] {
+    var results: [String: BuildResult] = [:]
+
+    // Process projects sequentially to avoid global state race conditions
+    for projectPath in projectPaths {
+        let config = BuildConfig(projectPath: projectPath)
+        let result = buildWithConfig(config)
+        results[projectPath] = result
+
+        // Optional: Add delay to ensure clean state between compilations
+        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+    }
+
+    return results
+}
 ```
 
-Additional tasks are a work in progress.
+## API Reference
 
-`hereby` is not required to work on the repo; the regular `go` tooling (e.g., `go build`, `go test ./...`) will work as expected.
-`hereby` tasks are provided as a convenience for those familiar with the TypeScript repo.
+### BuildConfig
 
-### Running `tsgo`
+Configuration options for TypeScript compilation.
 
-After running `hereby build`, you can run `built/local/tsgo`, which behaves mostly the same as `tsc`.
+```swift
+public struct BuildConfig {
+    public let projectPath: String      // Path to project directory or tsconfig.json
+    public let printErrors: Bool        // Whether to print errors to console
+    public let configFile: String?      // Custom config file path (optional)
 
-### Running LSP Prototype
+    public init(
+        projectPath: String = ".",
+        printErrors: Bool = false,
+        configFile: String? = nil
+    )
+}
+```
 
-To debug and run the VS Code extension without installing it globally:
+### BuildResult
 
-* Run VS Code in the repo workspace (`code .`)
-* Copy `.vscode/launch.template.json` to `.vscode/launch.json`
-* <kbd>F5</kbd> (or `Debug: Start Debugging` from the command palette)
+Result of a TypeScript compilation with detailed information.
 
-This will launch a new VS Code instance which uses the Corsa LS as the backend. If correctly set up, you should see "tsgo" in the status bar when a TypeScript or JavaScript file is open:
+```swift
+public struct BuildResult {
+    public let success: Bool            // Whether compilation succeeded
+    public let diagnostics: [DiagnosticInfo]  // All diagnostics (errors, warnings, etc.)
+    public let emittedFiles: [String]   // List of files that were generated
+    public let configFile: String       // Resolved config file that was used
+}
+```
 
-![LSP Prototype Screenshot](.github/ls-screenshot.png)
+### DiagnosticInfo
 
+Detailed information about a compilation diagnostic.
 
-## What Works So Far?
+```swift
+public struct DiagnosticInfo {
+    public let code: Int                // Diagnostic code (e.g., 2345)
+    public let category: String         // Category: "error", "warning", "info", etc.
+    public let message: String          // Human-readable diagnostic message
+    public let file: String             // Source file (empty if not available)
+    public let line: Int                // Line number (1-based, 0 if not available)
+    public let column: Int              // Column number (1-based, 0 if not available)
+    public let length: Int              // Length of affected text (0 if not available)
+}
+```
 
-This is still a work in progress and is not yet at full feature parity with TypeScript. Bugs may exist. Please check this list carefully before logging a new issue or assuming an intentional change.
+### Functions
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Program creation | done | Same files and module resolution as TS5.8. Not all resolution modes supported yet. |
-| Parsing/scanning | done | Exact same syntax errors as TS5.8 |
-| Commandline and `tsconfig.json` parsing | mostly done | Entry point slightly different for now |
-| Type resolution | done | Same types as TS5.8 |
-| Type checking | done | Same errors, locations, and messages as TS5.8. Types printback in errors may display differently (in progress) |
-| JavaScript-specific inference and JS Doc | not ready | - |
-| JSX | done | - |
-| Declaration emit | in progress | Most common features are in place, but some edge cases and feature flags are still unhandled |
-| Emit (JS output) | in progress | `target: esnext` well-supported, other targets may have gaps |
-| Watch mode | prototype | Watches files and rebuilds, but no incremental rechecking |
-| Build mode / project references | not ready | - |
-| Incremental build | not ready | - |
-| Language service (LSP) | prototype | Minimal functionality (errors, hover, go to def). More features coming soon |
-| API | not ready | - |
+#### buildWithConfig
 
-Definitions:
+Main compilation function that returns structured results.
 
- * **done** aka "believed done": We're not currently aware of any deficits or major left work to do. OK to log bugs
- * **in progress**: currently being worked on; some features may work and some might not. OK to log panics, but nothing else please
- * **prototype**: proof-of-concept only; do not log bugs
- * **not ready**: either haven't even started yet, or far enough from ready that you shouldn't bother messing with it yet
+```swift
+public func buildWithConfig(_ config: BuildConfig) -> BuildResult
+```
 
-## Other Notes
+**Parameters:**
+- `config`: Configuration for the compilation
 
-Long-term, we expect that this repo and its contents will be merged into `microsoft/TypeScript`.
-As a result, the repo and issue tracker for typescript-go will eventually be closed, so treat discussions/issues accordingly.
+**Returns:**
+- `BuildResult`: Detailed compilation results
 
-For a list of intentional changes with respect to TypeScript 5.7, see CHANGES.md.
+## Error Handling
 
-## Contributing
+### Common TypeScript Error Codes
 
-This project welcomes contributions and suggestions.  Most contributions require you to agree to a
-Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
-the rights to use your contribution. For details, visit [Contributor License Agreements](https://cla.opensource.microsoft.com).
+| Code | Description | Example |
+|------|-------------|---------|
+| 2345 | Type assignment error | `Argument of type 'string' is not assignable to parameter of type 'number'` |
+| 2322 | Type mismatch | `Type 'string' is not assignable to type 'number'` |
+| 2304 | Cannot find name | `Cannot find name 'variableName'` |
+| 7006 | Implicit any type | `Parameter 'param' implicitly has an 'any' type` |
+| 2339 | Property does not exist | `Property 'prop' does not exist on type 'Object'` |
 
-When you submit a pull request, a CLA bot will automatically determine whether you need to provide
-a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions
-provided by the bot. You will only need to do this once across all repos using our CLA.
+### Filtering Diagnostics
 
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+```swift
+let result = buildWithConfig(config)
 
-## Trademarks
+// Get only errors
+let errors = result.diagnostics.filter { $0.category == "error" }
 
-This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft
-trademarks or logos is subject to and must follow
-[Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/legal/intellectualproperty/trademarks/usage/general).
-Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
-Any use of third-party trademarks or logos are subject to those third-party's policies.
+// Get specific error codes
+let typeErrors = result.diagnostics.filter { [2345, 2322].contains($0.code) }
+
+// Get diagnostics with file locations
+let locatedDiagnostics = result.diagnostics.filter { !$0.file.isEmpty }
+```
+
+## Project Structure Requirements
+
+Your TypeScript project should have a `tsconfig.json` file:
+
+```json
+{
+    "compilerOptions": {
+        "target": "ES2020",
+        "module": "commonjs",
+        "outDir": "./dist",
+        "rootDir": "./src",
+        "strict": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true
+    },
+    "include": [
+        "src/**/*"
+    ],
+    "exclude": [
+        "node_modules"
+    ]
+}
+```
+
+## Threading Considerations
+
+**Important**: Due to the underlying gomobile bridge implementation, avoid calling `buildWithConfig` concurrently from multiple threads. The global state used for diagnostic retrieval can cause race conditions in parallel execution.
+
+For concurrent compilation, process projects sequentially or add synchronization:
+
+```swift
+import SwiftTSGo
+
+actor TypeScriptCompiler {
+    func compile(config: BuildConfig) -> BuildResult {
+        return buildWithConfig(config)
+    }
+}
+
+// Usage
+let compiler = TypeScriptCompiler()
+let result = await compiler.compile(config: config)
+```
+
+## Examples
+
+### iOS App Integration
+
+```swift
+import SwiftUI
+import SwiftTSGo
+
+struct ContentView: View {
+    @State private var compilationResult: BuildResult?
+    @State private var isCompiling = false
+
+    var body: some View {
+        VStack {
+            Button("Compile TypeScript") {
+                compileProject()
+            }
+            .disabled(isCompiling)
+
+            if let result = compilationResult {
+                CompilationResultView(result: result)
+            }
+        }
+        .padding()
+    }
+
+    private func compileProject() {
+        isCompiling = true
+
+        Task {
+            let config = BuildConfig(
+                projectPath: Bundle.main.path(forResource: "typescript-project", ofType: nil) ?? ".",
+                printErrors: false
+            )
+
+            let result = buildWithConfig(config)
+
+            await MainActor.run {
+                self.compilationResult = result
+                self.isCompiling = false
+            }
+        }
+    }
+}
+
+struct CompilationResultView: View {
+    let result: BuildResult
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text(result.success ? "✅ Success" : "❌ Failed")
+                .font(.headline)
+
+            if !result.diagnostics.isEmpty {
+                Text("Diagnostics:")
+                    .font(.subheadline)
+                    .padding(.top)
+
+                ForEach(Array(result.diagnostics.enumerated()), id: \.offset) { _, diagnostic in
+                    DiagnosticRowView(diagnostic: diagnostic)
+                }
+            }
+        }
+    }
+}
+
+struct DiagnosticRowView: View {
+    let diagnostic: DiagnosticInfo
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text("TS\(diagnostic.code): \(diagnostic.message)")
+                .foregroundColor(diagnostic.category == "error" ? .red : .orange)
+
+            if !diagnostic.file.isEmpty {
+                Text("\(diagnostic.file):\(diagnostic.line):\(diagnostic.column)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+}
+```
+
+### Command Line Tool
+
+```swift
+import Foundation
+import SwiftTSGo
+
+@main
+struct TypeScriptCLI {
+    static func main() {
+        let arguments = CommandLine.arguments
+
+        guard arguments.count > 1 else {
+            print("Usage: typescript-cli <project-path>")
+            exit(1)
+        }
+
+        let projectPath = arguments[1]
+        let config = BuildConfig(
+            projectPath: projectPath,
+            printErrors: true
+        )
+
+        print("Compiling TypeScript project at: \(projectPath)")
+
+        let result = buildWithConfig(config)
+
+        if result.success {
+            print("✅ Compilation successful!")
+            print("Files emitted: \(result.emittedFiles.count)")
+            for file in result.emittedFiles {
+                print("  - \(file)")
+            }
+        } else {
+            print("❌ Compilation failed!")
+            let errors = result.diagnostics.filter { $0.category == "error" }
+            print("Errors: \(errors.count)")
+            exit(1)
+        }
+    }
+}
+```
+
+## Requirements
+
+- iOS 17.0+ / macOS 14.0+
+- Swift 5.9+
+- Xcode 15.0+
+
+## Development
+
+This package includes pre-built gomobile bindings for the TypeScript compiler. If you need to rebuild the bindings from source or contribute to the project, you'll need additional development tools.
+
+### Development Requirements
+
+- [Go 1.24 or higher](https://go.dev/dl/)
+- [gomobile](https://pkg.go.dev/golang.org/x/mobile/cmd/gomobile)
+
+### Setting up gomobile
+
+```bash
+go install golang.org/x/mobile/cmd/gomobile@latest
+gomobile init
+```
+
+### Building the Bindings
+
+To rebuild the gomobile bindings after making changes to the Go bridge code:
+
+```bash
+make build
+```
+
+This will regenerate the `Sources/TSGoBindings.xcframework` with your changes.
+
+### Running Tests
+
+Run the Go bridge tests:
+
+```bash
+go test ./bridge -v
+```
+
+Run the Swift tests:
+
+```bash
+swift test
+```
+
+### Project Structure
+
+- `bridge/` - Go bridge code that interfaces with the TypeScript compiler
+- `Sources/SwiftTSGo/` - Swift API layer
+- `Sources/TSGoBindings.xcframework/` - Gomobile-generated bindings (auto-generated)
+- `Tests/SwiftTSGoTests/` - Swift test suite

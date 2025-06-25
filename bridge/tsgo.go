@@ -2,16 +2,12 @@
 package bridge
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"runtime"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/microsoft/typescript-go/internal/ast"
@@ -20,11 +16,71 @@ import (
 	"github.com/microsoft/typescript-go/internal/compiler"
 	"github.com/microsoft/typescript-go/internal/core"
 	"github.com/microsoft/typescript-go/internal/diagnosticwriter"
+
 	"github.com/microsoft/typescript-go/internal/tsoptions"
 	"github.com/microsoft/typescript-go/internal/tspath"
 	"github.com/microsoft/typescript-go/internal/vfs"
 	"github.com/microsoft/typescript-go/internal/vfs/osvfs"
 )
+
+// BuildConfig holds configuration options for the build process
+type BuildConfig struct {
+	// ProjectPath is the path to the project directory or tsconfig.json file
+	ProjectPath string
+	// PrintErrors controls whether errors should be printed to stdout during compilation
+	PrintErrors bool
+	// ConfigFile allows specifying a custom config file path (optional)
+	ConfigFile string
+}
+
+// DiagnosticInfo contains detailed information about a TypeScript diagnostic
+type DiagnosticInfo struct {
+	// Code is the diagnostic code (e.g., 2345)
+	Code int
+	// Category is the diagnostic category (error, warning, info, etc.)
+	Category string
+	// Message is the diagnostic message
+	Message string
+	// File is the source file where the diagnostic occurred (may be empty)
+	File string
+	// Line is the line number (1-based, 0 if not available)
+	Line int
+	// Column is the column number (1-based, 0 if not available)
+	Column int
+	// Length is the length of the affected text (0 if not available)
+	Length int
+}
+
+// BuildResult contains the result of a TypeScript compilation
+type BuildResult struct {
+	// Success indicates whether the compilation succeeded
+	Success bool
+	// Diagnostics contains all diagnostics (errors, warnings, etc.)
+	Diagnostics []DiagnosticInfo
+	// EmittedFiles contains the list of files that were emitted
+	EmittedFiles []string
+	// ConfigFile is the resolved config file path that was used
+	ConfigFile string
+}
+
+// BridgeDiagnostic contains detailed information about a TypeScript diagnostic (gomobile-compatible)
+type BridgeDiagnostic struct {
+	Code     int
+	Category string
+	Message  string
+	File     string
+	Line     int
+	Column   int
+	Length   int
+}
+
+// BridgeResult contains the result of a TypeScript compilation (gomobile-compatible)
+type BridgeResult struct {
+	Success          bool
+	ConfigFile       string
+	DiagnosticCount  int
+	EmittedFileCount int
+}
 
 type bridgeSystem struct {
 	writer             io.Writer
@@ -83,21 +139,30 @@ func newBridgeSystem() *bridgeSystem {
 	}
 }
 
-// stripANSIColors removes ANSI color codes from a string
-func stripANSIColors(input string) string {
-	// This regex matches ANSI escape sequences
-	ansiRegex := regexp.MustCompile(`\x1b\[[0-9;]*[mK]`)
-	return ansiRegex.ReplaceAllString(input, "")
-}
-
-func Build(configPath string) error {
+func BuildWithConfig(config BuildConfig) BuildResult {
 	sys := newBridgeSystem()
 
+	// Determine which writer to use based on PrintErrors setting
+	if config.PrintErrors {
+		sys.writer = os.Stdout
+	} else {
+		sys.writer = io.Discard
+	}
+
+	// Use custom config file if provided, otherwise use project path
+	projectPath := config.ProjectPath
+	if config.ConfigFile != "" {
+		projectPath = config.ConfigFile
+	}
+
 	// Parse command line with project flag
-	commandLine := tsoptions.ParseCommandLine([]string{"-p", configPath}, sys)
+	commandLine := tsoptions.ParseCommandLine([]string{"-p", projectPath}, sys)
 
 	if len(commandLine.Errors) > 0 {
-		return buildDiagnosticsError(commandLine.Errors)
+		return BuildResult{
+			Success:     false,
+			Diagnostics: convertASTDiagnostics(commandLine.Errors),
+		}
 	}
 
 	// Find config file
@@ -109,26 +174,51 @@ func Build(configPath string) error {
 		if sys.FS().DirectoryExists(fileOrDirectory) {
 			configFileName = tspath.CombinePaths(fileOrDirectory, "tsconfig.json")
 			if !sys.FS().FileExists(configFileName) {
-				return fmt.Errorf("cannot find a tsconfig.json file at: %s", configFileName)
+				return BuildResult{
+					Success: false,
+					Diagnostics: []DiagnosticInfo{{
+						Code:     0,
+						Category: "error",
+						Message:  fmt.Sprintf("cannot find a tsconfig.json file at: %s", configFileName),
+					}},
+				}
 			}
 		} else {
 			configFileName = fileOrDirectory
 			if !sys.FS().FileExists(configFileName) {
-				return fmt.Errorf("the specified path does not exist: %s", fileOrDirectory)
+				return BuildResult{
+					Success: false,
+					Diagnostics: []DiagnosticInfo{{
+						Code:     0,
+						Category: "error",
+						Message:  fmt.Sprintf("the specified path does not exist: %s", fileOrDirectory),
+					}},
+				}
 			}
 		}
 	}
 
 	if configFileName == "" {
-		return errors.New("no tsconfig.json file found")
+		return BuildResult{
+			Success: false,
+			Diagnostics: []DiagnosticInfo{{
+				Code:     0,
+				Category: "error",
+				Message:  "no tsconfig.json file found",
+			}},
+		}
 	}
 
 	// Parse config file
 	extendedConfigCache := collections.SyncMap[tspath.Path, *tsoptions.ExtendedConfigCacheEntry]{}
-	configParseResult, errors := tsoptions.GetParsedCommandLineOfConfigFile(configFileName, compilerOptions, sys, &extendedConfigCache)
+	configParseResult, parseErrors := tsoptions.GetParsedCommandLineOfConfigFile(configFileName, compilerOptions, sys, &extendedConfigCache)
 
-	if len(errors) != 0 {
-		return buildDiagnosticsError(errors)
+	if len(parseErrors) != 0 {
+		return BuildResult{
+			Success:     false,
+			Diagnostics: convertASTDiagnostics(parseErrors),
+			ConfigFile:  configFileName,
+		}
 	}
 
 	// Perform compilation
@@ -168,43 +258,144 @@ func Build(configPath string) error {
 
 	// Emit files if not in noEmit mode
 	var emitResult *compiler.EmitResult
+	var emittedFiles []string
 	if !options.ListFilesOnly.IsTrue() {
 		emitResult = program.Emit(compiler.EmitOptions{})
 		allDiagnostics = append(allDiagnostics, emitResult.Diagnostics...)
+		emittedFiles = emitResult.EmittedFiles
 	}
 
 	// Sort and deduplicate diagnostics
 	allDiagnostics = compiler.SortAndDeduplicateDiagnostics(allDiagnostics)
 
-	// If there are errors, format them and return as an error
-	if len(allDiagnostics) > 0 {
-		return buildDiagnosticsError(allDiagnostics)
+	// Convert diagnostics to our format
+	diagnostics := convertASTDiagnostics(allDiagnostics)
+
+	// Print errors if requested
+	if config.PrintErrors && len(allDiagnostics) > 0 {
+		for _, diag := range allDiagnostics {
+			formatOpts := &diagnosticwriter.FormattingOptions{
+				NewLine: "\n",
+			}
+			diagnosticwriter.WriteFormatDiagnostic(sys.Writer(), diag, formatOpts)
+		}
 	}
 
-	return nil
+	// Determine success - typically errors prevent success, but warnings don't
+	success := true
+	for _, diag := range diagnostics {
+		if diag.Category == "error" {
+			success = false
+			break
+		}
+	}
+
+	return BuildResult{
+		Success:      success,
+		Diagnostics:  diagnostics,
+		EmittedFiles: emittedFiles,
+		ConfigFile:   configFileName,
+	}
 }
 
-// buildDiagnosticsError formats diagnostics into a readable error message
-func buildDiagnosticsError(diagnostics []*ast.Diagnostic) error {
-	if len(diagnostics) == 0 {
-		return errors.New("compilation failed")
+// convertASTDiagnostics converts AST diagnostics to our DiagnosticInfo format
+func convertASTDiagnostics(diagnostics []*ast.Diagnostic) []DiagnosticInfo {
+	result := make([]DiagnosticInfo, len(diagnostics))
+	for i, diag := range diagnostics {
+		result[i] = DiagnosticInfo{
+			Code:     int(diag.Code()),
+			Category: diag.Category().Name(),
+			Message:  diag.Message(),
+		}
+
+		// Add file information if available
+		if diag.File() != nil {
+			result[i].File = diag.File().FileName()
+			if diag.Loc().Pos() >= 0 {
+				// Calculate line and column from position
+				line, column := calculateLineColumn(diag.File().Text(), diag.Loc().Pos())
+				result[i].Line = line + 1     // Convert to 1-based
+				result[i].Column = column + 1 // Convert to 1-based
+				result[i].Length = diag.Loc().End() - diag.Loc().Pos()
+			}
+		}
+	}
+	return result
+}
+
+// calculateLineColumn calculates line and column from text position
+func calculateLineColumn(text string, pos int) (line, column int) {
+	if pos < 0 || pos > len(text) {
+		return 0, 0
 	}
 
-	var buf bytes.Buffer
-	formatOpts := &diagnosticwriter.FormattingOptions{
-		NewLine: "\n",
+	line = 0
+	column = 0
+	for i := 0; i < pos && i < len(text); i++ {
+		if text[i] == '\n' {
+			line++
+			column = 0
+		} else {
+			column++
+		}
+	}
+	return line, column
+}
+
+// Global state for storing detailed results (gomobile limitation workaround)
+var (
+	lastBuildDiagnostics  []DiagnosticInfo
+	lastBuildEmittedFiles []string
+)
+
+// BridgeBuildWithConfig is the gomobile-compatible bridge function
+func BridgeBuildWithConfig(projectPath string, printErrors bool, configFile string) (*BridgeResult, error) {
+	config := BuildConfig{
+		ProjectPath: projectPath,
+		PrintErrors: printErrors,
+		ConfigFile:  configFile,
 	}
 
-	for _, diagnostic := range diagnostics {
-		diagnosticwriter.WriteFormatDiagnostic(&buf, diagnostic, formatOpts)
+	result := BuildWithConfig(config)
+
+	bridgeResult := &BridgeResult{
+		Success:          result.Success,
+		ConfigFile:       result.ConfigFile,
+		DiagnosticCount:  len(result.Diagnostics),
+		EmittedFileCount: len(result.EmittedFiles),
 	}
 
-	output := stripANSIColors(buf.String())
-	output = strings.TrimSpace(output)
+	// Store diagnostics and files for retrieval
+	lastBuildDiagnostics = result.Diagnostics
+	lastBuildEmittedFiles = result.EmittedFiles
 
-	if output != "" {
-		return fmt.Errorf("compilation failed:\n%s", output)
+	// Don't return error for compilation failures - those are communicated through
+	// the Success flag and diagnostics. Only return errors for system-level issues.
+	return bridgeResult, nil
+}
+
+// GetLastDiagnostic returns diagnostic info by index
+func GetLastDiagnostic(index int) *BridgeDiagnostic {
+	if index < 0 || index >= len(lastBuildDiagnostics) {
+		return nil
 	}
 
-	return errors.New("compilation failed")
+	diag := lastBuildDiagnostics[index]
+	return &BridgeDiagnostic{
+		Code:     diag.Code,
+		Category: diag.Category,
+		Message:  diag.Message,
+		File:     diag.File,
+		Line:     diag.Line,
+		Column:   diag.Column,
+		Length:   diag.Length,
+	}
+}
+
+// GetLastEmittedFile returns emitted file by index
+func GetLastEmittedFile(index int) string {
+	if index < 0 || index >= len(lastBuildEmittedFiles) {
+		return ""
+	}
+	return lastBuildEmittedFiles[index]
 }
