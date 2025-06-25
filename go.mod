@@ -22,6 +22,7 @@ require (
 
 tool (
 	github.com/matryer/moq
+	golang.org/x/mobile/cmd/gomobile
 	golang.org/x/tools/cmd/stringer
 	mvdan.cc/gofumpt
 )

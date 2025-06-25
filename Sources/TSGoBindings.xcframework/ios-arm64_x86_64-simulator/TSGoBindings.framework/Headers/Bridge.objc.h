@@ -11,6 +11,146 @@
 #include "Universe.objc.h"
 
 
-FOUNDATION_EXPORT BOOL BridgeBuild(NSString* _Nullable configPath, NSError* _Nullable* _Nullable error);
+@class BridgeBridgeDiagnostic;
+@class BridgeBridgeResult;
+@class BridgeBuildConfig;
+@class BridgeBuildResult;
+@class BridgeDiagnosticInfo;
+
+/**
+ * BridgeDiagnostic contains detailed information about a TypeScript diagnostic (gomobile-compatible)
+ */
+@interface BridgeBridgeDiagnostic : NSObject <goSeqRefInterface> {
+}
+@property(strong, readonly) _Nonnull id _ref;
+
+- (nonnull instancetype)initWithRef:(_Nonnull id)ref;
+- (nonnull instancetype)init;
+@property (nonatomic) long code;
+@property (nonatomic) NSString* _Nonnull category;
+@property (nonatomic) NSString* _Nonnull message;
+@property (nonatomic) NSString* _Nonnull file;
+@property (nonatomic) long line;
+@property (nonatomic) long column;
+@property (nonatomic) long length;
+@end
+
+/**
+ * BridgeResult contains the result of a TypeScript compilation (gomobile-compatible)
+ */
+@interface BridgeBridgeResult : NSObject <goSeqRefInterface> {
+}
+@property(strong, readonly) _Nonnull id _ref;
+
+- (nonnull instancetype)initWithRef:(_Nonnull id)ref;
+- (nonnull instancetype)init;
+@property (nonatomic) BOOL success;
+@property (nonatomic) NSString* _Nonnull configFile;
+@property (nonatomic) long diagnosticCount;
+@property (nonatomic) long emittedFileCount;
+@end
+
+/**
+ * BuildConfig holds configuration options for the build process
+ */
+@interface BridgeBuildConfig : NSObject <goSeqRefInterface> {
+}
+@property(strong, readonly) _Nonnull id _ref;
+
+- (nonnull instancetype)initWithRef:(_Nonnull id)ref;
+- (nonnull instancetype)init;
+/**
+ * ProjectPath is the path to the project directory or tsconfig.json file
+ */
+@property (nonatomic) NSString* _Nonnull projectPath;
+/**
+ * PrintErrors controls whether errors should be printed to stdout during compilation
+ */
+@property (nonatomic) BOOL printErrors;
+/**
+ * ConfigFile allows specifying a custom config file path (optional)
+ */
+@property (nonatomic) NSString* _Nonnull configFile;
+@end
+
+/**
+ * BuildResult contains the result of a TypeScript compilation
+ */
+@interface BridgeBuildResult : NSObject <goSeqRefInterface> {
+}
+@property(strong, readonly) _Nonnull id _ref;
+
+- (nonnull instancetype)initWithRef:(_Nonnull id)ref;
+- (nonnull instancetype)init;
+/**
+ * Success indicates whether the compilation succeeded
+ */
+@property (nonatomic) BOOL success;
+// skipped field BuildResult.Diagnostics with unsupported type: []github.com/microsoft/typescript-go/bridge.DiagnosticInfo
+
+// skipped field BuildResult.EmittedFiles with unsupported type: []string
+
+/**
+ * ConfigFile is the resolved config file path that was used
+ */
+@property (nonatomic) NSString* _Nonnull configFile;
+@end
+
+/**
+ * DiagnosticInfo contains detailed information about a TypeScript diagnostic
+ */
+@interface BridgeDiagnosticInfo : NSObject <goSeqRefInterface> {
+}
+@property(strong, readonly) _Nonnull id _ref;
+
+- (nonnull instancetype)initWithRef:(_Nonnull id)ref;
+- (nonnull instancetype)init;
+/**
+ * Code is the diagnostic code (e.g., 2345)
+ */
+@property (nonatomic) long code;
+/**
+ * Category is the diagnostic category (error, warning, info, etc.)
+ */
+@property (nonatomic) NSString* _Nonnull category;
+/**
+ * Message is the diagnostic message
+ */
+@property (nonatomic) NSString* _Nonnull message;
+/**
+ * File is the source file where the diagnostic occurred (may be empty)
+ */
+@property (nonatomic) NSString* _Nonnull file;
+/**
+ * Line is the line number (1-based, 0 if not available)
+ */
+@property (nonatomic) long line;
+/**
+ * Column is the column number (1-based, 0 if not available)
+ */
+@property (nonatomic) long column;
+/**
+ * Length is the length of the affected text (0 if not available)
+ */
+@property (nonatomic) long length;
+@end
+
+/**
+ * BridgeBuildWithConfig is the gomobile-compatible bridge function
+ */
+FOUNDATION_EXPORT BridgeBridgeResult* _Nullable BridgeBridgeBuildWithConfig(NSString* _Nullable projectPath, BOOL printErrors, NSString* _Nullable configFile, NSError* _Nullable* _Nullable error);
+
+// skipped function BuildWithConfig with unsupported parameter or return types
+
+
+/**
+ * GetLastDiagnostic returns diagnostic info by index
+ */
+FOUNDATION_EXPORT BridgeBridgeDiagnostic* _Nullable BridgeGetLastDiagnostic(long index);
+
+/**
+ * GetLastEmittedFile returns emitted file by index
+ */
+FOUNDATION_EXPORT NSString* _Nonnull BridgeGetLastEmittedFile(long index);
 
 #endif
