@@ -35,6 +35,15 @@ import Testing
     let testProjectPath = testBundle.path(forResource: "test-error", ofType: nil)!
 
     #expect(throws: (any Error).self) {
-        try build(projectPath: testProjectPath)
+        do {
+            try build(projectPath: testProjectPath)
+        } catch {
+            #expect(
+                error.localizedDescription.contains(
+                    "TS2345: Argument of type 'string' is not assignable to parameter of type 'number'."
+                )
+            )
+            throw error
+        }
     }
 }

@@ -5,7 +5,6 @@ public func build(projectPath: String = ".") throws -> Bool {
     let success = BridgeBuild(projectPath, &error)
 
     if let error = error {
-        print("Build failed with error: \(error.localizedDescription)")
         throw error
     }
 
