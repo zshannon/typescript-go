@@ -6,7 +6,7 @@ import Testing
 @Suite(.serialized)
 struct BuildInMemoryTests {
 
-    @Test func basicCompilationTest() throws {
+    @Test func basicCompilationTest() async throws {
         let sources = [
             Source(
                 name: "hello.ts",
@@ -20,14 +20,15 @@ struct BuildInMemoryTests {
                     """)
         ]
 
-        let result = try build(sources)
+        let result = try await build(sources)
+        print(result)
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
         #expect(!result.configFile.isEmpty)
     }
 
-    @Test func typeErrorTest() throws {
+    @Test func typeErrorTest() async throws {
         let sources = [
             Source(
                 name: "error.ts",
@@ -41,7 +42,7 @@ struct BuildInMemoryTests {
                     """)
         ]
 
-        let result = try build(sources)
+        let result = try await build(sources)
 
         #expect(result.success == false)
         #expect(!result.diagnostics.isEmpty)
@@ -55,7 +56,7 @@ struct BuildInMemoryTests {
         #expect(ts2345Error?.message.contains("not assignable") == true)
     }
 
-    @Test func customConfigTest() throws {
+    @Test func customConfigTest() async throws {
         let sources = [
             Source(
                 name: "strict.ts",
@@ -75,7 +76,7 @@ struct BuildInMemoryTests {
         strictOptions.noImplicitAny = true
         let strictConfig = TSConfig(compilerOptions: strictOptions)
 
-        let strictResult = try build(sources, config: strictConfig)
+        let strictResult = try await build(sources, config: strictConfig)
         #expect(strictResult.success == false)
 
         // Test with non-strict mode
@@ -84,11 +85,11 @@ struct BuildInMemoryTests {
         lenientOptions.noImplicitAny = false
         let lenientConfig = TSConfig(compilerOptions: lenientOptions)
 
-        let lenientResult = try build(sources, config: lenientConfig)
+        let lenientResult = try await build(sources, config: lenientConfig)
         #expect(lenientResult.success == true)
     }
 
-    @Test func multipleFilesTest() throws {
+    @Test func multipleFilesTest() async throws {
         let sources = [
             Source(
                 name: "utils.ts",
@@ -115,13 +116,13 @@ struct BuildInMemoryTests {
         moduleOptions.moduleResolution = .node
         let config = TSConfig(compilerOptions: moduleOptions)
 
-        let result = try build(sources, config: config)
+        let result = try await build(sources, config: config)
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
     }
 
-    @Test func customResolverTest() throws {
+    @Test func customResolverTest() async throws {
         // Test the resolver-based build function
         let fileMap = [
             "package.json": """
@@ -148,7 +149,7 @@ struct BuildInMemoryTests {
             """,
         ]
 
-        let resolver: (String) -> FileResolver = { path in
+        let resolver: @Sendable (String) async throws -> FileResolver? = { path in
             // Handle the project directory itself
             if path == "/project" {
                 return .directory
@@ -187,7 +188,7 @@ struct BuildInMemoryTests {
                 return .directory
             }
 
-            return .notFound
+            return nil
         }
 
         var compilerOptions = CompilerOptions()
@@ -199,13 +200,13 @@ struct BuildInMemoryTests {
             files: ["src/index.ts", "src/types.ts"]
         )
 
-        let result = try build(config: config, resolver: resolver)
+        let result = try await build(config: config, resolver: resolver)
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
     }
 
-    @Test func emitFilesTest() throws {
+    @Test func emitFilesTest() async throws {
         let sources = [
             Source(
                 name: "calculator.ts",
@@ -231,7 +232,7 @@ struct BuildInMemoryTests {
 
         let config = TSConfig(compilerOptions: compilerOptions)
 
-        let result = try build(sources, config: config)
+        let result = try await build(sources, config: config)
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
@@ -260,7 +261,7 @@ struct BuildInMemoryTests {
         }
     }
 
-    @Test func jsxSupportTest() throws {
+    @Test func jsxSupportTest() async throws {
         let sources = [
             Source(
                 name: "component.tsx",
@@ -286,13 +287,13 @@ struct BuildInMemoryTests {
 
         let config = TSConfig(compilerOptions: compilerOptions)
 
-        let result = try build(sources, config: config)
+        let result = try await build(sources, config: config)
 
         // This might fail due to missing React types, but should not crash
         #expect(result.diagnostics.filter { $0.category == "error" }.count >= 0)
     }
 
-    @Test func libConfigTest() throws {
+    @Test func libConfigTest() async throws {
         let sources = [
             Source(
                 name: "modern.ts",
@@ -317,13 +318,13 @@ struct BuildInMemoryTests {
 
         let config = TSConfig(compilerOptions: compilerOptions)
 
-        let result = try build(sources, config: config)
+        let result = try await build(sources, config: config)
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
     }
 
-    @Test func pathMappingTest() throws {
+    @Test func pathMappingTest() async throws {
         let sources = [
             Source(
                 name: "src/utils/helper.ts",
@@ -348,13 +349,13 @@ struct BuildInMemoryTests {
 
         let config = TSConfig(compilerOptions: compilerOptions)
 
-        let result = try build(sources, config: config)
+        let result = try await build(sources, config: config)
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
     }
 
-    @Test func simpleTypeCheckTest() throws {
+    @Test func simpleTypeCheckTest() async throws {
         // Simple type check test using resolver API - just validate types without emitting files
         let fileMap = [
             "simple.ts": """
@@ -380,7 +381,7 @@ struct BuildInMemoryTests {
             """,
         ]
 
-        let resolver: (String) -> FileResolver = { path in
+        let resolver: @Sendable (String) async throws -> FileResolver? = { path in
             // Handle the project directory itself
             if path == "/project" {
                 return .directory
@@ -404,7 +405,7 @@ struct BuildInMemoryTests {
                 return .directory
             }
 
-            return .notFound
+            return nil
         }
 
         var compilerOptions = CompilerOptions()
@@ -417,7 +418,7 @@ struct BuildInMemoryTests {
             files: ["simple.ts"]
         )
 
-        let result = try build(config: config, resolver: resolver)
+        let result = try await build(config: config, resolver: resolver)
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
@@ -425,7 +426,7 @@ struct BuildInMemoryTests {
         #expect(result.writtenFiles.isEmpty)  // No written files with noEmit
     }
 
-    @Test func validationOnlyTest() throws {
+    @Test func validationOnlyTest() async throws {
         let sources = [
             Source(
                 name: "validation.ts",
@@ -457,7 +458,7 @@ struct BuildInMemoryTests {
 
         let config = TSConfig(compilerOptions: compilerOptions)
 
-        let result = try build(sources, config: config)
+        let result = try await build(sources, config: config)
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)

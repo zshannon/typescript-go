@@ -38,16 +38,15 @@ public struct InMemoryBuildResult {
 public enum FileResolver {
     case file(String)
     case directory
-    case notFound
 }
 
 // MARK: - Internal File Resolver Adapter
 
 private class DynamicFileResolver: NSObject, BridgeFileResolverProtocol {
-    private let resolver: (String) -> FileResolver
+    private let resolver: @Sendable (String) async throws -> FileResolver?
     private var writtenFiles: [String: String] = [:]
 
-    init(resolver: @escaping (String) -> FileResolver) {
+    init(resolver: @escaping @Sendable (String) async throws -> FileResolver?) {
         self.resolver = resolver
         super.init()
     }
@@ -59,34 +58,82 @@ private class DynamicFileResolver: NSObject, BridgeFileResolverProtocol {
     func resolveFile(_ path: String?) -> String {
         guard let path = path else { return "" }
 
-        switch resolver(path) {
-        case .file(let content):
-            return content
-        case .directory, .notFound:
-            return ""
+        let semaphore = DispatchSemaphore(value: 0)
+        var result = ""
+
+        Task { [resolver] in
+            do {
+                if let fileResolver = try await resolver(path) {
+                    switch fileResolver {
+                    case .file(let content):
+                        result = content
+                    case .directory:
+                        result = ""
+                    }
+                }
+            } catch {
+                // On error, return empty string
+                result = ""
+            }
+            semaphore.signal()
         }
+
+        semaphore.wait()
+        return result
     }
 
     func fileExists(_ path: String?) -> Bool {
         guard let path = path else { return false }
 
-        switch resolver(path) {
-        case .file:
-            return true
-        case .directory, .notFound:
-            return false
+        let semaphore = DispatchSemaphore(value: 0)
+        var result = false
+
+        Task { [resolver] in
+            do {
+                if let fileResolver = try await resolver(path) {
+                    switch fileResolver {
+                    case .file:
+                        result = true
+                    case .directory:
+                        result = false
+                    }
+                }
+            } catch {
+                // On error, return false
+                result = false
+            }
+            semaphore.signal()
         }
+
+        semaphore.wait()
+        return result
     }
 
     func directoryExists(_ path: String?) -> Bool {
         guard let path = path else { return false }
 
-        switch resolver(path) {
-        case .directory:
-            return true
-        case .file, .notFound:
-            return false
+        let semaphore = DispatchSemaphore(value: 0)
+        var result = false
+
+        Task { [resolver] in
+            do {
+                if let fileResolver = try await resolver(path) {
+                    switch fileResolver {
+                    case .directory:
+                        result = true
+                    case .file:
+                        result = false
+                    }
+                }
+            } catch {
+                // On error, return false
+                result = false
+            }
+            semaphore.signal()
         }
+
+        semaphore.wait()
+        return result
     }
 
     func writeFile(_ path: String?, content: String?) -> Bool {
@@ -155,30 +202,31 @@ private func extractCompiledFiles(
 /// Build TypeScript files with a custom file resolver
 /// - Parameters:
 ///   - config: TypeScript configuration (optional, uses default if nil)
-///   - resolver: Function that resolves file paths to FileResolver cases
+///   - resolver: Async function that resolves file paths to FileResolver cases or nil
 /// - Returns: Build result with compilation status and diagnostics
 /// - Throws: BridgeError if the build process fails
 public func build(
     config: TSConfig? = nil,
-    resolver: @escaping (String) -> FileResolver
-) throws -> InMemoryBuildResult {
+    resolver: @escaping @Sendable (String) async throws -> FileResolver?
+) async throws -> InMemoryBuildResult {
     let projectPath = "/project"
     let tsConfig = config ?? TSConfig.default
 
+    let capturedConfig = tsConfig  // Capture config to avoid Sendable issues
     let fileResolver = DynamicFileResolver(resolver: { path in
         // Handle tsconfig.json specially
         if path == "\(projectPath)/tsconfig.json" {
             do {
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-                let configData = try encoder.encode(tsConfig)
+                let configData = try encoder.encode(capturedConfig)
                 return .file(String(data: configData, encoding: .utf8) ?? "{}")
             } catch {
-                return .notFound
+                return nil
             }
         }
 
-        return resolver(path)
+        return try await resolver(path)
     })
 
     // Build with the new clean API
@@ -239,47 +287,58 @@ public func build(
 public func build(
     _ sourceFiles: [Source],
     config: TSConfig? = nil
-) throws -> InMemoryBuildResult {
+) async throws -> InMemoryBuildResult {
     let projectPath = "/project"
 
     // Create a file map for quick lookup - use both absolute and relative paths
-    var fileMap: [String: String] = [:]
-    var knownDirectories = Set<String>([projectPath, "/"])
+    let fileMap: [String: String] = {
+        var map: [String: String] = [:]
+        for source in sourceFiles {
+            let absolutePath = "\(projectPath)/\(source.name)"
+            let relativePath = source.name
 
-    // Add source files to the map with multiple path variations
-    for source in sourceFiles {
-        let absolutePath = "\(projectPath)/\(source.name)"
-        let relativePath = source.name
+            // Store with both absolute and relative paths
+            map[absolutePath] = source.content
+            map[relativePath] = source.content
+            map["/\(source.name)"] = source.content
+        }
+        return map
+    }()
 
-        // Store with both absolute and relative paths
-        fileMap[absolutePath] = source.content
-        fileMap[relativePath] = source.content
-        fileMap["/\(source.name)"] = source.content
+    let knownDirectories: Set<String> = {
+        var directories = Set<String>([projectPath, "/"])
 
-        // Track parent directories for absolute path
-        let parentDir = (absolutePath as NSString).deletingLastPathComponent
-        if parentDir != projectPath {
-            knownDirectories.insert(parentDir)
+        // Add source files and their directories
+        for source in sourceFiles {
+            let absolutePath = "\(projectPath)/\(source.name)"
+            let relativePath = source.name
 
-            // Add intermediate directories
-            var currentPath = parentDir
-            while currentPath != projectPath && currentPath != "/" {
-                knownDirectories.insert(currentPath)
-                currentPath = (currentPath as NSString).deletingLastPathComponent
+            // Track parent directories for absolute path
+            let parentDir = (absolutePath as NSString).deletingLastPathComponent
+            if parentDir != projectPath {
+                directories.insert(parentDir)
+
+                // Add intermediate directories
+                var currentPath = parentDir
+                while currentPath != projectPath && currentPath != "/" {
+                    directories.insert(currentPath)
+                    currentPath = (currentPath as NSString).deletingLastPathComponent
+                }
+            }
+
+            // Track parent directories for relative path
+            let relativeParentDir = (relativePath as NSString).deletingLastPathComponent
+            if relativeParentDir != "." && relativeParentDir != "" {
+                directories.insert(relativeParentDir)
+                directories.insert("/\(relativeParentDir)")
+                directories.insert("\(projectPath)/\(relativeParentDir)")
             }
         }
-
-        // Track parent directories for relative path
-        let relativeParentDir = (relativePath as NSString).deletingLastPathComponent
-        if relativeParentDir != "." && relativeParentDir != "" {
-            knownDirectories.insert(relativeParentDir)
-            knownDirectories.insert("/\(relativeParentDir)")
-            knownDirectories.insert("\(projectPath)/\(relativeParentDir)")
-        }
-    }
+        return directories
+    }()
 
     // Create resolver that uses the provided source files
-    let resolver: (String) -> FileResolver = { path in
+    let resolver: @Sendable (String) async throws -> FileResolver? = { path in
         // Check for exact file match
         if let content = fileMap[path] {
             return .file(content)
@@ -308,7 +367,7 @@ public func build(
                 || filePath.hasPrefix(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
         }
 
-        return isDirectory ? .directory : .notFound
+        return isDirectory ? .directory : nil
     }
 
     // Modify the config to explicitly include the files we have
@@ -330,5 +389,5 @@ public func build(
         tsConfig = defaultConfig
     }
 
-    return try build(config: tsConfig, resolver: resolver)
+    return try await build(config: tsConfig, resolver: resolver)
 }
