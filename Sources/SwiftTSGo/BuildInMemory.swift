@@ -1,7 +1,8 @@
 import Foundation
 import TSGoBindings
 
-// Represents a source file with name and content
+// MARK: - Core Types
+
 public struct Source {
     public let name: String
     public let content: String
@@ -12,120 +13,322 @@ public struct Source {
     }
 }
 
-// Result of compiling files from memory
 public struct InMemoryBuildResult {
     public let success: Bool
     public let diagnostics: [DiagnosticInfo]
     public let compiledFiles: [Source]
     public let configFile: String
+    public let writtenFiles: [String: String]
 
     public init(
-        success: Bool, diagnostics: [DiagnosticInfo] = [], compiledFiles: [Source] = [],
-        configFile: String = ""
+        success: Bool,
+        diagnostics: [DiagnosticInfo] = [],
+        compiledFiles: [Source] = [],
+        configFile: String = "",
+        writtenFiles: [String: String] = [:]
     ) {
         self.success = success
         self.diagnostics = diagnostics
         self.compiledFiles = compiledFiles
         self.configFile = configFile
+        self.writtenFiles = writtenFiles
     }
 }
 
-// Compile TypeScript files from memory using temporary directory
-public func build(_ sourceFiles: [Source], config: TSConfig? = nil) throws
-    -> InMemoryBuildResult
-{
-    // Create temporary directory (iOS sandbox friendly)
-    let tempDir = URL(fileURLWithPath: NSTemporaryDirectory())
-        .appendingPathComponent("typescript-go-compile-\(UUID().uuidString)")
+public enum FileResolver {
+    case file(String)
+    case directory
+    case notFound
+}
 
-    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+// MARK: - Internal File Resolver Adapter
 
-    // Ensure cleanup even if compilation fails
-    defer {
-        try? FileManager.default.removeItem(at: tempDir)
+private class DynamicFileResolver: NSObject, BridgeFileResolverProtocol {
+    private let resolver: (String) -> FileResolver
+    private var writtenFiles: [String: String] = [:]
+
+    init(resolver: @escaping (String) -> FileResolver) {
+        self.resolver = resolver
+        super.init()
     }
 
-    // Create src directory if we have TypeScript files
-    let srcDir = tempDir.appendingPathComponent("src")
-    var needsSrcDir = false
+    func getWrittenFiles() -> [String: String] {
+        return writtenFiles
+    }
 
-    // Write source files to temporary directory
-    for sourceFile in sourceFiles {
-        let fileName = sourceFile.name
-        let fileURL: URL
+    func resolveFile(_ path: String?) -> String {
+        guard let path = path else { return "" }
 
-        // Determine if file goes in src/ or root based on extension
-        if fileName.hasSuffix(".ts") || fileName.hasSuffix(".tsx") {
-            if !needsSrcDir {
-                try FileManager.default.createDirectory(
-                    at: srcDir, withIntermediateDirectories: true)
-                needsSrcDir = true
+        switch resolver(path) {
+        case .file(let content):
+            return content
+        case .directory, .notFound:
+            return ""
+        }
+    }
+
+    func fileExists(_ path: String?) -> Bool {
+        guard let path = path else { return false }
+
+        switch resolver(path) {
+        case .file:
+            return true
+        case .directory, .notFound:
+            return false
+        }
+    }
+
+    func directoryExists(_ path: String?) -> Bool {
+        guard let path = path else { return false }
+
+        switch resolver(path) {
+        case .directory:
+            return true
+        case .file, .notFound:
+            return false
+        }
+    }
+
+    func writeFile(_ path: String?, content: String?) -> Bool {
+        // Simply return true to allow Go-side file capture
+        // Avoid Swift-side file handling due to gomobile interop issues
+        return true
+    }
+}
+
+// MARK: - Result Processing Helpers
+
+private func extractDiagnostics(from bridgeResult: BridgeBridgeResult) -> [DiagnosticInfo] {
+    var diagnostics: [DiagnosticInfo] = []
+    let count = bridgeResult.getDiagnosticCount()
+
+    for i in 0..<count {
+        if let bridgeDiag = bridgeResult.getDiagnostic(i) {
+            let diagnostic = DiagnosticInfo(
+                code: Int(bridgeDiag.code),
+                category: bridgeDiag.category,
+                message: bridgeDiag.message,
+                file: bridgeDiag.file,
+                line: Int(bridgeDiag.line),
+                column: Int(bridgeDiag.column),
+                length: Int(bridgeDiag.length)
+            )
+            diagnostics.append(diagnostic)
+        }
+    }
+
+    return diagnostics
+}
+
+private func extractWrittenFiles(from bridgeResult: BridgeBridgeResult) -> [String: String] {
+    var writtenFiles: [String: String] = [:]
+    let count = bridgeResult.getWrittenFileCount()
+
+    for i in 0..<count {
+        let path = bridgeResult.getWrittenFilePath(i)
+        if !path.isEmpty {
+            let content = bridgeResult.getWrittenFileContent(path)
+            writtenFiles[path] = content
+        }
+    }
+
+    return writtenFiles
+}
+
+private func extractCompiledFiles(
+    from bridgeResult: BridgeBridgeResult, writtenFiles: [String: String]
+) -> [Source] {
+    var compiledFiles: [Source] = []
+
+    // Convert written files to Source objects
+    for (path, content) in writtenFiles {
+        // Extract just the filename from the path
+        let filename = (path as NSString).lastPathComponent
+        compiledFiles.append(Source(name: filename, content: content))
+    }
+
+    return compiledFiles
+}
+
+// MARK: - Public API
+
+/// Build TypeScript files with a custom file resolver
+/// - Parameters:
+///   - config: TypeScript configuration (optional, uses default if nil)
+///   - resolver: Function that resolves file paths to FileResolver cases
+/// - Returns: Build result with compilation status and diagnostics
+/// - Throws: BridgeError if the build process fails
+public func build(
+    config: TSConfig? = nil,
+    resolver: @escaping (String) -> FileResolver
+) throws -> InMemoryBuildResult {
+    let projectPath = "/project"
+    let tsConfig = config ?? TSConfig.default
+
+    let fileResolver = DynamicFileResolver(resolver: { path in
+        // Handle tsconfig.json specially
+        if path == "\(projectPath)/tsconfig.json" {
+            do {
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                let configData = try encoder.encode(tsConfig)
+                return .file(String(data: configData, encoding: .utf8) ?? "{}")
+            } catch {
+                return .notFound
             }
-            fileURL = srcDir.appendingPathComponent(fileName)
-        } else {
-            fileURL = tempDir.appendingPathComponent(fileName)
         }
 
-        try sourceFile.content.write(to: fileURL, atomically: true, encoding: .utf8)
-    }
+        return resolver(path)
+    })
 
-    // Create tsconfig.json from config or use default if none provided and we have TypeScript files
-    if let tsConfig = config {
-        let tsconfigURL = tempDir.appendingPathComponent("tsconfig.json")
-        let configJSON = try tsConfig.toJSONString()
-        try configJSON.write(to: tsconfigURL, atomically: true, encoding: .utf8)
-    } else if needsSrcDir {
-        let defaultConfig = TSConfig.default
-        let tsconfigURL = tempDir.appendingPathComponent("tsconfig.json")
-        let configJSON = try defaultConfig.toJSONString()
-        try configJSON.write(to: tsconfigURL, atomically: true, encoding: .utf8)
-    }
+    // Build with the new clean API
+    var error: NSError?
+    let bridgeResult = BridgeBuildWithFileResolver(
+        projectPath,
+        false,
+        "",
+        fileResolver,
+        &error
+    )
 
-    // Run build on temporary directory
-    let buildConfig = FileSystemBuildConfig(projectPath: tempDir.path, printErrors: false)
-    let result = build(buildConfig)
-
-    // If build failed, throw error
-    if !result.success {
-        let errorMessages = result.diagnostics
-            .filter { $0.category == "error" }
-            .map { "\($0.file):\($0.line):\($0.column) - \($0.message)" }
-            .joined(separator: "\n")
-
-        throw NSError(
-            domain: "TypeScriptCompilationError",
-            code: 1,
-            userInfo: [
-                NSLocalizedDescriptionKey: "TypeScript compilation failed:\n\(errorMessages)"
-            ]
+    // Handle system-level errors
+    if let error = error {
+        let diagnostic = DiagnosticInfo(
+            code: 0,
+            category: "error",
+            message: error.localizedDescription
+        )
+        return InMemoryBuildResult(
+            success: false,
+            diagnostics: [diagnostic]
         )
     }
 
-    // Read compiled files
-    var compiledFiles: [Source] = []
-    let distDir = tempDir.appendingPathComponent("dist")
-
-    if FileManager.default.fileExists(atPath: distDir.path) {
-        let distContents = try FileManager.default.contentsOfDirectory(
-            at: distDir, includingPropertiesForKeys: nil)
-
-        for fileURL in distContents {
-            // Skip directories, only process files
-            var isDirectory: ObjCBool = false
-            if FileManager.default.fileExists(atPath: fileURL.path, isDirectory: &isDirectory)
-                && !isDirectory.boolValue
-            {
-                let content = try String(contentsOf: fileURL)
-                let compiledFile = Source(name: fileURL.lastPathComponent, content: content)
-                compiledFiles.append(compiledFile)
-            }
-        }
+    guard let result = bridgeResult else {
+        let diagnostic = DiagnosticInfo(
+            code: 0,
+            category: "error",
+            message: "Build failed with no result"
+        )
+        return InMemoryBuildResult(
+            success: false,
+            diagnostics: [diagnostic]
+        )
     }
+
+    // Extract results using the new API
+    let diagnostics = extractDiagnostics(from: result)
+    let writtenFiles = extractWrittenFiles(from: result)
+    let compiledFiles = extractCompiledFiles(from: result, writtenFiles: writtenFiles)
 
     return InMemoryBuildResult(
         success: result.success,
-        diagnostics: result.diagnostics,
+        diagnostics: diagnostics,
         compiledFiles: compiledFiles,
-        configFile: result.configFile
+        configFile: result.configFile,
+        writtenFiles: writtenFiles
     )
+}
+
+/// Build TypeScript files from a known set of source files
+/// - Parameters:
+///   - sourceFiles: Array of source files to compile
+///   - config: TypeScript configuration (optional, uses default if nil)
+/// - Returns: Build result with compilation status and diagnostics
+/// - Throws: BridgeError if the build process fails
+public func build(
+    _ sourceFiles: [Source],
+    config: TSConfig? = nil
+) throws -> InMemoryBuildResult {
+    let projectPath = "/project"
+
+    // Create a file map for quick lookup - use both absolute and relative paths
+    var fileMap: [String: String] = [:]
+    var knownDirectories = Set<String>([projectPath, "/"])
+
+    // Add source files to the map with multiple path variations
+    for source in sourceFiles {
+        let absolutePath = "\(projectPath)/\(source.name)"
+        let relativePath = source.name
+
+        // Store with both absolute and relative paths
+        fileMap[absolutePath] = source.content
+        fileMap[relativePath] = source.content
+        fileMap["/\(source.name)"] = source.content
+
+        // Track parent directories for absolute path
+        let parentDir = (absolutePath as NSString).deletingLastPathComponent
+        if parentDir != projectPath {
+            knownDirectories.insert(parentDir)
+
+            // Add intermediate directories
+            var currentPath = parentDir
+            while currentPath != projectPath && currentPath != "/" {
+                knownDirectories.insert(currentPath)
+                currentPath = (currentPath as NSString).deletingLastPathComponent
+            }
+        }
+
+        // Track parent directories for relative path
+        let relativeParentDir = (relativePath as NSString).deletingLastPathComponent
+        if relativeParentDir != "." && relativeParentDir != "" {
+            knownDirectories.insert(relativeParentDir)
+            knownDirectories.insert("/\(relativeParentDir)")
+            knownDirectories.insert("\(projectPath)/\(relativeParentDir)")
+        }
+    }
+
+    // Create resolver that uses the provided source files
+    let resolver: (String) -> FileResolver = { path in
+        // Check for exact file match
+        if let content = fileMap[path] {
+            return .file(content)
+        }
+
+        // Check if it's a known directory
+        if knownDirectories.contains(path) {
+            return .directory
+        }
+
+        // Handle output directories (dist, etc.) as existing directories
+        if path.contains("/dist") || path.hasSuffix("/dist") || path == "dist"
+            || path.hasPrefix("\(projectPath)/dist")
+        {
+            return .directory
+        }
+
+        // Also handle root project directory
+        if path == projectPath {
+            return .directory
+        }
+
+        // Check if any files are under this directory path
+        let isDirectory = fileMap.keys.contains { filePath in
+            filePath.hasPrefix(path + "/")
+                || filePath.hasPrefix(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
+        }
+
+        return isDirectory ? .directory : .notFound
+    }
+
+    // Modify the config to explicitly include the files we have
+    let tsConfig: TSConfig
+    if let providedConfig = config {
+        var modifiedConfig = providedConfig
+        // If no files or include patterns are specified, add our files
+        if modifiedConfig.files == nil && modifiedConfig.include == nil {
+            modifiedConfig.files = sourceFiles.map { $0.name }
+        }
+        tsConfig = modifiedConfig
+    } else {
+        // Use default config with explicit file list
+        var defaultConfig = TSConfig.default
+        defaultConfig.files = sourceFiles.map { $0.name }
+        if defaultConfig.compilerOptions == nil {
+            defaultConfig.compilerOptions = CompilerOptions()
+        }
+        tsConfig = defaultConfig
+    }
+
+    return try build(config: tsConfig, resolver: resolver)
 }
