@@ -3,7 +3,7 @@ import TSGoBindings
 
 // MARK: - Core Types
 
-public struct Source {
+public struct Source: Sendable {
     public let name: String
     public let content: String
 
@@ -13,7 +13,7 @@ public struct Source {
     }
 }
 
-public struct InMemoryBuildResult {
+public struct InMemoryBuildResult: Sendable {
     public let success: Bool
     public let diagnostics: [DiagnosticInfo]
     public let compiledFiles: [Source]

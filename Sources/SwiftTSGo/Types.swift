@@ -1,5 +1,5 @@
 // Detailed information about a TypeScript diagnostic
-public struct DiagnosticInfo {
+public struct DiagnosticInfo: Sendable {
     public let code: Int
     public let category: String
     public let message: String
