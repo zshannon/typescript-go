@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Enums for TypeScript Configuration
 
-public enum ECMAScriptTarget: String, Codable, CaseIterable {
+public enum ECMAScriptTarget: String, Codable, CaseIterable, Sendable {
     case es3 = "ES3"
     case es5 = "ES5"
     case es2015 = "ES2015"
@@ -16,7 +16,7 @@ public enum ECMAScriptTarget: String, Codable, CaseIterable {
     case esnext = "ESNext"
 }
 
-public enum ModuleKind: String, Codable, CaseIterable {
+public enum ModuleKind: String, Codable, CaseIterable, Sendable {
     case none = "none"
     case commonjs = "commonjs"
     case amd = "amd"
@@ -31,7 +31,7 @@ public enum ModuleKind: String, Codable, CaseIterable {
     case nodenext = "nodenext"
 }
 
-public enum ModuleResolutionKind: String, Codable, CaseIterable {
+public enum ModuleResolutionKind: String, Codable, CaseIterable, Sendable {
     case classic = "classic"
     case node = "node"
     case node16 = "node16"
@@ -39,7 +39,7 @@ public enum ModuleResolutionKind: String, Codable, CaseIterable {
     case bundler = "bundler"
 }
 
-public enum JSXEmit: String, Codable, CaseIterable {
+public enum JSXEmit: String, Codable, CaseIterable, Sendable {
     case none = "none"
     case preserve = "preserve"
     case react = "react"
@@ -48,12 +48,12 @@ public enum JSXEmit: String, Codable, CaseIterable {
     case reactJSXDev = "react-jsxdev"
 }
 
-public enum NewLineKind: String, Codable, CaseIterable {
+public enum NewLineKind: String, Codable, CaseIterable, Sendable {
     case crlf = "crlf"
     case lf = "lf"
 }
 
-public enum ImportsNotUsedAsValues: String, Codable, CaseIterable {
+public enum ImportsNotUsedAsValues: String, Codable, CaseIterable, Sendable {
     case remove = "remove"
     case preserve = "preserve"
     case error = "error"
@@ -61,7 +61,7 @@ public enum ImportsNotUsedAsValues: String, Codable, CaseIterable {
 
 // MARK: - Compiler Options
 
-public struct CompilerOptions: Codable {
+public struct CompilerOptions: Codable, Sendable {
     // Type Checking
     public var allowUnreachableCode: Bool?
     public var allowUnusedLabels: Bool?
@@ -446,7 +446,7 @@ public struct CompilerOptions: Codable {
 
 // MARK: - Project Reference
 
-public struct ProjectReference: Codable {
+public struct ProjectReference: Codable, Sendable {
     public var path: String
     public var prepend: Bool?
     public var circular: Bool?
@@ -460,7 +460,7 @@ public struct ProjectReference: Codable {
 
 // MARK: - Type Acquisition
 
-public struct TypeAcquisition: Codable {
+public struct TypeAcquisition: Codable, Sendable {
     public var enable: Bool?
     public var include: [String]?
     public var exclude: [String]?
@@ -481,7 +481,7 @@ public struct TypeAcquisition: Codable {
 
 // MARK: - Watch Options
 
-public struct WatchOptions: Codable {
+public struct WatchOptions: Codable, Sendable {
     public var watchFile: String?
     public var watchDirectory: String?
     public var fallbackPolling: String?
@@ -508,7 +508,7 @@ public struct WatchOptions: Codable {
 
 // MARK: - Main TSConfig Structure
 
-public struct TSConfig: Codable {
+public struct TSConfig: Codable, Sendable {
     public var compilerOptions: CompilerOptions?
     public var files: [String]?
     public var include: [String]?
