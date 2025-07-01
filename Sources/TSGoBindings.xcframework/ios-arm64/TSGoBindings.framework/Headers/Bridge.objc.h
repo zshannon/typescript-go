@@ -16,6 +16,30 @@
 @class BridgeBuildConfig;
 @class BridgeBuildResult;
 @class BridgeDiagnosticInfo;
+@class BridgePathList;
+@protocol BridgeFileResolver;
+@class BridgeFileResolver;
+
+@protocol BridgeFileResolver <NSObject>
+/**
+ * DirectoryExists returns true if the directory exists at the given path
+ */
+- (BOOL)directoryExists:(NSString* _Nullable)path;
+/**
+ * FileExists returns true if the file exists at the given path
+ */
+- (BOOL)fileExists:(NSString* _Nullable)path;
+/**
+ * ResolveFile returns the contents of the file at the given path
+Returns empty string if the file doesn't exist or can't be read
+ */
+- (NSString* _Nonnull)resolveFile:(NSString* _Nullable)path;
+/**
+ * WriteFile writes content to the given path
+Returns true if the write was successful
+ */
+- (BOOL)writeFile:(NSString* _Nullable)path content:(NSString* _Nullable)content;
+@end
 
 /**
  * BridgeDiagnostic contains detailed information about a TypeScript diagnostic (gomobile-compatible)
@@ -36,7 +60,7 @@
 @end
 
 /**
- * BridgeResult contains the result of a TypeScript compilation (gomobile-compatible)
+ * BridgeResult contains the full result of a TypeScript compilation (gomobile-compatible)
  */
 @interface BridgeBridgeResult : NSObject <goSeqRefInterface> {
 }
@@ -46,8 +70,44 @@
 - (nonnull instancetype)init;
 @property (nonatomic) BOOL success;
 @property (nonatomic) NSString* _Nonnull configFile;
-@property (nonatomic) long diagnosticCount;
-@property (nonatomic) long emittedFileCount;
+// skipped field BridgeResult.Diagnostics with unsupported type: []github.com/microsoft/typescript-go/bridge.BridgeDiagnostic
+
+// skipped field BridgeResult.EmittedFiles with unsupported type: []string
+
+// skipped field BridgeResult.WrittenFiles with unsupported type: map[string]string
+
+/**
+ * GetDiagnostic returns a diagnostic by index
+ */
+- (BridgeBridgeDiagnostic* _Nullable)getDiagnostic:(long)index;
+/**
+ * GetDiagnosticCount returns the number of diagnostics
+ */
+- (long)getDiagnosticCount;
+/**
+ * GetEmittedFile returns an emitted file path by index
+ */
+- (NSString* _Nonnull)getEmittedFile:(long)index;
+/**
+ * GetEmittedFileCount returns the number of emitted files
+ */
+- (long)getEmittedFileCount;
+/**
+ * GetWrittenFileContent returns the content of a written file by path
+ */
+- (NSString* _Nonnull)getWrittenFileContent:(NSString* _Nullable)path;
+/**
+ * GetWrittenFileCount returns the number of written files
+ */
+- (long)getWrittenFileCount;
+/**
+ * GetWrittenFilePath returns a written file path by index
+ */
+- (NSString* _Nonnull)getWrittenFilePath:(long)index;
+/**
+ * GetWrittenFilePaths returns all written file paths as a PathList
+ */
+- (BridgePathList* _Nullable)getWrittenFilePaths;
 @end
 
 /**
@@ -71,6 +131,10 @@
  * ConfigFile allows specifying a custom config file path (optional)
  */
 @property (nonatomic) NSString* _Nonnull configFile;
+/**
+ * FileResolver allows providing custom file resolution (optional)
+ */
+@property (nonatomic) id<BridgeFileResolver> _Nullable fileResolver;
 @end
 
 /**
@@ -94,6 +158,8 @@
  * ConfigFile is the resolved config file path that was used
  */
 @property (nonatomic) NSString* _Nonnull configFile;
+// skipped field BuildResult.WrittenFiles with unsupported type: map[string]string
+
 @end
 
 /**
@@ -136,21 +202,59 @@
 @end
 
 /**
- * BridgeBuildWithConfig is the gomobile-compatible bridge function
+ * PathList represents a list of paths for gomobile compatibility
  */
-FOUNDATION_EXPORT BridgeBridgeResult* _Nullable BridgeBridgeBuildWithConfig(NSString* _Nullable projectPath, BOOL printErrors, NSString* _Nullable configFile, NSError* _Nullable* _Nullable error);
+@interface BridgePathList : NSObject <goSeqRefInterface> {
+}
+@property(strong, readonly) _Nonnull id _ref;
+
+- (nonnull instancetype)initWithRef:(_Nonnull id)ref;
+- (nonnull instancetype)init;
+// skipped field PathList.Paths with unsupported type: []string
+
+@end
+
+/**
+ * BridgeBuildWithFileSystem builds using only the filesystem (no custom resolver)
+ */
+FOUNDATION_EXPORT BridgeBridgeResult* _Nullable BridgeBridgeBuildWithFileSystem(NSString* _Nullable projectPath, BOOL printErrors, NSString* _Nullable configFile, NSError* _Nullable* _Nullable error);
 
 // skipped function BuildWithConfig with unsupported parameter or return types
 
 
 /**
- * GetLastDiagnostic returns diagnostic info by index
+ * BuildWithFileResolver builds with a dynamic callback-based file resolver
  */
-FOUNDATION_EXPORT BridgeBridgeDiagnostic* _Nullable BridgeGetLastDiagnostic(long index);
+FOUNDATION_EXPORT BridgeBridgeResult* _Nullable BridgeBuildWithFileResolver(NSString* _Nullable projectPath, BOOL printErrors, NSString* _Nullable configFile, id<BridgeFileResolver> _Nullable resolver, NSError* _Nullable* _Nullable error);
+
+@class BridgeFileResolver;
 
 /**
- * GetLastEmittedFile returns emitted file by index
+ * FileResolver is the interface that Swift can implement to provide custom file resolution
  */
-FOUNDATION_EXPORT NSString* _Nonnull BridgeGetLastEmittedFile(long index);
+@interface BridgeFileResolver : NSObject <goSeqRefInterface, BridgeFileResolver> {
+}
+@property(strong, readonly) _Nonnull id _ref;
+
+- (nonnull instancetype)initWithRef:(_Nonnull id)ref;
+/**
+ * DirectoryExists returns true if the directory exists at the given path
+ */
+- (BOOL)directoryExists:(NSString* _Nullable)path;
+/**
+ * FileExists returns true if the file exists at the given path
+ */
+- (BOOL)fileExists:(NSString* _Nullable)path;
+/**
+ * ResolveFile returns the contents of the file at the given path
+Returns empty string if the file doesn't exist or can't be read
+ */
+- (NSString* _Nonnull)resolveFile:(NSString* _Nullable)path;
+/**
+ * WriteFile writes content to the given path
+Returns true if the write was successful
+ */
+- (BOOL)writeFile:(NSString* _Nullable)path content:(NSString* _Nullable)content;
+@end
 
 #endif

@@ -5,9 +5,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/microsoft/typescript-go/internal/ast"
@@ -23,6 +27,256 @@ import (
 	"github.com/microsoft/typescript-go/internal/vfs/osvfs"
 )
 
+// FileResolver is the interface that Swift can implement to provide custom file resolution
+type FileResolver interface {
+	// ResolveFile returns the contents of the file at the given path
+	// Returns empty string if the file doesn't exist or can't be read
+	ResolveFile(path string) string
+	// FileExists returns true if the file exists at the given path
+	FileExists(path string) bool
+	// DirectoryExists returns true if the directory exists at the given path
+	DirectoryExists(path string) bool
+	// WriteFile writes content to the given path
+	// Returns true if the write was successful
+	WriteFile(path string, content string) bool
+}
+
+// PathList represents a list of paths for gomobile compatibility
+type PathList struct {
+	Paths []string
+}
+
+// pathEnumerator is an optional interface that FileResolver can implement
+// to enable TypeScript file discovery through patterns like **/*.ts
+type pathEnumerator interface {
+	// GetAllPaths returns all known file and directory paths under the given directory
+	GetAllPaths(directory string) *PathList
+}
+
+// callbackVFS implements vfs.FS using a FileResolver callback
+type callbackVFS struct {
+	resolver     FileResolver
+	osvfs        vfs.FS            // fallback to OS filesystem for unsupported operations
+	writtenFiles map[string]string // Track files written during compilation
+	mu           sync.RWMutex      // Protects writtenFiles from concurrent access
+}
+
+func newCallbackVFS(resolver FileResolver) *callbackVFS {
+	return &callbackVFS{
+		resolver:     resolver,
+		osvfs:        osvfs.FS(),
+		writtenFiles: make(map[string]string),
+	}
+}
+
+func (c *callbackVFS) UseCaseSensitiveFileNames() bool {
+	return c.osvfs.UseCaseSensitiveFileNames()
+}
+
+func (c *callbackVFS) FileExists(path string) bool {
+	return c.resolver.FileExists(path)
+}
+
+func (c *callbackVFS) ReadFile(path string) (contents string, ok bool) {
+	// Check if this file was written during compilation first
+	c.mu.RLock()
+	writtenContent, exists := c.writtenFiles[path]
+	c.mu.RUnlock()
+
+	if exists {
+		return writtenContent, true
+	}
+	// Otherwise, resolve through the resolver
+	contents = c.resolver.ResolveFile(path)
+	return contents, contents != ""
+}
+
+func (c *callbackVFS) WriteFile(path string, data string, writeByteOrderMark bool) error {
+	// Try to write using the resolver first
+	if c.resolver.WriteFile(path, data) {
+		// Store the written file content for retrieval
+		c.mu.Lock()
+		c.writtenFiles[path] = data
+		c.mu.Unlock()
+		return nil
+	}
+	// Fallback to OS filesystem for write operations
+	return c.osvfs.WriteFile(path, data, writeByteOrderMark)
+}
+
+func (c *callbackVFS) Remove(path string) error {
+	// Remove from written files if it exists there
+	c.mu.Lock()
+	delete(c.writtenFiles, path)
+	c.mu.Unlock()
+	// Delegate to OS filesystem for remove operations
+	return c.osvfs.Remove(path)
+}
+
+func (c *callbackVFS) DirectoryExists(path string) bool {
+	return c.resolver.DirectoryExists(path)
+}
+
+func (c *callbackVFS) GetAccessibleEntries(path string) vfs.Entries {
+	var files []string
+	var directories []string
+
+	// Get all files and directories from the resolver that start with the given path
+	// This is a simple implementation - in a real scenario you might want to optimize this
+	for filePath := range c.getAllKnownPaths(path) {
+		if strings.HasPrefix(filePath, path) {
+			relativePath := strings.TrimPrefix(filePath, path)
+			if relativePath != "" && relativePath[0] == '/' {
+				relativePath = relativePath[1:]
+			}
+
+			// Skip if this is the exact path or empty relative path
+			if relativePath == "" {
+				continue
+			}
+
+			// Check if this is a direct child (no additional path separators)
+			if !strings.Contains(relativePath, "/") {
+				if c.resolver.FileExists(filePath) {
+					files = append(files, relativePath)
+				}
+			} else {
+				// This is a subdirectory - extract the first segment
+				segments := strings.Split(relativePath, "/")
+				if len(segments) > 0 {
+					dirName := segments[0]
+					dirPath := path + "/" + dirName
+					if c.resolver.DirectoryExists(dirPath) {
+						// Check if we already added this directory
+						found := false
+						for _, existing := range directories {
+							if existing == dirName {
+								found = true
+								break
+							}
+						}
+						if !found {
+							directories = append(directories, dirName)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return vfs.Entries{
+		Files:       files,
+		Directories: directories,
+	}
+}
+
+func (c *callbackVFS) Stat(path string) vfs.FileInfo {
+	// Delegate to OS filesystem for stat operations
+	return c.osvfs.Stat(path)
+}
+
+func (c *callbackVFS) WalkDir(root string, walkFn vfs.WalkDirFunc) error {
+	// Walk through all known paths that start with root
+	for filePath := range c.getAllKnownPaths(root) {
+		if strings.HasPrefix(filePath, root) {
+			if c.resolver.FileExists(filePath) {
+				// Create a minimal DirEntry for the file
+				entry := &simpleDirEntry{
+					name:  filepath.Base(filePath),
+					isDir: false,
+				}
+
+				err := walkFn(filePath, entry, nil)
+				if err != nil {
+					if err == filepath.SkipDir {
+						continue
+					}
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func (c *callbackVFS) Realpath(path string) string {
+	// For virtual files, just return the path as-is
+	if c.resolver.FileExists(path) || c.resolver.DirectoryExists(path) {
+		return path
+	}
+	// Delegate to OS filesystem for realpath
+	return c.osvfs.Realpath(path)
+}
+
+// getAllKnownPaths returns all paths known to the resolver under a specific directory
+// This is a helper method to iterate over virtual files
+func (c *callbackVFS) getAllKnownPaths(directory string) map[string]bool {
+	paths := make(map[string]bool)
+
+	// Add written files under the directory
+	for path := range c.writtenFiles {
+		if strings.HasPrefix(path, directory) {
+			paths[path] = true
+		}
+	}
+
+	// Get all paths from the resolver if it supports enumeration
+	if enumerator, ok := c.resolver.(pathEnumerator); ok {
+		pathList := enumerator.GetAllPaths(directory)
+		if pathList != nil {
+			for _, foundPath := range pathList.Paths {
+				paths[foundPath] = true
+			}
+		}
+	}
+
+	return paths
+}
+
+// simpleDirEntry implements fs.DirEntry for virtual files
+type simpleDirEntry struct {
+	name  string
+	isDir bool
+}
+
+func (e *simpleDirEntry) Name() string {
+	return e.name
+}
+
+func (e *simpleDirEntry) IsDir() bool {
+	return e.isDir
+}
+
+func (e *simpleDirEntry) Type() fs.FileMode {
+	if e.isDir {
+		return fs.ModeDir
+	}
+	return 0
+}
+
+func (e *simpleDirEntry) Info() (fs.FileInfo, error) {
+	return &simpleFileInfo{
+		name:  e.name,
+		size:  0,
+		isDir: e.isDir,
+	}, nil
+}
+
+// simpleFileInfo implements fs.FileInfo for virtual files
+type simpleFileInfo struct {
+	name  string
+	size  int64
+	isDir bool
+}
+
+func (i *simpleFileInfo) Name() string       { return i.name }
+func (i *simpleFileInfo) Size() int64        { return i.size }
+func (i *simpleFileInfo) Mode() fs.FileMode  { return 0644 }
+func (i *simpleFileInfo) ModTime() time.Time { return time.Time{} }
+func (i *simpleFileInfo) IsDir() bool        { return i.isDir }
+func (i *simpleFileInfo) Sys() interface{}   { return nil }
+
 // BuildConfig holds configuration options for the build process
 type BuildConfig struct {
 	// ProjectPath is the path to the project directory or tsconfig.json file
@@ -31,6 +285,8 @@ type BuildConfig struct {
 	PrintErrors bool
 	// ConfigFile allows specifying a custom config file path (optional)
 	ConfigFile string
+	// FileResolver allows providing custom file resolution (optional)
+	FileResolver FileResolver
 }
 
 // DiagnosticInfo contains detailed information about a TypeScript diagnostic
@@ -61,6 +317,8 @@ type BuildResult struct {
 	EmittedFiles []string
 	// ConfigFile is the resolved config file path that was used
 	ConfigFile string
+	// WrittenFiles contains the content of files written during compilation (when using FileResolver)
+	WrittenFiles map[string]string
 }
 
 // BridgeDiagnostic contains detailed information about a TypeScript diagnostic (gomobile-compatible)
@@ -74,14 +332,6 @@ type BridgeDiagnostic struct {
 	Length   int
 }
 
-// BridgeResult contains the result of a TypeScript compilation (gomobile-compatible)
-type BridgeResult struct {
-	Success          bool
-	ConfigFile       string
-	DiagnosticCount  int
-	EmittedFileCount int
-}
-
 type bridgeSystem struct {
 	writer             io.Writer
 	fs                 vfs.FS
@@ -89,6 +339,8 @@ type bridgeSystem struct {
 	newLine            string
 	cwd                string
 	start              time.Time
+	customFS           vfs.FS
+	callbackVFS        *callbackVFS
 }
 
 func (s *bridgeSystem) SinceStart() time.Duration {
@@ -100,6 +352,9 @@ func (s *bridgeSystem) Now() time.Time {
 }
 
 func (s *bridgeSystem) FS() vfs.FS {
+	if s.customFS != nil {
+		return s.customFS
+	}
 	return s.fs
 }
 
@@ -139,8 +394,22 @@ func newBridgeSystem() *bridgeSystem {
 	}
 }
 
-func BuildWithConfig(config BuildConfig) BuildResult {
+func newBridgeSystemWithResolver(resolver FileResolver) *bridgeSystem {
 	sys := newBridgeSystem()
+	if resolver != nil {
+		sys.callbackVFS = newCallbackVFS(resolver)
+		sys.customFS = bundled.WrapFS(sys.callbackVFS)
+	}
+	return sys
+}
+
+func BuildWithConfig(config BuildConfig) BuildResult {
+	var sys *bridgeSystem
+	if config.FileResolver != nil {
+		sys = newBridgeSystemWithResolver(config.FileResolver)
+	} else {
+		sys = newBridgeSystem()
+	}
 
 	// Determine which writer to use based on PrintErrors setting
 	if config.PrintErrors {
@@ -263,6 +532,23 @@ func BuildWithConfig(config BuildConfig) BuildResult {
 		emitResult = program.Emit(compiler.EmitOptions{})
 		allDiagnostics = append(allDiagnostics, emitResult.Diagnostics...)
 		emittedFiles = emitResult.EmittedFiles
+
+		// If we have a callback VFS, collect the written files
+		if sys.callbackVFS != nil {
+			for path := range sys.callbackVFS.writtenFiles {
+				// Only add if not already in emittedFiles
+				found := false
+				for _, existing := range emittedFiles {
+					if existing == path {
+						found = true
+						break
+					}
+				}
+				if !found {
+					emittedFiles = append(emittedFiles, path)
+				}
+			}
+		}
 	}
 
 	// Sort and deduplicate diagnostics
@@ -290,12 +576,24 @@ func BuildWithConfig(config BuildConfig) BuildResult {
 		}
 	}
 
-	return BuildResult{
+	result := BuildResult{
 		Success:      success,
 		Diagnostics:  diagnostics,
 		EmittedFiles: emittedFiles,
 		ConfigFile:   configFileName,
 	}
+
+	// Add written file contents if we have a callback VFS
+	if sys.callbackVFS != nil {
+		result.WrittenFiles = make(map[string]string)
+		sys.callbackVFS.mu.RLock()
+		for path, content := range sys.callbackVFS.writtenFiles {
+			result.WrittenFiles[path] = content
+		}
+		sys.callbackVFS.mu.RUnlock()
+	}
+
+	return result
 }
 
 // convertASTDiagnostics converts AST diagnostics to our DiagnosticInfo format
@@ -342,60 +640,161 @@ func calculateLineColumn(text string, pos int) (line, column int) {
 	return line, column
 }
 
-// Global state for storing detailed results (gomobile limitation workaround)
-var (
-	lastBuildDiagnostics  []DiagnosticInfo
-	lastBuildEmittedFiles []string
-)
+// BridgeResult contains the full result of a TypeScript compilation (gomobile-compatible)
+type BridgeResult struct {
+	Success      bool
+	ConfigFile   string
+	Diagnostics  []BridgeDiagnostic
+	EmittedFiles []string
+	WrittenFiles map[string]string
+}
 
-// BridgeBuildWithConfig is the gomobile-compatible bridge function
-func BridgeBuildWithConfig(projectPath string, printErrors bool, configFile string) (*BridgeResult, error) {
+// GetDiagnosticCount returns the number of diagnostics
+func (r *BridgeResult) GetDiagnosticCount() int {
+	return len(r.Diagnostics)
+}
+
+// GetDiagnostic returns a diagnostic by index
+func (r *BridgeResult) GetDiagnostic(index int) *BridgeDiagnostic {
+	if index < 0 || index >= len(r.Diagnostics) {
+		return nil
+	}
+	return &r.Diagnostics[index]
+}
+
+// GetEmittedFileCount returns the number of emitted files
+func (r *BridgeResult) GetEmittedFileCount() int {
+	return len(r.EmittedFiles)
+}
+
+// GetEmittedFile returns an emitted file path by index
+func (r *BridgeResult) GetEmittedFile(index int) string {
+	if index < 0 || index >= len(r.EmittedFiles) {
+		return ""
+	}
+	return r.EmittedFiles[index]
+}
+
+// GetWrittenFileContent returns the content of a written file by path
+func (r *BridgeResult) GetWrittenFileContent(path string) string {
+	if r.WrittenFiles == nil {
+		return ""
+	}
+	return r.WrittenFiles[path]
+}
+
+// GetWrittenFileCount returns the number of written files
+func (r *BridgeResult) GetWrittenFileCount() int {
+	if r.WrittenFiles == nil {
+		return 0
+	}
+	return len(r.WrittenFiles)
+}
+
+// GetWrittenFilePath returns a written file path by index
+func (r *BridgeResult) GetWrittenFilePath(index int) string {
+	if r.WrittenFiles == nil {
+		return ""
+	}
+	if index < 0 || index >= len(r.WrittenFiles) {
+		return ""
+	}
+	// Convert map to sorted slice for consistent ordering
+	paths := make([]string, 0, len(r.WrittenFiles))
+	for path := range r.WrittenFiles {
+		paths = append(paths, path)
+	}
+	// Sort for deterministic ordering
+	for i := 0; i < len(paths)-1; i++ {
+		for j := i + 1; j < len(paths); j++ {
+			if paths[i] > paths[j] {
+				paths[i], paths[j] = paths[j], paths[i]
+			}
+		}
+	}
+	return paths[index]
+}
+
+// GetWrittenFilePaths returns all written file paths as a PathList
+func (r *BridgeResult) GetWrittenFilePaths() *PathList {
+	if r.WrittenFiles == nil {
+		return &PathList{Paths: []string{}}
+	}
+	paths := make([]string, 0, len(r.WrittenFiles))
+	for path := range r.WrittenFiles {
+		paths = append(paths, path)
+	}
+	return &PathList{Paths: paths}
+}
+
+// BridgeBuildWithFileSystem builds using only the filesystem (no custom resolver)
+func BridgeBuildWithFileSystem(projectPath string, printErrors bool, configFile string) (*BridgeResult, error) {
 	config := BuildConfig{
-		ProjectPath: projectPath,
-		PrintErrors: printErrors,
-		ConfigFile:  configFile,
+		ProjectPath:  projectPath,
+		PrintErrors:  printErrors,
+		ConfigFile:   configFile,
+		FileResolver: nil, // No custom resolver, use filesystem
 	}
 
 	result := BuildWithConfig(config)
 
-	bridgeResult := &BridgeResult{
-		Success:          result.Success,
-		ConfigFile:       result.ConfigFile,
-		DiagnosticCount:  len(result.Diagnostics),
-		EmittedFileCount: len(result.EmittedFiles),
+	// Convert diagnostics to bridge format
+	bridgeDiagnostics := make([]BridgeDiagnostic, len(result.Diagnostics))
+	for i, diag := range result.Diagnostics {
+		bridgeDiagnostics[i] = BridgeDiagnostic{
+			Code:     diag.Code,
+			Category: diag.Category,
+			Message:  diag.Message,
+			File:     diag.File,
+			Line:     diag.Line,
+			Column:   diag.Column,
+			Length:   diag.Length,
+		}
 	}
 
-	// Store diagnostics and files for retrieval
-	lastBuildDiagnostics = result.Diagnostics
-	lastBuildEmittedFiles = result.EmittedFiles
+	bridgeResult := &BridgeResult{
+		Success:      result.Success,
+		ConfigFile:   result.ConfigFile,
+		Diagnostics:  bridgeDiagnostics,
+		EmittedFiles: result.EmittedFiles,
+		WrittenFiles: result.WrittenFiles,
+	}
 
-	// Don't return error for compilation failures - those are communicated through
-	// the Success flag and diagnostics. Only return errors for system-level issues.
 	return bridgeResult, nil
 }
 
-// GetLastDiagnostic returns diagnostic info by index
-func GetLastDiagnostic(index int) *BridgeDiagnostic {
-	if index < 0 || index >= len(lastBuildDiagnostics) {
-		return nil
+// BuildWithFileResolver builds with a dynamic callback-based file resolver
+func BuildWithFileResolver(projectPath string, printErrors bool, configFile string, resolver FileResolver) (*BridgeResult, error) {
+	config := BuildConfig{
+		ProjectPath:  projectPath,
+		PrintErrors:  printErrors,
+		ConfigFile:   configFile,
+		FileResolver: resolver,
 	}
 
-	diag := lastBuildDiagnostics[index]
-	return &BridgeDiagnostic{
-		Code:     diag.Code,
-		Category: diag.Category,
-		Message:  diag.Message,
-		File:     diag.File,
-		Line:     diag.Line,
-		Column:   diag.Column,
-		Length:   diag.Length,
-	}
-}
+	result := BuildWithConfig(config)
 
-// GetLastEmittedFile returns emitted file by index
-func GetLastEmittedFile(index int) string {
-	if index < 0 || index >= len(lastBuildEmittedFiles) {
-		return ""
+	// Convert diagnostics to bridge format
+	bridgeDiagnostics := make([]BridgeDiagnostic, len(result.Diagnostics))
+	for i, diag := range result.Diagnostics {
+		bridgeDiagnostics[i] = BridgeDiagnostic{
+			Code:     diag.Code,
+			Category: diag.Category,
+			Message:  diag.Message,
+			File:     diag.File,
+			Line:     diag.Line,
+			Column:   diag.Column,
+			Length:   diag.Length,
+		}
 	}
-	return lastBuildEmittedFiles[index]
+
+	bridgeResult := &BridgeResult{
+		Success:      result.Success,
+		ConfigFile:   result.ConfigFile,
+		Diagnostics:  bridgeDiagnostics,
+		EmittedFiles: result.EmittedFiles,
+		WrittenFiles: result.WrittenFiles,
+	}
+
+	return bridgeResult, nil
 }
