@@ -35,7 +35,7 @@ public struct InMemoryBuildResult: Sendable {
     }
 }
 
-public enum FileResolver {
+public enum FileResolver: Sendable {
     case file(String)
     case directory
 }

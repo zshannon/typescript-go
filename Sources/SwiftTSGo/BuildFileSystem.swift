@@ -2,7 +2,7 @@ import Foundation
 import TSGoBindings
 
 // Configuration options for TypeScript compilation
-public struct FileSystemBuildConfig {
+public struct FileSystemBuildConfig: Sendable {
     public let projectPath: String
     public let printErrors: Bool
     public let configFile: String?
@@ -15,7 +15,7 @@ public struct FileSystemBuildConfig {
 }
 
 // Result of a TypeScript compilation
-public struct FileSystemBuildResult {
+public struct FileSystemBuildResult: Sendable {
     public let success: Bool
     public let diagnostics: [DiagnosticInfo]
     public let emittedFiles: [String]
