@@ -141,6 +141,165 @@ extern int esbuild_platform_neutral();
 extern c_int_array* esbuild_get_all_platform_values();
 extern void esbuild_free_int_array(c_int_array* arr);
 
+// Format enum functions
+//
+extern int esbuild_format_default();
+extern int esbuild_format_iife();
+extern int esbuild_format_commonjs();
+extern int esbuild_format_esmodule();
+extern c_int_array* esbuild_get_all_format_values();
+
+// Target enum functions
+//
+extern int esbuild_target_default();
+extern int esbuild_target_esnext();
+extern int esbuild_target_es5();
+extern int esbuild_target_es2015();
+extern int esbuild_target_es2016();
+extern int esbuild_target_es2017();
+extern int esbuild_target_es2018();
+extern int esbuild_target_es2019();
+extern int esbuild_target_es2020();
+extern int esbuild_target_es2021();
+extern int esbuild_target_es2022();
+extern int esbuild_target_es2023();
+extern int esbuild_target_es2024();
+extern c_int_array* esbuild_get_all_target_values();
+
+// Loader enum functions
+//
+extern int esbuild_loader_none();
+extern int esbuild_loader_base64();
+extern int esbuild_loader_binary();
+extern int esbuild_loader_copy();
+extern int esbuild_loader_css();
+extern int esbuild_loader_dataurl();
+extern int esbuild_loader_default();
+extern int esbuild_loader_empty();
+extern int esbuild_loader_file();
+extern int esbuild_loader_globalcss();
+extern int esbuild_loader_js();
+extern int esbuild_loader_json();
+extern int esbuild_loader_jsx();
+extern int esbuild_loader_localcss();
+extern int esbuild_loader_text();
+extern int esbuild_loader_ts();
+extern int esbuild_loader_tsx();
+extern c_int_array* esbuild_get_all_loader_values();
+
+// SourceMap enum functions
+//
+extern int esbuild_sourcemap_none();
+extern int esbuild_sourcemap_inline();
+extern int esbuild_sourcemap_linked();
+extern int esbuild_sourcemap_external();
+extern int esbuild_sourcemap_inlineandexternal();
+extern c_int_array* esbuild_get_all_sourcemap_values();
+
+// JSX enum functions
+//
+extern int esbuild_jsx_transform();
+extern int esbuild_jsx_preserve();
+extern int esbuild_jsx_automatic();
+extern c_int_array* esbuild_get_all_jsx_values();
+
+// LogLevel enum functions
+//
+extern int esbuild_loglevel_silent();
+extern int esbuild_loglevel_verbose();
+extern int esbuild_loglevel_debug();
+extern int esbuild_loglevel_info();
+extern int esbuild_loglevel_warning();
+extern int esbuild_loglevel_error();
+extern c_int_array* esbuild_get_all_loglevel_values();
+
+// LegalComments enum functions
+//
+extern int esbuild_legalcomments_default();
+extern int esbuild_legalcomments_none();
+extern int esbuild_legalcomments_inline();
+extern int esbuild_legalcomments_endoffile();
+extern int esbuild_legalcomments_linked();
+extern int esbuild_legalcomments_external();
+extern c_int_array* esbuild_get_all_legalcomments_values();
+
+// Charset enum functions
+//
+extern int esbuild_charset_default();
+extern int esbuild_charset_ascii();
+extern int esbuild_charset_utf8();
+extern c_int_array* esbuild_get_all_charset_values();
+
+// TreeShaking enum functions
+//
+extern int esbuild_treeshaking_default();
+extern int esbuild_treeshaking_false();
+extern int esbuild_treeshaking_true();
+extern c_int_array* esbuild_get_all_treeshaking_values();
+
+// StderrColor enum functions
+//
+extern int esbuild_color_ifterminal();
+extern int esbuild_color_never();
+extern int esbuild_color_always();
+extern c_int_array* esbuild_get_all_color_values();
+
+// Remaining enums - continuing the pattern for the rest
+//
+extern int esbuild_packages_default();
+extern int esbuild_packages_bundle();
+extern int esbuild_packages_external();
+extern c_int_array* esbuild_get_all_packages_values();
+extern int esbuild_sourcescontent_include();
+extern int esbuild_sourcescontent_exclude();
+extern c_int_array* esbuild_get_all_sourcescontent_values();
+extern int esbuild_manglequoted_false();
+extern int esbuild_manglequoted_true();
+extern c_int_array* esbuild_get_all_manglequoted_values();
+extern int esbuild_drop_console();
+extern int esbuild_drop_debugger();
+extern c_int_array* esbuild_get_all_drop_values();
+
+// EngineName enum functions
+//
+extern int esbuild_engine_chrome();
+extern int esbuild_engine_deno();
+extern int esbuild_engine_edge();
+extern int esbuild_engine_firefox();
+extern int esbuild_engine_hermes();
+extern int esbuild_engine_ie();
+extern int esbuild_engine_ios();
+extern int esbuild_engine_node();
+extern int esbuild_engine_opera();
+extern int esbuild_engine_rhino();
+extern int esbuild_engine_safari();
+extern c_int_array* esbuild_get_all_engine_values();
+
+// SideEffects enum functions
+//
+extern int esbuild_sideeffects_true();
+extern int esbuild_sideeffects_false();
+extern c_int_array* esbuild_get_all_sideeffects_values();
+
+// ResolveKind enum functions
+//
+extern int esbuild_resolvekind_none();
+extern int esbuild_resolvekind_entrypoint();
+extern int esbuild_resolvekind_jsimportstatement();
+extern int esbuild_resolvekind_jsrequirecall();
+extern int esbuild_resolvekind_jsdynamicimport();
+extern int esbuild_resolvekind_jsrequireresolve();
+extern int esbuild_resolvekind_cssimportrule();
+extern int esbuild_resolvekind_csscomposesfrom();
+extern int esbuild_resolvekind_cssurltoken();
+extern c_int_array* esbuild_get_all_resolvekind_values();
+
+// MessageKind enum functions
+//
+extern int esbuild_messagekind_error();
+extern int esbuild_messagekind_warning();
+extern c_int_array* esbuild_get_all_messagekind_values();
+
 #ifdef __cplusplus
 }
 #endif

@@ -24,7 +24,7 @@ struct BuildFileSystemTests {
         // Verify output file exists
         let outputFile = testProjectPath + "/dist/hello.js"
         #expect(FileManager.default.fileExists(atPath: outputFile))
-        let outputContents = try String(contentsOfFile: outputFile)
+        let outputContents = try String(contentsOfFile: outputFile, encoding: .utf8)
         #expect(outputContents.contains("console.log(message)"))
     }
 
@@ -108,7 +108,7 @@ struct BuildFileSystemTests {
 
         // Modify tsconfig to enable emission
         let tsconfigPath = tempProjectDir.appendingPathComponent("tsconfig.json")
-        let tsconfigContent = try String(contentsOf: tsconfigPath)
+        let tsconfigContent = try String(contentsOf: tsconfigPath, encoding: .utf8)
 
         // Simple JSON string replacement to add noEmit: false
         let modifiedContent = tsconfigContent.replacingOccurrences(

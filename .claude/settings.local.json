@@ -15,7 +15,11 @@
       "Bash(cp:*)",
       "Bash(make:*)",
       "Bash(mkdir:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(ls:*)",
+      "Bash(nm:*)",
+      "Bash(go tool cgo:*)",
+      "Bash(swift package:*)"
     ],
     "deny": []
   }
