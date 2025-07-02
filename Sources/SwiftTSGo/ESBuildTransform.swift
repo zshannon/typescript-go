@@ -364,3 +364,382 @@ public extension ESBuildTransformOptions {
         )
     }
 }
+
+// MARK: - Transform Result Types
+
+/// Location information for ESBuild messages
+public struct ESBuildLocation: Sendable {
+    /// File path where the message occurred
+    public let file: String
+    
+    /// Namespace for the file
+    public let namespace: String
+    
+    /// Line number (1-based)
+    public let line: Int
+    
+    /// Column number (0-based, in bytes)
+    public let column: Int
+    
+    /// Length of the relevant text (in bytes)
+    public let length: Int
+    
+    /// The text of the line containing the error
+    public let lineText: String
+    
+    /// Suggested replacement text
+    public let suggestion: String
+    
+    public init(
+        file: String,
+        namespace: String,
+        line: Int,
+        column: Int,
+        length: Int,
+        lineText: String,
+        suggestion: String
+    ) {
+        self.file = file
+        self.namespace = namespace
+        self.line = line
+        self.column = column
+        self.length = length
+        self.lineText = lineText
+        self.suggestion = suggestion
+    }
+    
+    /// Convert to C bridge representation
+    public var cValue: UnsafeMutablePointer<c_location> {
+        let location = esbuild_create_location()!
+        
+        location.pointee.file = strdup(file)
+        location.pointee.namespace = strdup(namespace)
+        location.pointee.line = Int32(line)
+        location.pointee.column = Int32(column)
+        location.pointee.length = Int32(length)
+        location.pointee.line_text = strdup(lineText)
+        location.pointee.suggestion = strdup(suggestion)
+        
+        return location
+    }
+    
+    /// Initialize from C bridge value
+    public static func from(cValue: UnsafePointer<c_location>) -> ESBuildLocation {
+        return ESBuildLocation(
+            file: String(cString: cValue.pointee.file),
+            namespace: String(cString: cValue.pointee.namespace),
+            line: Int(cValue.pointee.line),
+            column: Int(cValue.pointee.column),
+            length: Int(cValue.pointee.length),
+            lineText: String(cString: cValue.pointee.line_text),
+            suggestion: String(cString: cValue.pointee.suggestion)
+        )
+    }
+}
+
+/// Note with additional information for ESBuild messages
+public struct ESBuildNote: Sendable {
+    /// Note text
+    public let text: String
+    
+    /// Optional location where the note applies
+    public let location: ESBuildLocation?
+    
+    public init(text: String, location: ESBuildLocation? = nil) {
+        self.text = text
+        self.location = location
+    }
+    
+    /// Convert to C bridge representation
+    public var cValue: UnsafeMutablePointer<c_note> {
+        let note = esbuild_create_note()!
+        
+        note.pointee.text = strdup(text)
+        if let location = location {
+            note.pointee.location = location.cValue
+        } else {
+            note.pointee.location = nil
+        }
+        
+        return note
+    }
+    
+    /// Initialize from C bridge value
+    public static func from(cValue: UnsafePointer<c_note>) -> ESBuildNote {
+        let location: ESBuildLocation?
+        if let locPtr = cValue.pointee.location {
+            location = ESBuildLocation.from(cValue: locPtr)
+        } else {
+            location = nil
+        }
+        
+        return ESBuildNote(
+            text: String(cString: cValue.pointee.text),
+            location: location
+        )
+    }
+}
+
+/// ESBuild diagnostic message (error or warning)
+public struct ESBuildMessage: Sendable {
+    /// Message identifier
+    public let id: String
+    
+    /// Name of the plugin that generated this message
+    public let pluginName: String
+    
+    /// Message text
+    public let text: String
+    
+    /// Optional location where the message occurred
+    public let location: ESBuildLocation?
+    
+    /// Additional notes with more information
+    public let notes: [ESBuildNote]
+    
+    public init(
+        id: String,
+        pluginName: String,
+        text: String,
+        location: ESBuildLocation? = nil,
+        notes: [ESBuildNote] = []
+    ) {
+        self.id = id
+        self.pluginName = pluginName
+        self.text = text
+        self.location = location
+        self.notes = notes
+    }
+    
+    /// Convert to C bridge representation
+    public var cValue: UnsafeMutablePointer<c_message> {
+        let message = esbuild_create_message()!
+        
+        message.pointee.id = strdup(id)
+        message.pointee.plugin_name = strdup(pluginName)
+        message.pointee.text = strdup(text)
+        message.pointee.location = nil
+        message.pointee.notes = nil
+        message.pointee.notes_count = 0
+        
+        // Only add location if it exists
+        if let location = location {
+            message.pointee.location = location.cValue
+        }
+        
+        // Simplified notes handling - no nested allocation for now
+        // Notes will be handled by the Go side implementation
+        
+        return message
+    }
+    
+    /// Initialize from C bridge value
+    public static func from(cValue: UnsafePointer<c_message>) -> ESBuildMessage {
+        let location: ESBuildLocation?
+        if let locPtr = cValue.pointee.location {
+            location = ESBuildLocation.from(cValue: locPtr)
+        } else {
+            location = nil
+        }
+        
+        var notes: [ESBuildNote] = []
+        if let notesPtr = cValue.pointee.notes, cValue.pointee.notes_count > 0 {
+            for i in 0..<Int(cValue.pointee.notes_count) {
+                let notePtr = notesPtr.advanced(by: i)
+                notes.append(ESBuildNote.from(cValue: notePtr))
+            }
+        }
+        
+        return ESBuildMessage(
+            id: String(cString: cValue.pointee.id),
+            pluginName: String(cString: cValue.pointee.plugin_name),
+            text: String(cString: cValue.pointee.text),
+            location: location,
+            notes: notes
+        )
+    }
+}
+
+/// Result of an ESBuild transform operation
+public struct ESBuildTransformResult: Sendable {
+    /// Error messages from the transform
+    public let errors: [ESBuildMessage]
+    
+    /// Warning messages from the transform
+    public let warnings: [ESBuildMessage]
+    
+    /// Transformed code output
+    public let code: Data
+    
+    /// Source map data (if generated)
+    public let map: Data?
+    
+    /// Legal comments extracted from the code
+    public let legalComments: Data?
+    
+    /// Mangle cache for consistent property renaming
+    public let mangleCache: [String: String]
+    
+    public init(
+        errors: [ESBuildMessage] = [],
+        warnings: [ESBuildMessage] = [],
+        code: Data,
+        map: Data? = nil,
+        legalComments: Data? = nil,
+        mangleCache: [String: String] = [:]
+    ) {
+        self.errors = errors
+        self.warnings = warnings
+        self.code = code
+        self.map = map
+        self.legalComments = legalComments
+        self.mangleCache = mangleCache
+    }
+    
+    /// Convert to C bridge representation  
+    public var cValue: UnsafeMutablePointer<c_transform_result> {
+        let result = esbuild_create_transform_result()!
+        
+        // Simplified approach - let Go side handle complex nested structures
+        result.pointee.errors = nil
+        result.pointee.errors_count = 0
+        result.pointee.warnings = nil
+        result.pointee.warnings_count = 0
+        
+        // Convert code
+        let codeString = String(data: code, encoding: .utf8) ?? ""
+        result.pointee.code = strdup(codeString)
+        result.pointee.code_length = Int32(code.count)
+        
+        // Convert map
+        if let map = map {
+            let mapString = String(data: map, encoding: .utf8) ?? ""
+            result.pointee.source_map = strdup(mapString)
+            result.pointee.source_map_length = Int32(map.count)
+        } else {
+            result.pointee.source_map = nil
+            result.pointee.source_map_length = 0
+        }
+        
+        // Convert legal comments
+        if let legalComments = legalComments {
+            let commentsString = String(data: legalComments, encoding: .utf8) ?? ""
+            result.pointee.legal_comments = strdup(commentsString)
+            result.pointee.legal_comments_length = Int32(legalComments.count)
+        } else {
+            result.pointee.legal_comments = nil
+            result.pointee.legal_comments_length = 0
+        }
+        
+        // Convert mangle cache
+        if !mangleCache.isEmpty {
+            result.pointee.mangle_cache_keys = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>.allocate(capacity: mangleCache.count)
+            result.pointee.mangle_cache_values = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>.allocate(capacity: mangleCache.count)
+            result.pointee.mangle_cache_count = Int32(mangleCache.count)
+            
+            for (index, (key, value)) in mangleCache.enumerated() {
+                result.pointee.mangle_cache_keys[index] = strdup(key)
+                result.pointee.mangle_cache_values[index] = strdup(value)
+            }
+        } else {
+            result.pointee.mangle_cache_keys = nil
+            result.pointee.mangle_cache_values = nil
+            result.pointee.mangle_cache_count = 0
+        }
+        
+        return result
+    }
+    
+    /// Initialize from C bridge value
+    public static func from(cValue: UnsafePointer<c_transform_result>) -> ESBuildTransformResult {
+        var errors: [ESBuildMessage] = []
+        if let errorsPtr = cValue.pointee.errors, cValue.pointee.errors_count > 0 {
+            for i in 0..<Int(cValue.pointee.errors_count) {
+                let errorPtr = errorsPtr.advanced(by: i)
+                errors.append(ESBuildMessage.from(cValue: errorPtr))
+            }
+        }
+        
+        var warnings: [ESBuildMessage] = []
+        if let warningsPtr = cValue.pointee.warnings, cValue.pointee.warnings_count > 0 {
+            for i in 0..<Int(cValue.pointee.warnings_count) {
+                let warningPtr = warningsPtr.advanced(by: i)
+                warnings.append(ESBuildMessage.from(cValue: warningPtr))
+            }
+        }
+        
+        let code: Data
+        if let codePtr = cValue.pointee.code {
+            code = Data(String(cString: codePtr).utf8)
+        } else {
+            code = Data()
+        }
+        
+        let map: Data?
+        if let mapPtr = cValue.pointee.source_map, cValue.pointee.source_map_length > 0 {
+            map = Data(String(cString: mapPtr).utf8)
+        } else {
+            map = nil
+        }
+        
+        let legalComments: Data?
+        if let commentsPtr = cValue.pointee.legal_comments, cValue.pointee.legal_comments_length > 0 {
+            legalComments = Data(String(cString: commentsPtr).utf8)
+        } else {
+            legalComments = nil
+        }
+        
+        var mangleCache: [String: String] = [:]
+        if let keysPtr = cValue.pointee.mangle_cache_keys,
+           let valuesPtr = cValue.pointee.mangle_cache_values,
+           cValue.pointee.mangle_cache_count > 0 {
+            let keysBuffer = UnsafeBufferPointer(start: keysPtr, count: Int(cValue.pointee.mangle_cache_count))
+            let valuesBuffer = UnsafeBufferPointer(start: valuesPtr, count: Int(cValue.pointee.mangle_cache_count))
+            
+            for (keyPtr, valuePtr) in zip(keysBuffer, valuesBuffer) {
+                if let keyPtr = keyPtr, let valuePtr = valuePtr {
+                    let key = String(cString: keyPtr)
+                    let value = String(cString: valuePtr)
+                    mangleCache[key] = value
+                }
+            }
+        }
+        
+        return ESBuildTransformResult(
+            errors: errors,
+            warnings: warnings,
+            code: code,
+            map: map,
+            legalComments: legalComments,
+            mangleCache: mangleCache
+        )
+    }
+}
+
+// MARK: - Transform Function
+
+/// Transform source code using ESBuild
+/// - Parameters:
+///   - code: Source code to transform
+///   - options: Transform options
+/// - Returns: Transform result containing transformed code and metadata
+public func esbuildTransform(code: String, options: ESBuildTransformOptions = ESBuildTransformOptions()) -> ESBuildTransformResult? {
+    let cOptions = options.cValue
+    defer { esbuild_free_transform_options(cOptions) }
+    
+    let cResult = code.withCString { cCode in
+        return esbuild_transform(UnsafeMutablePointer(mutating: cCode), cOptions)
+    }
+    
+    defer { 
+        if let result = cResult {
+            esbuild_free_transform_result(result)
+        }
+    }
+    
+    guard let result = cResult else {
+        return nil
+    }
+    
+    return ESBuildTransformResult.from(cValue: result)
+}

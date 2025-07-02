@@ -82,6 +82,48 @@ typedef struct {
 	char* sourcefile;            // string
 	int loader;                  // Loader enum
 } c_transform_options;
+
+typedef struct {
+	char* file;                  // string
+	char* namespace;             // string
+	int line;                    // int (1-based)
+	int column;                  // int (0-based, in bytes)
+	int length;                  // int (in bytes)
+	char* line_text;             // string
+	char* suggestion;            // string
+} c_location;
+
+typedef struct {
+	char* text;                  // string
+	c_location* location;        // optional location
+} c_note;
+
+typedef struct {
+	char* id;                    // string
+	char* plugin_name;           // string
+	char* text;                  // string
+	c_location* location;        // optional location
+	c_note* notes;               // array of notes
+	int notes_count;             // count of notes
+} c_message;
+
+typedef struct {
+	c_message* errors;           // array of error messages
+	int errors_count;            // count of errors
+	c_message* warnings;         // array of warning messages
+	int warnings_count;          // count of warnings
+	
+	char* code;                  // transformed code as string
+	int code_length;             // length of code
+	char* source_map;            // source map as string (optional)
+	int source_map_length;       // length of map (0 if no map)
+	char* legal_comments;        // legal comments as string (optional)
+	int legal_comments_length;   // length of legal comments (0 if none)
+	
+	char** mangle_cache_keys;    // keys for mangle cache
+	char** mangle_cache_values;  // values for mangle cache
+	int mangle_cache_count;      // count of mangle cache entries
+} c_transform_result;
 */
 import "C"
 
@@ -939,4 +981,377 @@ func esbuild_free_transform_options(opts *C.c_transform_options) {
 	// ... similar pattern for all array fields
 	
 	C.free(unsafe.Pointer(opts))
+}
+
+// TransformResult C bridge functions
+
+//export esbuild_create_transform_result
+func esbuild_create_transform_result() *C.c_transform_result {
+	return (*C.c_transform_result)(C.malloc(C.sizeof_c_transform_result))
+}
+
+//export esbuild_create_location
+func esbuild_create_location() *C.c_location {
+	return (*C.c_location)(C.malloc(C.sizeof_c_location))
+}
+
+//export esbuild_create_note
+func esbuild_create_note() *C.c_note {
+	return (*C.c_note)(C.malloc(C.sizeof_c_note))
+}
+
+//export esbuild_create_message
+func esbuild_create_message() *C.c_message {
+	return (*C.c_message)(C.malloc(C.sizeof_c_message))
+}
+
+//export esbuild_free_location
+func esbuild_free_location(loc *C.c_location) {
+	if loc == nil {
+		return
+	}
+	
+	if loc.file != nil {
+		C.free(unsafe.Pointer(loc.file))
+	}
+	if loc.namespace != nil {
+		C.free(unsafe.Pointer(loc.namespace))
+	}
+	if loc.line_text != nil {
+		C.free(unsafe.Pointer(loc.line_text))
+	}
+	if loc.suggestion != nil {
+		C.free(unsafe.Pointer(loc.suggestion))
+	}
+	
+	C.free(unsafe.Pointer(loc))
+}
+
+// Internal function to free note contents without freeing the struct itself
+func esbuild_free_note_contents(note *C.c_note) {
+	if note == nil {
+		return
+	}
+	
+	if note.text != nil {
+		C.free(unsafe.Pointer(note.text))
+	}
+	if note.location != nil {
+		esbuild_free_location(note.location)
+	}
+}
+
+//export esbuild_free_note
+func esbuild_free_note(note *C.c_note) {
+	if note == nil {
+		return
+	}
+	
+	esbuild_free_note_contents(note)
+	C.free(unsafe.Pointer(note))
+}
+
+// Internal function to free message contents without freeing the struct itself
+func esbuild_free_message_contents(msg *C.c_message) {
+	if msg == nil {
+		return
+	}
+	
+	if msg.id != nil {
+		C.free(unsafe.Pointer(msg.id))
+	}
+	if msg.plugin_name != nil {
+		C.free(unsafe.Pointer(msg.plugin_name))
+	}
+	if msg.text != nil {
+		C.free(unsafe.Pointer(msg.text))
+	}
+	if msg.location != nil {
+		esbuild_free_location(msg.location)
+	}
+	
+	// Free notes array
+	if msg.notes != nil {
+		noteSlice := (*[1 << 28]C.c_note)(unsafe.Pointer(msg.notes))[:msg.notes_count:msg.notes_count]
+		for i := 0; i < int(msg.notes_count); i++ {
+			// Free contents only, not the struct itself (it's part of the array)
+			esbuild_free_note_contents(&noteSlice[i])
+		}
+		C.free(unsafe.Pointer(msg.notes))
+	}
+}
+
+//export esbuild_free_message
+func esbuild_free_message(msg *C.c_message) {
+	if msg == nil {
+		return
+	}
+	
+	esbuild_free_message_contents(msg)
+	C.free(unsafe.Pointer(msg))
+}
+
+//export esbuild_free_transform_result
+func esbuild_free_transform_result(result *C.c_transform_result) {
+	if result == nil {
+		return
+	}
+	
+	// Free errors array
+	if result.errors != nil {
+		errorSlice := (*[1 << 28]C.c_message)(unsafe.Pointer(result.errors))[:result.errors_count:result.errors_count]
+		for i := 0; i < int(result.errors_count); i++ {
+			// Free contents only, not the struct itself (it's part of the array)
+			esbuild_free_message_contents(&errorSlice[i])
+		}
+		C.free(unsafe.Pointer(result.errors))
+	}
+	
+	// Free warnings array
+	if result.warnings != nil {
+		warningSlice := (*[1 << 28]C.c_message)(unsafe.Pointer(result.warnings))[:result.warnings_count:result.warnings_count]
+		for i := 0; i < int(result.warnings_count); i++ {
+			// Free contents only, not the struct itself (it's part of the array)
+			esbuild_free_message_contents(&warningSlice[i])
+		}
+		C.free(unsafe.Pointer(result.warnings))
+	}
+	
+	// Free string fields
+	if result.code != nil {
+		C.free(unsafe.Pointer(result.code))
+	}
+	if result.source_map != nil {
+		C.free(unsafe.Pointer(result.source_map))
+	}
+	if result.legal_comments != nil {
+		C.free(unsafe.Pointer(result.legal_comments))
+	}
+	
+	// Free mangle cache arrays
+	if result.mangle_cache_keys != nil {
+		keySlice := (*[1 << 28]*C.char)(unsafe.Pointer(result.mangle_cache_keys))[:result.mangle_cache_count:result.mangle_cache_count]
+		for i := 0; i < int(result.mangle_cache_count); i++ {
+			if keySlice[i] != nil {
+				C.free(unsafe.Pointer(keySlice[i]))
+			}
+		}
+		C.free(unsafe.Pointer(result.mangle_cache_keys))
+	}
+	if result.mangle_cache_values != nil {
+		valueSlice := (*[1 << 28]*C.char)(unsafe.Pointer(result.mangle_cache_values))[:result.mangle_cache_count:result.mangle_cache_count]
+		for i := 0; i < int(result.mangle_cache_count); i++ {
+			if valueSlice[i] != nil {
+				C.free(unsafe.Pointer(valueSlice[i]))
+			}
+		}
+		C.free(unsafe.Pointer(result.mangle_cache_values))
+	}
+	
+	C.free(unsafe.Pointer(result))
+}
+
+//export esbuild_transform
+func esbuild_transform(code *C.char, opts *C.c_transform_options) *C.c_transform_result {
+	if code == nil || opts == nil {
+		return nil
+	}
+	
+	// Convert C string to Go string
+	sourceCode := C.GoString(code)
+	
+	// Convert C options to Go options
+	transformOpts := api.TransformOptions{}
+	
+	// Basic settings
+	transformOpts.Color = api.StderrColor(opts.color)
+	transformOpts.LogLevel = api.LogLevel(opts.log_level)
+	transformOpts.LogLimit = int(opts.log_limit)
+	
+	// Source map
+	transformOpts.Sourcemap = api.SourceMap(opts.sourcemap)
+	if opts.source_root != nil {
+		sourceRoot := C.GoString(opts.source_root)
+		transformOpts.SourceRoot = sourceRoot
+	}
+	transformOpts.SourcesContent = api.SourcesContent(opts.sources_content)
+	
+	// Target and platform
+	transformOpts.Target = api.Target(opts.target)
+	transformOpts.Platform = api.Platform(opts.platform)
+	transformOpts.Format = api.Format(opts.format)
+	
+	if opts.global_name != nil {
+		globalName := C.GoString(opts.global_name)
+		transformOpts.GlobalName = globalName
+	}
+	
+	// Minification
+	if opts.mangle_props != nil {
+		mangleProps := C.GoString(opts.mangle_props)
+		transformOpts.MangleProps = mangleProps
+	}
+	if opts.reserve_props != nil {
+		reserveProps := C.GoString(opts.reserve_props)
+		transformOpts.ReserveProps = reserveProps
+	}
+	transformOpts.MangleQuoted = api.MangleQuoted(opts.mangle_quoted)
+	transformOpts.MinifyWhitespace = opts.minify_whitespace != 0
+	transformOpts.MinifyIdentifiers = opts.minify_identifiers != 0
+	transformOpts.MinifySyntax = opts.minify_syntax != 0
+	transformOpts.Charset = api.Charset(opts.charset)
+	transformOpts.TreeShaking = api.TreeShaking(opts.tree_shaking)
+	transformOpts.IgnoreAnnotations = opts.ignore_annotations != 0
+	transformOpts.LegalComments = api.LegalComments(opts.legal_comments)
+	
+	// JSX
+	transformOpts.JSX = api.JSX(opts.jsx)
+	if opts.jsx_factory != nil {
+		jsxFactory := C.GoString(opts.jsx_factory)
+		transformOpts.JSXFactory = jsxFactory
+	}
+	if opts.jsx_fragment != nil {
+		jsxFragment := C.GoString(opts.jsx_fragment)
+		transformOpts.JSXFragment = jsxFragment
+	}
+	if opts.jsx_import_source != nil {
+		jsxImportSource := C.GoString(opts.jsx_import_source)
+		transformOpts.JSXImportSource = jsxImportSource
+	}
+	transformOpts.JSXDev = opts.jsx_dev != 0
+	transformOpts.JSXSideEffects = opts.jsx_side_effects != 0
+	
+	// TypeScript
+	if opts.tsconfig_raw != nil {
+		tsconfigRaw := C.GoString(opts.tsconfig_raw)
+		transformOpts.TsconfigRaw = tsconfigRaw
+	}
+	
+	// Code injection
+	if opts.banner != nil {
+		banner := C.GoString(opts.banner)
+		transformOpts.Banner = banner
+	}
+	if opts.footer != nil {
+		footer := C.GoString(opts.footer)
+		transformOpts.Footer = footer
+	}
+	
+	// Input configuration
+	if opts.sourcefile != nil {
+		sourcefile := C.GoString(opts.sourcefile)
+		transformOpts.Sourcefile = sourcefile
+	}
+	transformOpts.Loader = api.Loader(opts.loader)
+	transformOpts.KeepNames = opts.keep_names != 0
+	
+	// Call esbuild transform
+	result := api.Transform(sourceCode, transformOpts)
+	
+	// Create C result
+	cResult := esbuild_create_transform_result()
+	if cResult == nil {
+		return nil
+	}
+	
+	// Convert code
+	if len(result.Code) > 0 {
+		cResult.code = C.CString(string(result.Code))
+		cResult.code_length = C.int(len(result.Code))
+	}
+	
+	// Convert source map
+	if len(result.Map) > 0 {
+		cResult.source_map = C.CString(string(result.Map))
+		cResult.source_map_length = C.int(len(result.Map))
+	}
+	
+	// Convert legal comments
+	if len(result.LegalComments) > 0 {
+		cResult.legal_comments = C.CString(string(result.LegalComments))
+		cResult.legal_comments_length = C.int(len(result.LegalComments))
+	}
+	
+	// Convert mangle cache
+	if len(result.MangleCache) > 0 {
+		cResult.mangle_cache_count = C.int(len(result.MangleCache))
+		cResult.mangle_cache_keys = (**C.char)(C.malloc(C.size_t(len(result.MangleCache)) * C.size_t(unsafe.Sizeof(uintptr(0)))))
+		cResult.mangle_cache_values = (**C.char)(C.malloc(C.size_t(len(result.MangleCache)) * C.size_t(unsafe.Sizeof(uintptr(0)))))
+		
+		keySlice := (*[1 << 28]*C.char)(unsafe.Pointer(cResult.mangle_cache_keys))[:len(result.MangleCache):len(result.MangleCache)]
+		valueSlice := (*[1 << 28]*C.char)(unsafe.Pointer(cResult.mangle_cache_values))[:len(result.MangleCache):len(result.MangleCache)]
+		
+		i := 0
+		for key, value := range result.MangleCache {
+			keySlice[i] = C.CString(key)
+			valueSlice[i] = C.CString(value.(string))
+			i++
+		}
+	}
+	
+	// Convert errors with proper memory management
+	if len(result.Errors) > 0 {
+		cResult.errors = (*C.c_message)(C.malloc(C.size_t(len(result.Errors)) * C.size_t(unsafe.Sizeof(C.c_message{}))))
+		cResult.errors_count = C.int(len(result.Errors))
+		
+		errorsSlice := (*[1 << 20]C.c_message)(unsafe.Pointer(cResult.errors))[:len(result.Errors):len(result.Errors)]
+		for i, err := range result.Errors {
+			errorsSlice[i].id = C.CString(err.ID)
+			errorsSlice[i].plugin_name = C.CString(err.PluginName)
+			errorsSlice[i].text = C.CString(err.Text)
+			errorsSlice[i].location = nil
+			errorsSlice[i].notes = nil
+			errorsSlice[i].notes_count = 0
+			
+			// Add location if available
+			if err.Location != nil {
+				loc := (*C.c_location)(C.malloc(C.size_t(unsafe.Sizeof(C.c_location{}))))
+				loc.file = C.CString(err.Location.File)
+				loc.namespace = C.CString(err.Location.Namespace)
+				loc.line = C.int(err.Location.Line)
+				loc.column = C.int(err.Location.Column)
+				loc.length = C.int(err.Location.Length)
+				loc.line_text = C.CString(err.Location.LineText)
+				loc.suggestion = C.CString(err.Location.Suggestion)
+				errorsSlice[i].location = loc
+			}
+		}
+	} else {
+		cResult.errors = nil
+		cResult.errors_count = 0
+	}
+	
+	// Convert warnings with proper memory management
+	if len(result.Warnings) > 0 {
+		cResult.warnings = (*C.c_message)(C.malloc(C.size_t(len(result.Warnings)) * C.size_t(unsafe.Sizeof(C.c_message{}))))
+		cResult.warnings_count = C.int(len(result.Warnings))
+		
+		warningsSlice := (*[1 << 20]C.c_message)(unsafe.Pointer(cResult.warnings))[:len(result.Warnings):len(result.Warnings)]
+		for i, warn := range result.Warnings {
+			warningsSlice[i].id = C.CString(warn.ID)
+			warningsSlice[i].plugin_name = C.CString(warn.PluginName)
+			warningsSlice[i].text = C.CString(warn.Text)
+			warningsSlice[i].location = nil
+			warningsSlice[i].notes = nil
+			warningsSlice[i].notes_count = 0
+			
+			// Add location if available
+			if warn.Location != nil {
+				loc := (*C.c_location)(C.malloc(C.size_t(unsafe.Sizeof(C.c_location{}))))
+				loc.file = C.CString(warn.Location.File)
+				loc.namespace = C.CString(warn.Location.Namespace)
+				loc.line = C.int(warn.Location.Line)
+				loc.column = C.int(warn.Location.Column)
+				loc.length = C.int(warn.Location.Length)
+				loc.line_text = C.CString(warn.Location.LineText)
+				loc.suggestion = C.CString(warn.Location.Suggestion)
+				warningsSlice[i].location = loc
+			}
+		}
+	} else {
+		cResult.warnings = nil
+		cResult.warnings_count = 0
+	}
+	
+	return cResult
 }

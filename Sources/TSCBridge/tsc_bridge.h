@@ -144,6 +144,48 @@ typedef struct {
 	int loader;                  // Loader enum
 } c_transform_options;
 
+typedef struct {
+	char* file;                  // string
+	char* namespace;             // string
+	int line;                    // int (1-based)
+	int column;                  // int (0-based, in bytes)
+	int length;                  // int (in bytes)
+	char* line_text;             // string
+	char* suggestion;            // string
+} c_location;
+
+typedef struct {
+	char* text;                  // string
+	c_location* location;        // optional location
+} c_note;
+
+typedef struct {
+	char* id;                    // string
+	char* plugin_name;           // string
+	char* text;                  // string
+	c_location* location;        // optional location
+	c_note* notes;               // array of notes
+	int notes_count;             // count of notes
+} c_message;
+
+typedef struct {
+	c_message* errors;           // array of error messages
+	int errors_count;            // count of errors
+	c_message* warnings;         // array of warning messages
+	int warnings_count;          // count of warnings
+	
+	char* code;                  // transformed code as string
+	int code_length;             // length of code
+	char* source_map;            // source map as string (optional)
+	int source_map_length;       // length of map (0 if no map)
+	char* legal_comments;        // legal comments as string (optional)
+	int legal_comments_length;   // length of legal comments (0 if none)
+	
+	char** mangle_cache_keys;    // keys for mangle cache
+	char** mangle_cache_values;  // values for mangle cache
+	int mangle_cache_count;      // count of mangle cache entries
+} c_transform_result;
+
 #line 1 "cgo-generated-wrapper"
 
 
@@ -376,6 +418,15 @@ extern int esbuild_messagekind_warning();
 extern c_int_array* esbuild_get_all_messagekind_values();
 extern c_transform_options* esbuild_create_transform_options();
 extern void esbuild_free_transform_options(c_transform_options* opts);
+extern c_transform_result* esbuild_create_transform_result();
+extern c_location* esbuild_create_location();
+extern c_note* esbuild_create_note();
+extern c_message* esbuild_create_message();
+extern void esbuild_free_location(c_location* loc);
+extern void esbuild_free_note(c_note* note);
+extern void esbuild_free_message(c_message* msg);
+extern void esbuild_free_transform_result(c_transform_result* result);
+extern c_transform_result* esbuild_transform(char* code, c_transform_options* opts);
 
 #ifdef __cplusplus
 }

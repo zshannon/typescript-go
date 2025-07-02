@@ -20,7 +20,13 @@
       "Bash(nm:*)",
       "Bash(go tool cgo:*)",
       "Bash(swift package:*)",
-      "Bash(rg:*)"
+      "Bash(rg:*)",
+      "Bash(go doc:*)",
+      "Bash(timeout 30s swift test:*)",
+      "Bash(ar:*)",
+      "Bash(swift run:*)",
+      "Bash(swift build)",
+      "Bash(swiftc:*)"
     ],
     "deny": []
   }
