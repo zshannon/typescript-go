@@ -27,9 +27,9 @@ build-bridge:
 	@echo "$(YELLOW)Cleaning previous builds...$(NC)"
 	@rm -f $(OUTPUT_DIR)/*.a $(OUTPUT_DIR)/*.h $(BRIDGE_DIR)/*.a $(BRIDGE_DIR)/*.h
 	@echo "$(YELLOW)Building for macOS x86_64...$(NC)"
-	@cd $(BRIDGE_DIR) && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -buildmode=c-archive -ldflags="-w -s -extldflags=-Wl,-weak_reference_mismatches,weak" -o libtsc_darwin_amd64.a .
+	@cd $(BRIDGE_DIR) && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -buildmode=c-archive -o libtsc_darwin_amd64.a .
 	@echo "$(YELLOW)Building for macOS arm64...$(NC)"
-	@cd $(BRIDGE_DIR) && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -buildmode=c-archive -ldflags="-w -s -extldflags=-Wl,-weak_reference_mismatches,weak" -o libtsc_darwin_arm64.a .
+	@cd $(BRIDGE_DIR) && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -buildmode=c-archive -o libtsc_darwin_arm64.a .
 	@echo "$(YELLOW)Creating universal binary...$(NC)"
 	@cd $(BRIDGE_DIR) && lipo -create libtsc_darwin_amd64.a libtsc_darwin_arm64.a -output libtsc_universal.a
 	@echo "$(YELLOW)Creating XCFramework...$(NC)"
