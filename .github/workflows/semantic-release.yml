@@ -14,6 +14,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Configure SDK paths for cgo
+        run: |
+          # Set up SDK paths for cgo compilation
+          export SDKROOT=$(xcrun --show-sdk-path)
+          echo "SDKROOT=$SDKROOT" >> $GITHUB_ENV
+
+          # Ensure developer tools path is set correctly
+          sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+
+          # Verify SDK and tools are available
+          echo "SDK Path: $(xcrun --show-sdk-path)"
+          echo "Developer Dir: $(xcode-select -p)"
+          echo "Available SDKs:"
+          xcodebuild -showsdks
+
+          # Test basic compilation
+          echo '#include <stdlib.h>' | clang -x c -c - -o /dev/null || echo "Warning: stdlib.h test failed"
+
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
