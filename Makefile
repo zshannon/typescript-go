@@ -30,25 +30,22 @@ build-bridge:
 	@cd $(BRIDGE_DIR) && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -buildmode=c-archive -o libtsc_darwin_amd64.a .
 	@echo "$(YELLOW)Building for macOS arm64...$(NC)"
 	@cd $(BRIDGE_DIR) && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -buildmode=c-archive -o libtsc_darwin_arm64.a .
-	@echo "$(YELLOW)Building for iOS arm64...$(NC)"
-	@cd $(BRIDGE_DIR) && CGO_ENABLED=1 GOOS=ios GOARCH=arm64 go build -buildmode=c-archive -o libtsc_ios_arm64.a .
-	@echo "$(YELLOW)Building for iOS Simulator x86_64...$(NC)"
-	@cd $(BRIDGE_DIR) && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -buildmode=c-archive -tags ios -o libtsc_ios_sim_amd64.a .
-	@echo "$(YELLOW)Building for iOS Simulator arm64...$(NC)"
-	@cd $(BRIDGE_DIR) && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -buildmode=c-archive -tags ios -o libtsc_ios_sim_arm64.a .
-	@echo "$(YELLOW)Creating universal binary for macOS...$(NC)"
-	@cd $(BRIDGE_DIR) && lipo -create libtsc_darwin_amd64.a libtsc_darwin_arm64.a -output libtsc_macos.a
-	@echo "$(YELLOW)Creating universal binary for iOS Simulator...$(NC)"
-	@cd $(BRIDGE_DIR) && lipo -create libtsc_ios_sim_amd64.a libtsc_ios_sim_arm64.a -output libtsc_ios_simulator.a
+	@echo "$(YELLOW)Creating universal binary...$(NC)"
+	@cd $(BRIDGE_DIR) && lipo -create libtsc_darwin_amd64.a libtsc_darwin_arm64.a -output libtsc_universal.a
+	@echo "$(YELLOW)Creating XCFramework...$(NC)"
+	@cd $(BRIDGE_DIR) && rm -rf TSCBridge.xcframework
+	@cd $(BRIDGE_DIR) && mkdir -p headers && cp libtsc_darwin_amd64.h headers/tsc_bridge.h
+	@cd $(BRIDGE_DIR) && xcodebuild -create-xcframework \
+		-library libtsc_universal.a -headers headers \
+		-output TSCBridge.xcframework
 	@echo "$(YELLOW)Copying files to output directory...$(NC)"
-	@cp $(BRIDGE_DIR)/libtsc_macos.a $(OUTPUT_DIR)/
-	@cp $(BRIDGE_DIR)/libtsc_ios_arm64.a $(OUTPUT_DIR)/
-	@cp $(BRIDGE_DIR)/libtsc_ios_simulator.a $(OUTPUT_DIR)/
+	@cp -r $(BRIDGE_DIR)/TSCBridge.xcframework $(OUTPUT_DIR)/
 	@cp $(BRIDGE_DIR)/libtsc_darwin_amd64.h $(OUTPUT_DIR)/tsc_bridge.h
 	@echo "$(YELLOW)Creating module map...$(NC)"
 	@echo 'module TSCBridge {\n    header "tsc_bridge.h"\n    export *\n}' > $(OUTPUT_DIR)/module.modulemap
 	@echo "$(YELLOW)Cleaning up intermediate files...$(NC)"
-	@cd $(BRIDGE_DIR) && rm -f libtsc_darwin_*.a libtsc_ios_*.a *.h
+	@cd $(BRIDGE_DIR) && rm -f libtsc_*.a *.h
+	@cd $(BRIDGE_DIR) && rm -rf TSCBridge.xcframework headers
 	@echo "$(GREEN)C Bridge build completed successfully!$(NC)"
 	@$(MAKE) verify-bridge
 
@@ -57,20 +54,20 @@ build-bridge-macos:
 	@echo "$(GREEN)Building TypeScript Go C Bridge for macOS only...$(NC)"
 	@mkdir -p $(OUTPUT_DIR)
 	@echo "$(YELLOW)Cleaning previous builds...$(NC)"
-	@rm -f $(OUTPUT_DIR)/libtsc_macos.a $(OUTPUT_DIR)/tsc_bridge.h $(BRIDGE_DIR)/libtsc_*.a $(BRIDGE_DIR)/*.h
+	@rm -f $(OUTPUT_DIR)/TSCBridge.xcframework $(OUTPUT_DIR)/tsc_bridge.h $(BRIDGE_DIR)/libtsc_*.a $(BRIDGE_DIR)/*.h
 	@echo "$(YELLOW)Building for macOS x86_64...$(NC)"
 	@cd $(BRIDGE_DIR) && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -buildmode=c-archive -o libtsc_darwin_amd64.a .
 	@echo "$(YELLOW)Building for macOS arm64...$(NC)"
 	@cd $(BRIDGE_DIR) && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -buildmode=c-archive -o libtsc_darwin_arm64.a .
-	@echo "$(YELLOW)Creating universal binary for macOS...$(NC)"
-	@cd $(BRIDGE_DIR) && lipo -create libtsc_darwin_amd64.a libtsc_darwin_arm64.a -output libtsc_macos.a
+	@echo "$(YELLOW)Creating universal binary...$(NC)"
+	@cd $(BRIDGE_DIR) && lipo -create libtsc_darwin_amd64.a libtsc_darwin_arm64.a -output libtsc_universal.a
 	@echo "$(YELLOW)Copying files to output directory...$(NC)"
-	@cp $(BRIDGE_DIR)/libtsc_macos.a $(OUTPUT_DIR)/
+	@cp $(BRIDGE_DIR)/libtsc_universal.a $(OUTPUT_DIR)/
 	@cp $(BRIDGE_DIR)/libtsc_darwin_amd64.h $(OUTPUT_DIR)/tsc_bridge.h
 	@echo "$(YELLOW)Creating module map...$(NC)"
 	@echo 'module TSCBridge {\n    header "tsc_bridge.h"\n    export *\n}' > $(OUTPUT_DIR)/module.modulemap
 	@echo "$(YELLOW)Cleaning up intermediate files...$(NC)"
-	@cd $(BRIDGE_DIR) && rm -f libtsc_darwin_*.a *.h
+	@cd $(BRIDGE_DIR) && rm -f libtsc_*.a *.h
 	@echo "$(GREEN)C Bridge macOS build completed successfully!$(NC)"
 
 
@@ -78,12 +75,11 @@ build-bridge-macos:
 # Verify bridge builds
 verify-bridge:
 	@echo "$(BLUE)Verifying builds...$(NC)"
-	@for lib in $(OUTPUT_DIR)/*.a; do \
-		echo "Checking $$(basename $$lib):"; \
-		file "$$lib"; \
-		nm "$$lib" | grep -E "(tsc_build_|tsc_validate_|tsc_free_)" | head -5 || true; \
+	@if [ -d $(OUTPUT_DIR)/TSCBridge.xcframework ]; then \
+		echo "Checking TSCBridge.xcframework:"; \
+		find $(OUTPUT_DIR)/TSCBridge.xcframework -name "*.a" -exec file {} \; || true; \
 		echo ""; \
-	done
+	fi
 
 # Setup development environment
 setup:
@@ -116,6 +112,8 @@ clean-bridge:
 	@echo "$(YELLOW)Cleaning C bridge artifacts...$(NC)"
 	@rm -rf $(OUTPUT_DIR)
 	@cd $(BRIDGE_DIR) && rm -f *.a *.h
+	@cd $(BRIDGE_DIR) && rm -rf TSCBridge.xcframework headers
+
 
 # Development helpers
 dev-setup: setup build-bridge-macos

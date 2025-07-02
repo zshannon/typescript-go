@@ -15,22 +15,21 @@ let package = Package(
             name: "TSCBridge",
             path: "Sources/TSCBridge"
         ),
+        .binaryTarget(
+            name: "TSCBridgeLib",
+            path: "Sources/TSCBridge/TSCBridge.xcframework"
+        ),
         .target(
             name: "SwiftTSGo",
             dependencies: [
-                .target(name: "TSCBridge")
-            ],
-            linkerSettings: [
-                .unsafeFlags(["-LSources/TSCBridge"]),
-                .linkedLibrary("tsc_macos", .when(platforms: [.macOS])),
-                .linkedLibrary("tsc_ios_arm64", .when(platforms: [.iOS])),
+                .target(name: "TSCBridge"),
+                .target(name: "TSCBridgeLib"),
             ]
         ),
         .testTarget(
             name: "SwiftTSGoTests",
             dependencies: [
-                .target(name: "SwiftTSGo"),
-                .target(name: "TSCBridge"),
+                .target(name: "SwiftTSGo")
             ],
             resources: [
                 .copy("Resources")
