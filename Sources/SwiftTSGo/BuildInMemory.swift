@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import TSGoBindings
 
 // MARK: - Core Types
@@ -37,7 +38,7 @@ public struct InMemoryBuildResult: Sendable {
 
 public enum FileResolver: Sendable {
     case file(String)
-    case directory
+    case directory([String])
 }
 
 // MARK: - Internal File Resolver Adapter
@@ -83,7 +84,7 @@ private class DynamicFileResolver: NSObject, BridgeFileResolverProtocol {
     }
 
     func fileExists(_ path: String?) -> Bool {
-        guard let path = path else { return false }
+        guard let path else { return false }
 
         let semaphore = DispatchSemaphore(value: 0)
         var result = false
@@ -110,7 +111,7 @@ private class DynamicFileResolver: NSObject, BridgeFileResolverProtocol {
     }
 
     func directoryExists(_ path: String?) -> Bool {
-        guard let path = path else { return false }
+        guard let path else { return false }
 
         let semaphore = DispatchSemaphore(value: 0)
         var result = false
@@ -134,6 +135,35 @@ private class DynamicFileResolver: NSObject, BridgeFileResolverProtocol {
 
         semaphore.wait()
         return result
+    }
+
+    func getAllPaths(_ path: String?) -> BridgePathList? {
+        let pathList: Mutex<BridgePathList?> = .init(BridgeCreatePathList())
+        guard let path else { return nil }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        Task { [resolver] in
+            do {
+                if let fileResolver = try await resolver(path) {
+                    switch fileResolver {
+                    case let .directory(children):
+                        pathList.withLock {
+                            for child in children {
+                                $0?.add(child)
+                            }
+                        }
+                    default:
+                        break
+                    }
+                }
+            } catch {
+            }
+            semaphore.signal()
+        }
+
+        semaphore.wait()
+
+        return pathList.withLock({ $0 })
     }
 
     func writeFile(_ path: String?, content: String?) -> Bool {
@@ -346,19 +376,19 @@ public func build(
 
         // Check if it's a known directory
         if knownDirectories.contains(path) {
-            return .directory
+            return .directory([])
         }
 
         // Handle output directories (dist, etc.) as existing directories
         if path.contains("/dist") || path.hasSuffix("/dist") || path == "dist"
             || path.hasPrefix("\(projectPath)/dist")
         {
-            return .directory
+            return .directory([])
         }
 
         // Also handle root project directory
         if path == projectPath {
-            return .directory
+            return .directory([])
         }
 
         // Check if any files are under this directory path
@@ -367,7 +397,7 @@ public func build(
                 || filePath.hasPrefix(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
         }
 
-        return isDirectory ? .directory : nil
+        return isDirectory ? .directory([]) : nil
     }
 
     // Modify the config to explicitly include the files we have

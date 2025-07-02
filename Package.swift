@@ -3,12 +3,12 @@ import PackageDescription
 
 let package = Package(
     name: "SwiftTSGo",
-    platforms: [.iOS(.v17), .macOS(.v14)],
+    platforms: [.iOS(.v18), .macOS(.v15)],
     products: [
         .library(
             name: "SwiftTSGo",
             targets: ["SwiftTSGo"]
-        ),
+        )
     ],
     targets: [
         .binaryTarget(
@@ -18,7 +18,7 @@ let package = Package(
         .target(
             name: "SwiftTSGo",
             dependencies: [
-                .target(name: "SwiftTSGoMobile"),
+                .target(name: "SwiftTSGoMobile")
                 // .byName(name: "ESBuildMobile")
             ]
         ),
@@ -29,7 +29,7 @@ let package = Package(
                 .target(name: "SwiftTSGoMobile"),
             ],
             resources: [
-                .copy("Resources"),
+                .copy("Resources")
             ]
         ),
     ]
