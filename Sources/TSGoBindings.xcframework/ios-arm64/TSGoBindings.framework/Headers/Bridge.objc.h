@@ -29,6 +29,7 @@
  * FileExists returns true if the file exists at the given path
  */
 - (BOOL)fileExists:(NSString* _Nullable)path;
+- (BridgePathList* _Nullable)getAllPaths:(NSString* _Nullable)directory;
 /**
  * ResolveFile returns the contents of the file at the given path
 Returns empty string if the file doesn't exist or can't be read
@@ -212,12 +213,23 @@ Returns true if the write was successful
 - (nonnull instancetype)init;
 // skipped field PathList.Paths with unsupported type: []string
 
-@end
-
 /**
- * BridgeBuildWithFileSystem builds using only the filesystem (no custom resolver)
+ * Add adds a string to the PathList's Paths slice
  */
-FOUNDATION_EXPORT BridgeBridgeResult* _Nullable BridgeBridgeBuildWithFileSystem(NSString* _Nullable projectPath, BOOL printErrors, NSString* _Nullable configFile, NSError* _Nullable* _Nullable error);
+- (void)add:(NSString* _Nullable)path;
+/**
+ * Clear removes all paths from the list
+ */
+- (void)clear;
+/**
+ * GetCount returns the number of paths in the list
+ */
+- (long)getCount;
+/**
+ * GetPath returns the path at the given index
+ */
+- (NSString* _Nonnull)getPath:(long)index;
+@end
 
 // skipped function BuildWithConfig with unsupported parameter or return types
 
@@ -226,6 +238,16 @@ FOUNDATION_EXPORT BridgeBridgeResult* _Nullable BridgeBridgeBuildWithFileSystem(
  * BuildWithFileResolver builds with a dynamic callback-based file resolver
  */
 FOUNDATION_EXPORT BridgeBridgeResult* _Nullable BridgeBuildWithFileResolver(NSString* _Nullable projectPath, BOOL printErrors, NSString* _Nullable configFile, id<BridgeFileResolver> _Nullable resolver, NSError* _Nullable* _Nullable error);
+
+/**
+ * BuildWithFileSystem builds using only the filesystem (no custom resolver)
+ */
+FOUNDATION_EXPORT BridgeBridgeResult* _Nullable BridgeBuildWithFileSystem(NSString* _Nullable projectPath, BOOL printErrors, NSString* _Nullable configFile, NSError* _Nullable* _Nullable error);
+
+/**
+ * CreatePathList creates a new PathList instance with the given paths
+ */
+FOUNDATION_EXPORT BridgePathList* _Nullable BridgeCreatePathList(void);
 
 @class BridgeFileResolver;
 
@@ -245,6 +267,7 @@ FOUNDATION_EXPORT BridgeBridgeResult* _Nullable BridgeBuildWithFileResolver(NSSt
  * FileExists returns true if the file exists at the given path
  */
 - (BOOL)fileExists:(NSString* _Nullable)path;
+- (BridgePathList* _Nullable)getAllPaths:(NSString* _Nullable)directory;
 /**
  * ResolveFile returns the contents of the file at the given path
 Returns empty string if the file doesn't exist or can't be read
