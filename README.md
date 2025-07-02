@@ -283,7 +283,7 @@ Your TypeScript project should have a `tsconfig.json` file:
 
 ## Threading Considerations
 
-**Important**: Due to the underlying gomobile bridge implementation, avoid calling `buildWithConfig` concurrently from multiple threads. The global state used for diagnostic retrieval can cause race conditions in parallel execution.
+**Important**: The C bridge implementation is thread-safe for compilation operations. However, avoid calling `buildWithConfig` concurrently from multiple threads as the underlying TypeScript compiler may have resource contention issues.
 
 For concurrent compilation, process projects sequentially or add synchronization:
 
@@ -436,47 +436,60 @@ struct TypeScriptCLI {
 
 ## Development
 
-This package includes pre-built gomobile bindings for the TypeScript compiler. If you need to rebuild the bindings from source or contribute to the project, you'll need additional development tools.
+This package includes pre-built C bridge libraries for the TypeScript compiler. If you need to rebuild the bindings from source or contribute to the project, you'll need additional development tools.
 
 ### Development Requirements
+### Prerequisites
 
-- [Go 1.24 or higher](https://go.dev/dl/)
-- [gomobile](https://pkg.go.dev/golang.org/x/mobile/cmd/gomobile)
+- Go 1.19 or later
+- CGO support
+- Platform-specific build tools (Xcode for iOS/macOS)
 
-### Setting up gomobile
+### Setting up the build environment
 
 ```bash
-go install golang.org/x/mobile/cmd/gomobile@latest
-gomobile init
+make setup
 ```
 
 ### Building the Bindings
 
-To rebuild the gomobile bindings after making changes to the Go bridge code:
+To rebuild the C bridge libraries after making changes to the Go bridge code:
 
 ```bash
 make build
 ```
 
-This will regenerate the `Sources/TSGoBindings.xcframework` with your changes.
+This will regenerate the static libraries in `Sources/TSCBridge/` with your changes.
+
+For faster development (macOS only):
+
+```bash
+make build-bridge-macos
+```
 
 ### Running Tests
 
 Run the Go bridge tests:
 
 ```bash
-go test ./bridge -v
+make test-go
 ```
 
 Run the Swift tests:
 
 ```bash
-swift test
+make test-swift
+```
+
+Run all tests:
+
+```bash
+make test
 ```
 
 ### Project Structure
 
 - `bridge/` - Go bridge code that interfaces with the TypeScript compiler
 - `Sources/SwiftTSGo/` - Swift API layer
-- `Sources/TSGoBindings.xcframework/` - Gomobile-generated bindings (auto-generated)
+- `Sources/TSCBridge/` - C bridge static libraries and headers (auto-generated)
 - `Tests/SwiftTSGoTests/` - Swift test suite

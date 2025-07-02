@@ -20,7 +20,7 @@ struct BuildInMemoryTests {
                     """)
         ]
 
-        let result = try await build(sources)
+        let result = try buildInMemory(sources)
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
@@ -28,36 +28,20 @@ struct BuildInMemoryTests {
     }
 
     @Test func basicCompilationTestWithGlob() async throws {
-        let sources = [
-            Source(
-                name: "hello.ts",
-                content: """
-                    function greet(name: string): string {
-                        return `Hello, ${name}!`;
-                    }
-
-                    const message = greet("World");
-                    console.log(message);
-                    """)
-        ]
-
-        // Create a file map for quick lookup
-        let fileMap: [String: String] = sources.reduce(into: [:]) { map, source in
-            map["/project/src/\(source.name)"] = source.content
-        }
-
-        let result = try await build(config: .default) { path in
-            if path == "/project" {
-                return .directory(["src"])
-            } else if let content = fileMap[path] {
-                return .file(content)
-            } else if path == "/project/src" {
-                let children = sources.map({ $0.name })
-                return .directory(children)
-            }
-
-            return nil
-        }
+        let result = try buildWithSimpleResolver(
+            [
+                "/project/tsconfig.json": """
+                {
+                    "compilerOptions": {
+                        "target": "es2015",
+                        "module": "commonjs",
+                        "noEmit": true
+                    },
+                    "include": ["src/**/*"]
+                }
+                """,
+                "/project/src/main.ts": "console.log('Hello, World!');",
+            ], directories: ["/project", "/project/src"])
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
@@ -78,7 +62,7 @@ struct BuildInMemoryTests {
                     """)
         ]
 
-        let result = try await build(sources)
+        let result = try buildInMemory(sources)
 
         #expect(result.success == false)
         #expect(!result.diagnostics.isEmpty)
@@ -112,7 +96,7 @@ struct BuildInMemoryTests {
         strictOptions.noImplicitAny = true
         let strictConfig = TSConfig(compilerOptions: strictOptions)
 
-        let strictResult = try await build(sources, config: strictConfig)
+        let strictResult = try buildInMemory(sources, config: strictConfig)
         #expect(strictResult.success == false)
 
         // Test with non-strict mode
@@ -121,154 +105,80 @@ struct BuildInMemoryTests {
         lenientOptions.noImplicitAny = false
         let lenientConfig = TSConfig(compilerOptions: lenientOptions)
 
-        let lenientResult = try await build(sources, config: lenientConfig)
+        let lenientResult = try buildInMemory(sources, config: lenientConfig)
         #expect(lenientResult.success == true)
     }
 
     @Test func multipleFilesTest() async throws {
-        let sources = [
-            Source(
-                name: "utils.ts",
-                content: """
-                    export function multiply(a: number, b: number): number {
-                        return a * b;
-                    }
-
-                    export const PI = 3.14159;
-                    """),
-            Source(
-                name: "main.ts",
-                content: """
-                    import { multiply, PI } from './utils';
-
-                    const area = multiply(PI, 5 * 5);
-                    console.log(`Area: ${area}`);
-                    """),
-        ]
-
-        var moduleOptions = CompilerOptions()
-        moduleOptions.module = .esnext
-        moduleOptions.target = .es2020
-        moduleOptions.moduleResolution = .node
-        let config = TSConfig(compilerOptions: moduleOptions)
-
-        let result = try await build(sources, config: config)
+        let result = try buildWithSimpleResolver(
+            [
+                "/project/tsconfig.json": """
+                {
+                    "compilerOptions": {
+                        "target": "es2015",
+                        "module": "commonjs",
+                        "noEmit": true
+                    },
+                    "include": ["**/*"]
+                }
+                """,
+                "/project/utils.ts":
+                    "export function add(a: number, b: number): number { return a + b; }",
+                "/project/main.ts": "import { add } from './utils'; console.log(add(2, 3));",
+            ], directories: ["/project"])
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
     }
 
     @Test func customResolverTest() async throws {
-        // Test the resolver-based build function
-        let fileMap = [
-            "package.json": """
-            {
-                "name": "test-project",
-                "version": "1.0.0"
-            }
-            """,
-            "src/index.ts": """
-            interface User {
-                name: string;
-                age: number;
-            }
-
-            const user: User = {
-                name: "Alice",
-                age: 30
-            };
-
-            console.log(user);
-            """,
-            "src/types.ts": """
-            export type Status = 'active' | 'inactive';
-            """,
-        ]
-
-        let resolver: @Sendable (String) async throws -> FileResolver? = { path in
-            // Handle the project directory itself
-            if path == "/project" {
-                return .directory([])
-            }
-
-            // Handle files under /project/
-            var normalizedPath = path
-            if path.hasPrefix("/project/") {
-                normalizedPath = String(path.dropFirst("/project/".count))
-            } else if path.hasPrefix("/") {
-                normalizedPath = String(path.dropFirst())
-            }
-
-            // Check for exact file match first
-            if let content = fileMap[normalizedPath] {
-                return .file(content)
-            }
-
-            // Check for directory patterns
-            if normalizedPath == "src" || normalizedPath == "src/" {
-                return .directory([])
-            }
-
-            // Check if it's a directory based on having files underneath
-            let isDirectory = fileMap.keys.contains { filePath in
-                filePath.hasPrefix(
-                    normalizedPath.hasSuffix("/") ? normalizedPath : (normalizedPath + "/"))
-            }
-
-            if isDirectory {
-                return .directory([])
-            }
-
-            // Handle root directory
-            if normalizedPath.isEmpty || normalizedPath == "." {
-                return .directory([])
-            }
-
-            return nil
-        }
-
-        var compilerOptions = CompilerOptions()
-        compilerOptions.module = .commonjs
-        compilerOptions.target = .es2020
-        compilerOptions.outDir = "./dist"
-        let config = TSConfig(
-            compilerOptions: compilerOptions,
-            files: ["src/index.ts", "src/types.ts"]
-        )
-
-        let result = try await build(config: config, resolver: resolver)
+        let result = try buildWithSimpleResolver(
+            [
+                "/project/tsconfig.json": """
+                {
+                    "compilerOptions": {
+                        "target": "es2015",
+                        "module": "commonjs",
+                        "noEmit": true
+                    },
+                    "include": ["**/*"]
+                }
+                """,
+                "/project/src/main.ts": "const x: number = 42; console.log(x);",
+            ], directories: ["/project", "/project/src"])
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
     }
 
     @Test func emitFilesTest() async throws {
-        let sources = [
-            Source(
-                name: "calculator.ts",
-                content: """
-                    export class Calculator {
-                        add(a: number, b: number): number {
-                            return a + b;
-                        }
-
-                        subtract(a: number, b: number): number {
-                            return a - b;
-                        }
+        let result = try buildWithSimpleResolver(
+            [
+                "/project/tsconfig.json": """
+                {
+                    "compilerOptions": {
+                        "target": "es2020",
+                        "module": "commonjs",
+                        "declaration": true,
+                        "outDir": "./dist",
+                        "noEmit": false
+                    },
+                    "include": ["**/*"],
+                    "exclude": ["/project/dist"]
+                }
+                """,
+                "/project/calculator.ts": """
+                export class Calculator {
+                    add(a: number, b: number): number {
+                        return a + b;
                     }
-                    """)
-        ]
 
-        var compilerOptions = CompilerOptions()
-        compilerOptions.target = .es2020
-        compilerOptions.module = .commonjs
-        compilerOptions.declaration = true
-        compilerOptions.outDir = "./dist"
-        compilerOptions.noEmit = false
-
-        let config = TSConfig(compilerOptions: compilerOptions)
-
-        let result = try await build(sources, config: config)
+                    subtract(a: number, b: number): number {
+                        return a - b;
+                    }
+                }
+                """,
+            ], directories: ["/project"])
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
@@ -323,138 +233,100 @@ struct BuildInMemoryTests {
 
         let config = TSConfig(compilerOptions: compilerOptions)
 
-        let result = try await build(sources, config: config)
+        let result = try buildInMemory(sources, config: config)
 
         // This might fail due to missing React types, but should not crash
         #expect(result.diagnostics.filter { $0.category == "error" }.count >= 0)
     }
 
     @Test func libConfigTest() async throws {
-        let sources = [
-            Source(
-                name: "modern.ts",
-                content: """
-                    // Uses modern JavaScript features
-                    const promise = Promise.resolve(42);
-                    const result = await promise;
-                    console.log(result);
+        let result = try buildWithSimpleResolver(
+            [
+                "/project/tsconfig.json": """
+                {
+                    "compilerOptions": {
+                        "target": "es2020",
+                        "lib": ["ES2020", "DOM"],
+                        "module": "esnext",
+                        "noEmit": true
+                    },
+                    "include": ["**/*"]
+                }
+                """,
+                "/project/modern.ts": """
+                // Uses modern JavaScript features
+                const promise = Promise.resolve(42);
+                const result = await promise;
+                console.log(result);
 
-                    const map = new Map<string, number>();
-                    map.set("answer", 42);
+                const map = new Map<string, number>();
+                map.set("answer", 42);
 
-                    // Export to make this a module
-                    export {};
-                    """)
-        ]
-
-        var compilerOptions = CompilerOptions()
-        compilerOptions.target = .es2020
-        compilerOptions.lib = ["ES2020", "DOM"]
-        compilerOptions.module = .esnext
-
-        let config = TSConfig(compilerOptions: compilerOptions)
-
-        let result = try await build(sources, config: config)
+                // Export to make this a module
+                export {};
+                """,
+            ], directories: ["/project"])
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
     }
 
     @Test func pathMappingTest() async throws {
-        let sources = [
-            Source(
-                name: "src/utils/helper.ts",
-                content: """
-                    export function formatMessage(msg: string): string {
-                        return `[INFO] ${msg}`;
-                    }
-                    """),
-            Source(
-                name: "src/main.ts",
-                content: """
-                    import { formatMessage } from './utils/helper';
+        let result = try buildWithSimpleResolver(
+            [
+                "/project/tsconfig.json": """
+                {
+                    "compilerOptions": {
+                        "target": "es2020",
+                        "module": "commonjs",
+                        "noEmit": true
+                    },
+                    "include": ["**/*"]
+                }
+                """,
+                "/project/src/utils/helper.ts": """
+                export function formatMessage(msg: string): string {
+                    return `[INFO] ${msg}`;
+                }
+                """,
+                "/project/src/main.ts": """
+                import { formatMessage } from './utils/helper';
 
-                    const message = formatMessage("Hello, World!");
-                    console.log(message);
-                    """),
-        ]
-
-        var compilerOptions = CompilerOptions()
-        compilerOptions.target = .es2020
-        compilerOptions.module = .commonjs
-
-        let config = TSConfig(compilerOptions: compilerOptions)
-
-        let result = try await build(sources, config: config)
+                const message = formatMessage("Hello, World!");
+                console.log(message);
+                """,
+            ], directories: ["/project", "/project/src", "/project/src/utils"])
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
     }
 
     @Test func simpleTypeCheckTest() async throws {
-        // Simple type check test using resolver API - just validate types without emitting files
-        let fileMap = [
-            "simple.ts": """
-            // Valid TypeScript code
-            const message: string = "Hello, TypeScript!";
-            const count: number = 42;
-            const isActive: boolean = true;
-
-            function add(a: number, b: number): number {
-                return a + b;
-            }
-
-            const result = add(count, 10);
-            """,
-            "tsconfig.json": """
-            {
-                "compilerOptions": {
-                    "noEmit": true,
-                    "strict": true,
-                    "target": "ES2020"
+        let result = try buildWithSimpleResolver(
+            [
+                "/project/tsconfig.json": """
+                {
+                    "compilerOptions": {
+                        "noEmit": true,
+                        "strict": true,
+                        "target": "ES2020"
+                    },
+                    "include": ["**/*"]
                 }
-            }
-            """,
-        ]
+                """,
+                "/project/simple.ts": """
+                // Valid TypeScript code
+                const message: string = "Hello, TypeScript!";
+                const count: number = 42;
+                const isActive: boolean = true;
 
-        let resolver: @Sendable (String) async throws -> FileResolver? = { path in
-            // Handle the project directory itself
-            if path == "/project" {
-                return .directory([])
-            }
+                function add(a: number, b: number): number {
+                    return a + b;
+                }
 
-            // Handle files under /project/
-            var normalizedPath = path
-            if path.hasPrefix("/project/") {
-                normalizedPath = String(path.dropFirst("/project/".count))
-            } else if path.hasPrefix("/") {
-                normalizedPath = String(path.dropFirst())
-            }
-
-            // Check for exact file match
-            if let content = fileMap[normalizedPath] {
-                return .file(content)
-            }
-
-            // Handle root directory
-            if normalizedPath.isEmpty || normalizedPath == "." {
-                return .directory([])
-            }
-
-            return nil
-        }
-
-        var compilerOptions = CompilerOptions()
-        compilerOptions.noEmit = true  // Type check only, no file output
-        compilerOptions.strict = true
-        compilerOptions.target = .es2020
-
-        let config = TSConfig(
-            compilerOptions: compilerOptions,
-            files: ["simple.ts"]
-        )
-
-        let result = try await build(config: config, resolver: resolver)
+                const result = add(count, 10);
+                """,
+            ], directories: ["/project"])
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
@@ -463,38 +335,38 @@ struct BuildInMemoryTests {
     }
 
     @Test func validationOnlyTest() async throws {
-        let sources = [
-            Source(
-                name: "validation.ts",
-                content: """
-                    type User = {
-                        id: number;
-                        name: string;
-                        email?: string;
-                    };
+        let result = try buildWithSimpleResolver(
+            [
+                "/project/tsconfig.json": """
+                {
+                    "compilerOptions": {
+                        "noEmit": true,
+                        "strict": true,
+                        "target": "es2020"
+                    },
+                    "include": ["**/*"]
+                }
+                """,
+                "/project/validation.ts": """
+                type User = {
+                    id: number;
+                    name: string;
+                    email?: string;
+                };
 
-                    function validateUser(user: unknown): user is User {
-                        return typeof user === 'object' &&
-                               user !== null &&
-                               'id' in user &&
-                               'name' in user;
-                    }
+                function validateUser(user: unknown): user is User {
+                    return typeof user === 'object' &&
+                           user !== null &&
+                           'id' in user &&
+                           'name' in user;
+                }
 
-                    const user: unknown = { id: 1, name: "John" };
-                    if (validateUser(user)) {
-                        console.log(user.name); // TypeScript knows this is safe
-                    }
-                    """)
-        ]
-
-        var compilerOptions = CompilerOptions()
-        compilerOptions.noEmit = true
-        compilerOptions.strict = true
-        compilerOptions.target = .es2020
-
-        let config = TSConfig(compilerOptions: compilerOptions)
-
-        let result = try await build(sources, config: config)
+                const user: unknown = { id: 1, name: "John" };
+                if (validateUser(user)) {
+                    console.log(user.name); // TypeScript knows this is safe
+                }
+                """,
+            ], directories: ["/project"])
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)

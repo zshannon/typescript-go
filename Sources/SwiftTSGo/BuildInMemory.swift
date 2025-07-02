@@ -1,6 +1,17 @@
 import Foundation
-import Synchronization
-import TSGoBindings
+import TSCBridge
+
+// MARK: - C String Helpers
+
+private func withMutableCString<T>(_ string: String, _ body: (UnsafeMutablePointer<CChar>) -> T)
+    -> T
+{
+    return string.withCString { cString in
+        let mutableCString = strdup(cString)!
+        defer { free(mutableCString) }
+        return body(mutableCString)
+    }
+}
 
 // MARK: - Core Types
 
@@ -41,270 +52,168 @@ public enum FileResolver: Sendable {
     case directory([String])
 }
 
-// MARK: - Internal File Resolver Adapter
+// MARK: - C Bridge Helpers
 
-private class DynamicFileResolver: NSObject, BridgeFileResolverProtocol {
-    private let resolver: @Sendable (String) async throws -> FileResolver?
-    private var writtenFiles: [String: String] = [:]
+private func convertCDiagnostics(_ cDiagnostics: UnsafeMutablePointer<c_diagnostic>?, count: Int)
+    -> [DiagnosticInfo]
+{
+    guard let cDiagnostics = cDiagnostics, count > 0 else { return [] }
 
-    init(resolver: @escaping @Sendable (String) async throws -> FileResolver?) {
-        self.resolver = resolver
-        super.init()
-    }
-
-    func getWrittenFiles() -> [String: String] {
-        return writtenFiles
-    }
-
-    func resolveFile(_ path: String?) -> String {
-        guard let path = path else { return "" }
-
-        let semaphore = DispatchSemaphore(value: 0)
-        var result = ""
-
-        Task { [resolver] in
-            do {
-                if let fileResolver = try await resolver(path) {
-                    switch fileResolver {
-                    case .file(let content):
-                        result = content
-                    case .directory:
-                        result = ""
-                    }
-                }
-            } catch {
-                // On error, return empty string
-                result = ""
-            }
-            semaphore.signal()
-        }
-
-        semaphore.wait()
-        return result
-    }
-
-    func fileExists(_ path: String?) -> Bool {
-        guard let path else { return false }
-
-        let semaphore = DispatchSemaphore(value: 0)
-        var result = false
-
-        Task { [resolver] in
-            do {
-                if let fileResolver = try await resolver(path) {
-                    switch fileResolver {
-                    case .file:
-                        result = true
-                    case .directory:
-                        result = false
-                    }
-                }
-            } catch {
-                // On error, return false
-                result = false
-            }
-            semaphore.signal()
-        }
-
-        semaphore.wait()
-        return result
-    }
-
-    func directoryExists(_ path: String?) -> Bool {
-        guard let path else { return false }
-
-        let semaphore = DispatchSemaphore(value: 0)
-        var result = false
-
-        Task { [resolver] in
-            do {
-                if let fileResolver = try await resolver(path) {
-                    switch fileResolver {
-                    case .directory:
-                        result = true
-                    case .file:
-                        result = false
-                    }
-                }
-            } catch {
-                // On error, return false
-                result = false
-            }
-            semaphore.signal()
-        }
-
-        semaphore.wait()
-        return result
-    }
-
-    func getAllPaths(_ path: String?) -> BridgePathList? {
-        let pathList: Mutex<BridgePathList?> = .init(BridgeCreatePathList())
-        guard let path else { return nil }
-
-        let semaphore = DispatchSemaphore(value: 0)
-        Task { [resolver] in
-            do {
-                if let fileResolver = try await resolver(path) {
-                    switch fileResolver {
-                    case let .directory(children):
-                        pathList.withLock {
-                            for child in children {
-                                $0?.add(child)
-                            }
-                        }
-                    default:
-                        break
-                    }
-                }
-            } catch {
-            }
-            semaphore.signal()
-        }
-
-        semaphore.wait()
-
-        return pathList.withLock({ $0 })
-    }
-
-    func writeFile(_ path: String?, content: String?) -> Bool {
-        // Simply return true to allow Go-side file capture
-        // Avoid Swift-side file handling due to gomobile interop issues
-        return true
-    }
-}
-
-// MARK: - Result Processing Helpers
-
-private func extractDiagnostics(from bridgeResult: BridgeBridgeResult) -> [DiagnosticInfo] {
     var diagnostics: [DiagnosticInfo] = []
-    let count = bridgeResult.getDiagnosticCount()
-
     for i in 0..<count {
-        if let bridgeDiag = bridgeResult.getDiagnostic(i) {
-            let diagnostic = DiagnosticInfo(
-                code: Int(bridgeDiag.code),
-                category: bridgeDiag.category,
-                message: bridgeDiag.message,
-                file: bridgeDiag.file,
-                line: Int(bridgeDiag.line),
-                column: Int(bridgeDiag.column),
-                length: Int(bridgeDiag.length)
-            )
-            diagnostics.append(diagnostic)
-        }
+        let cDiag = cDiagnostics[i]
+        let diagnostic = DiagnosticInfo(
+            code: Int(cDiag.code),
+            category: String(cString: cDiag.category),
+            message: String(cString: cDiag.message),
+            file: String(cString: cDiag.file),
+            line: Int(cDiag.line),
+            column: Int(cDiag.column),
+            length: Int(cDiag.length)
+        )
+        diagnostics.append(diagnostic)
     }
-
     return diagnostics
 }
 
-private func extractWrittenFiles(from bridgeResult: BridgeBridgeResult) -> [String: String] {
-    var writtenFiles: [String: String] = [:]
-    let count = bridgeResult.getWrittenFileCount()
+private func convertCWrittenFiles(
+    _ paths: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
+    _ contents: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
+    count: Int
+) -> [String: String] {
+    guard let paths = paths, let contents = contents, count > 0 else { return [:] }
 
+    var writtenFiles: [String: String] = [:]
     for i in 0..<count {
-        let path = bridgeResult.getWrittenFilePath(i)
-        if !path.isEmpty {
-            let content = bridgeResult.getWrittenFileContent(path)
+        if let pathPtr = paths[i], let contentPtr = contents[i] {
+            let path = String(cString: pathPtr)
+            let content = String(cString: contentPtr)
             writtenFiles[path] = content
         }
     }
-
     return writtenFiles
 }
 
-private func extractCompiledFiles(
-    from bridgeResult: BridgeBridgeResult, writtenFiles: [String: String]
-) -> [Source] {
-    var compiledFiles: [Source] = []
-
-    // Convert written files to Source objects
-    for (path, content) in writtenFiles {
-        // Extract just the filename from the path
+private func convertCCompiledFiles(from writtenFiles: [String: String]) -> [Source] {
+    return writtenFiles.map { (path, content) in
         let filename = (path as NSString).lastPathComponent
-        compiledFiles.append(Source(name: filename, content: content))
+        return Source(name: filename, content: content)
+    }
+}
+
+private func processResult(_ cResult: UnsafeMutablePointer<c_build_result>?) -> InMemoryBuildResult
+{
+    guard let cResult = cResult else {
+        return InMemoryBuildResult(
+            success: false,
+            diagnostics: [
+                DiagnosticInfo(
+                    code: 0,
+                    category: "error",
+                    message: "Build failed with no result"
+                )
+            ]
+        )
     }
 
-    return compiledFiles
+    defer { tsc_free_result(cResult) }
+
+    let success = cResult.pointee.success != 0
+    let configFile =
+        cResult.pointee.config_file != nil ? String(cString: cResult.pointee.config_file) : ""
+    let diagnostics = convertCDiagnostics(
+        cResult.pointee.diagnostics, count: Int(cResult.pointee.diagnostic_count))
+    let writtenFiles = convertCWrittenFiles(
+        cResult.pointee.written_file_paths,
+        cResult.pointee.written_file_contents,
+        count: Int(cResult.pointee.written_file_count))
+    let compiledFiles = convertCCompiledFiles(from: writtenFiles)
+
+    return InMemoryBuildResult(
+        success: success,
+        diagnostics: diagnostics,
+        compiledFiles: compiledFiles,
+        configFile: configFile,
+        writtenFiles: writtenFiles
+    )
 }
 
 // MARK: - Public API
 
-/// Build TypeScript files with a custom file resolver
-/// - Parameters:
-///   - config: TypeScript configuration (optional, uses default if nil)
-///   - resolver: Async function that resolves file paths to FileResolver cases or nil
-/// - Returns: Build result with compilation status and diagnostics
-/// - Throws: BridgeError if the build process fails
-public func build(
-    config: TSConfig? = nil,
-    resolver: @escaping @Sendable (String) async throws -> FileResolver?
-) async throws -> InMemoryBuildResult {
-    let projectPath = "/project"
-    let tsConfig = config ?? TSConfig.default
+/// Validate a simple TypeScript code string
+/// - Parameter code: TypeScript code to validate
+/// - Returns: Build result with validation status and diagnostics
+public func validateTypeScript(_ code: String) throws -> InMemoryBuildResult {
+    let cResult = withMutableCString(code) { codePtr in
+        tsc_validate_simple(codePtr)
+    }
+    defer { tsc_free_string(cResult) }
 
-    let capturedConfig = tsConfig  // Capture config to avoid Sendable issues
-    let fileResolver = DynamicFileResolver(resolver: { path in
-        // Handle tsconfig.json specially
-        if path == "\(projectPath)/tsconfig.json" {
-            do {
-                let encoder = JSONEncoder()
-                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-                let configData = try encoder.encode(capturedConfig)
-                return .file(String(data: configData, encoding: .utf8) ?? "{}")
-            } catch {
-                return nil
+    guard let cResult = cResult else {
+        return InMemoryBuildResult(
+            success: false,
+            diagnostics: [
+                DiagnosticInfo(
+                    code: 0,
+                    category: "error",
+                    message: "Validation failed with no result"
+                )
+            ]
+        )
+    }
+
+    let jsonString = String(cString: cResult)
+    guard let jsonData = jsonString.data(using: String.Encoding.utf8),
+        let response = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any]
+    else {
+        return InMemoryBuildResult(
+            success: false,
+            diagnostics: [
+                DiagnosticInfo(
+                    code: 0,
+                    category: "error",
+                    message: "Failed to parse validation result"
+                )
+            ]
+        )
+    }
+
+    let success = response["success"] as? Bool ?? false
+    var diagnostics: [DiagnosticInfo] = []
+
+    if let diagnosticsArray = response["diagnostics"] as? [[String: Any]] {
+        diagnostics = diagnosticsArray.compactMap { diagDict in
+            guard let code = diagDict["code"] as? Int,
+                let category = diagDict["category"] as? String,
+                let message = diagDict["message"] as? String
+            else {
+                return nil as DiagnosticInfo?
             }
+
+            return DiagnosticInfo(
+                code: code,
+                category: category,
+                message: message,
+                file: diagDict["file"] as? String ?? "",
+                line: diagDict["line"] as? Int ?? 0,
+                column: diagDict["column"] as? Int ?? 0,
+                length: diagDict["length"] as? Int ?? 0
+            )
         }
-
-        return try await resolver(path)
-    })
-
-    // Build with the new clean API
-    var error: NSError?
-    let bridgeResult = BridgeBuildWithFileResolver(
-        projectPath,
-        false,
-        "",
-        fileResolver,
-        &error
-    )
-
-    // Handle system-level errors
-    if let error = error {
-        let diagnostic = DiagnosticInfo(
-            code: 0,
-            category: "error",
-            message: error.localizedDescription
-        )
-        return InMemoryBuildResult(
-            success: false,
-            diagnostics: [diagnostic]
-        )
     }
 
-    guard let result = bridgeResult else {
-        let diagnostic = DiagnosticInfo(
-            code: 0,
-            category: "error",
-            message: "Build failed with no result"
-        )
-        return InMemoryBuildResult(
-            success: false,
-            diagnostics: [diagnostic]
-        )
+    if let error = response["error"] as? String {
+        diagnostics.append(
+            DiagnosticInfo(
+                code: 0,
+                category: "error",
+                message: error
+            ))
     }
-
-    // Extract results using the new API
-    let diagnostics = extractDiagnostics(from: result)
-    let writtenFiles = extractWrittenFiles(from: result)
-    let compiledFiles = extractCompiledFiles(from: result, writtenFiles: writtenFiles)
 
     return InMemoryBuildResult(
-        success: result.success,
-        diagnostics: diagnostics,
-        compiledFiles: compiledFiles,
-        configFile: result.configFile,
-        writtenFiles: writtenFiles
+        success: success,
+        diagnostics: diagnostics
     )
 }
 
@@ -313,111 +222,231 @@ public func build(
 ///   - sourceFiles: Array of source files to compile
 ///   - config: TypeScript configuration (optional, uses default if nil)
 /// - Returns: Build result with compilation status and diagnostics
-/// - Throws: BridgeError if the build process fails
-public func build(
+public func buildInMemory(
     _ sourceFiles: [Source],
     config: TSConfig? = nil
-) async throws -> InMemoryBuildResult {
+) throws -> InMemoryBuildResult {
     let projectPath = "/project"
+    let srcPath = "/project/src"
 
-    // Create a file map for quick lookup - use both absolute and relative paths
-    let fileMap: [String: String] = {
-        var map: [String: String] = [:]
-        for source in sourceFiles {
-            let absolutePath = "\(projectPath)/\(source.name)"
-            let relativePath = source.name
+    // Create resolver data
+    let resolverData = tsc_create_resolver_data()
+    defer { tsc_free_resolver_data(resolverData) }
 
-            // Store with both absolute and relative paths
-            map[absolutePath] = source.content
-            map[relativePath] = source.content
-            map["/\(source.name)"] = source.content
-        }
-        return map
-    }()
-
-    let knownDirectories: Set<String> = {
-        var directories = Set<String>([projectPath, "/"])
-
-        // Add source files and their directories
-        for source in sourceFiles {
-            let absolutePath = "\(projectPath)/\(source.name)"
-            let relativePath = source.name
-
-            // Track parent directories for absolute path
-            let parentDir = (absolutePath as NSString).deletingLastPathComponent
-            if parentDir != projectPath {
-                directories.insert(parentDir)
-
-                // Add intermediate directories
-                var currentPath = parentDir
-                while currentPath != projectPath && currentPath != "/" {
-                    directories.insert(currentPath)
-                    currentPath = (currentPath as NSString).deletingLastPathComponent
-                }
-            }
-
-            // Track parent directories for relative path
-            let relativeParentDir = (relativePath as NSString).deletingLastPathComponent
-            if relativeParentDir != "." && relativeParentDir != "" {
-                directories.insert(relativeParentDir)
-                directories.insert("/\(relativeParentDir)")
-                directories.insert("\(projectPath)/\(relativeParentDir)")
-            }
-        }
-        return directories
-    }()
-
-    // Create resolver that uses the provided source files
-    let resolver: @Sendable (String) async throws -> FileResolver? = { path in
-        // Check for exact file match
-        if let content = fileMap[path] {
-            return .file(content)
-        }
-
-        // Check if it's a known directory
-        if knownDirectories.contains(path) {
-            return .directory([])
-        }
-
-        // Handle output directories (dist, etc.) as existing directories
-        if path.contains("/dist") || path.hasSuffix("/dist") || path == "dist"
-            || path.hasPrefix("\(projectPath)/dist")
-        {
-            return .directory([])
-        }
-
-        // Also handle root project directory
-        if path == projectPath {
-            return .directory([])
-        }
-
-        // Check if any files are under this directory path
-        let isDirectory = fileMap.keys.contains { filePath in
-            filePath.hasPrefix(path + "/")
-                || filePath.hasPrefix(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
-        }
-
-        return isDirectory ? .directory([]) : nil
+    guard let resolverData = resolverData else {
+        return InMemoryBuildResult(
+            success: false,
+            diagnostics: [
+                DiagnosticInfo(
+                    code: 0,
+                    category: "error",
+                    message: "Failed to create file resolver"
+                )
+            ]
+        )
     }
 
-    // Modify the config to explicitly include the files we have
+    // Add project directories
+    withMutableCString(projectPath) { projectPathPtr in
+        tsc_add_directory_to_resolver(resolverData, projectPathPtr)
+    }
+    withMutableCString(srcPath) { srcPathPtr in
+        tsc_add_directory_to_resolver(resolverData, srcPathPtr)
+    }
+
+    // Create appropriate tsconfig for in-memory builds
     let tsConfig: TSConfig
     if let providedConfig = config {
-        var modifiedConfig = providedConfig
-        // If no files or include patterns are specified, add our files
-        if modifiedConfig.files == nil && modifiedConfig.include == nil {
-            modifiedConfig.files = sourceFiles.map { $0.name }
-        }
-        tsConfig = modifiedConfig
+        tsConfig = providedConfig
     } else {
-        // Use default config with explicit file list
-        var defaultConfig = TSConfig.default
-        defaultConfig.files = sourceFiles.map { $0.name }
-        if defaultConfig.compilerOptions == nil {
-            defaultConfig.compilerOptions = CompilerOptions()
-        }
-        tsConfig = defaultConfig
+        // Create a config that matches where we place files
+        var compilerOptions = CompilerOptions()
+        compilerOptions.target = .es2020
+        compilerOptions.module = .commonjs
+        compilerOptions.strict = true
+        compilerOptions.esModuleInterop = true
+        compilerOptions.skipLibCheck = true
+        compilerOptions.forceConsistentCasingInFileNames = true
+        compilerOptions.noEmit = false
+
+        tsConfig = TSConfig(
+            compilerOptions: compilerOptions,
+            exclude: ["node_modules", "dist"],
+            include: ["src/**/*"]
+        )
     }
 
-    return try await build(config: tsConfig, resolver: resolver)
+    // Add source files to src directory
+    for source in sourceFiles {
+        let filePath = "\(srcPath)/\(source.name)"
+        withMutableCString(filePath) { filePathPtr in
+            withMutableCString(source.content) { contentPtr in
+                tsc_add_file_to_resolver(resolverData, filePathPtr, contentPtr)
+            }
+        }
+    }
+
+    // Add tsconfig.json
+    do {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let configData = try encoder.encode(tsConfig)
+        let configString = String(data: configData, encoding: .utf8) ?? "{}"
+        let configPath = "\(projectPath)/tsconfig.json"
+        withMutableCString(configPath) { configPathPtr in
+            withMutableCString(configString) { configStringPtr in
+                tsc_add_file_to_resolver(resolverData, configPathPtr, configStringPtr)
+            }
+        }
+    } catch {
+        return InMemoryBuildResult(
+            success: false,
+            diagnostics: [
+                DiagnosticInfo(
+                    code: 0,
+                    category: "error",
+                    message:
+                        "Failed to encode TypeScript configuration: \(error.localizedDescription)"
+                )
+            ]
+        )
+    }
+
+    // Build with resolver
+    let cResult = withMutableCString(projectPath) { projectPathPtr in
+        withMutableCString("") { emptyStringPtr in
+            tsc_build_with_resolver(projectPathPtr, 0, emptyStringPtr, resolverData)
+        }
+    }
+    return processResult(cResult)
+}
+
+/// Build TypeScript files with a custom file resolver
+/// - Parameters:
+///   - config: TypeScript configuration (optional, uses default if nil)
+///   - resolver: Function that resolves file paths to FileResolver cases or nil
+/// - Returns: Build result with compilation status and diagnostics
+public func build(
+    config: TSConfig? = nil,
+    resolver: @escaping (String) -> FileResolver?
+) throws -> InMemoryBuildResult {
+    let projectPath = "/project"
+
+    // Create resolver data
+    let resolverData = tsc_create_resolver_data()
+    defer { tsc_free_resolver_data(resolverData) }
+
+    guard let resolverData = resolverData else {
+        return InMemoryBuildResult(
+            success: false,
+            diagnostics: [
+                DiagnosticInfo(
+                    code: 0,
+                    category: "error",
+                    message: "Failed to create file resolver"
+                )
+            ]
+        )
+    }
+
+    // Add project directory
+    withMutableCString(projectPath) { projectPathPtr in
+        tsc_add_directory_to_resolver(resolverData, projectPathPtr)
+    }
+
+    // Add tsconfig.json
+    let tsConfig = config ?? TSConfig.default
+    do {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let configData = try encoder.encode(tsConfig)
+        let configString = String(data: configData, encoding: .utf8) ?? "{}"
+        let configPath = "\(projectPath)/tsconfig.json"
+        withMutableCString(configPath) { configPathPtr in
+            withMutableCString(configString) { configStringPtr in
+                tsc_add_file_to_resolver(resolverData, configPathPtr, configStringPtr)
+            }
+        }
+    } catch {
+        return InMemoryBuildResult(
+            success: false,
+            diagnostics: [
+                DiagnosticInfo(
+                    code: 0,
+                    category: "error",
+                    message:
+                        "Failed to encode TypeScript configuration: \(error.localizedDescription)"
+                )
+            ]
+        )
+    }
+
+    // We need to pre-populate the resolver data based on the resolver function
+    // This is a limitation of the C bridge approach - we can't make dynamic callbacks
+    // For now, we'll return an error suggesting to use buildInMemory instead
+    return InMemoryBuildResult(
+        success: false,
+        diagnostics: [
+            DiagnosticInfo(
+                code: 0,
+                category: "error",
+                message:
+                    "Dynamic file resolution not supported with C bridge. Use buildInMemory() with predefined source files instead."
+            )
+        ]
+    )
+}
+
+/// Build TypeScript files with a simple resolver using predefined files
+/// - Parameters:
+///   - files: Dictionary mapping file paths to their contents
+///   - directories: Array of directory paths that should exist
+/// - Returns: Build result with compilation status and diagnostics
+public func buildWithSimpleResolver(
+    _ files: [String: String],
+    directories: [String] = []
+) throws -> InMemoryBuildResult {
+    // Create resolver data
+    let resolverData = tsc_create_resolver_data()
+    defer { tsc_free_resolver_data(resolverData) }
+
+    guard let resolverData = resolverData else {
+        return InMemoryBuildResult(
+            success: false,
+            diagnostics: [
+                DiagnosticInfo(
+                    code: 0,
+                    category: "error",
+                    message: "Failed to create file resolver"
+                )
+            ]
+        )
+    }
+
+    // Add directories
+    for directory in directories {
+        withMutableCString(directory) { directoryPtr in
+            tsc_add_directory_to_resolver(resolverData, directoryPtr)
+        }
+    }
+
+    // Add files
+    for (path, content) in files {
+        withMutableCString(path) { pathPtr in
+            withMutableCString(content) { contentPtr in
+                tsc_add_file_to_resolver(resolverData, pathPtr, contentPtr)
+            }
+        }
+    }
+
+    // Determine project path from files
+    let projectPath = directories.first ?? "/project"
+
+    // Build with resolver
+    let cResult = withMutableCString(projectPath) { projectPathPtr in
+        withMutableCString("") { emptyStringPtr in
+            tsc_build_with_resolver(projectPathPtr, 0, emptyStringPtr, resolverData)
+        }
+    }
+    return processResult(cResult)
 }
