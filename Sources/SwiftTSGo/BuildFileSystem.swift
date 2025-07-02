@@ -97,7 +97,7 @@ private func extractWrittenFiles(from bridgeResult: BridgeBridgeResult) -> [Stri
 /// - Returns: Build result with compilation status and diagnostics
 public func build(_ config: FileSystemBuildConfig) -> FileSystemBuildResult {
     var error: NSError?
-    let bridgeResult = BridgeBridgeBuildWithFileSystem(
+    let bridgeResult = BridgeBuildWithFileSystem(
         config.projectPath,
         config.printErrors,
         config.configFile ?? "",

@@ -21,7 +21,43 @@ struct BuildInMemoryTests {
         ]
 
         let result = try await build(sources)
-        print(result)
+
+        #expect(result.success == true)
+        #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
+        #expect(!result.configFile.isEmpty)
+    }
+
+    @Test func basicCompilationTestWithGlob() async throws {
+        let sources = [
+            Source(
+                name: "hello.ts",
+                content: """
+                    function greet(name: string): string {
+                        return `Hello, ${name}!`;
+                    }
+
+                    const message = greet("World");
+                    console.log(message);
+                    """)
+        ]
+
+        // Create a file map for quick lookup
+        let fileMap: [String: String] = sources.reduce(into: [:]) { map, source in
+            map["/project/src/\(source.name)"] = source.content
+        }
+
+        let result = try await build(config: .default) { path in
+            if path == "/project" {
+                return .directory(["src"])
+            } else if let content = fileMap[path] {
+                return .file(content)
+            } else if path == "/project/src" {
+                let children = sources.map({ $0.name })
+                return .directory(children)
+            }
+
+            return nil
+        }
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
@@ -152,7 +188,7 @@ struct BuildInMemoryTests {
         let resolver: @Sendable (String) async throws -> FileResolver? = { path in
             // Handle the project directory itself
             if path == "/project" {
-                return .directory
+                return .directory([])
             }
 
             // Handle files under /project/
@@ -170,7 +206,7 @@ struct BuildInMemoryTests {
 
             // Check for directory patterns
             if normalizedPath == "src" || normalizedPath == "src/" {
-                return .directory
+                return .directory([])
             }
 
             // Check if it's a directory based on having files underneath
@@ -180,12 +216,12 @@ struct BuildInMemoryTests {
             }
 
             if isDirectory {
-                return .directory
+                return .directory([])
             }
 
             // Handle root directory
             if normalizedPath.isEmpty || normalizedPath == "." {
-                return .directory
+                return .directory([])
             }
 
             return nil
@@ -384,7 +420,7 @@ struct BuildInMemoryTests {
         let resolver: @Sendable (String) async throws -> FileResolver? = { path in
             // Handle the project directory itself
             if path == "/project" {
-                return .directory
+                return .directory([])
             }
 
             // Handle files under /project/
@@ -402,7 +438,7 @@ struct BuildInMemoryTests {
 
             // Handle root directory
             if normalizedPath.isEmpty || normalizedPath == "." {
-                return .directory
+                return .directory([])
             }
 
             return nil

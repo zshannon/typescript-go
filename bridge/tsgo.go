@@ -39,11 +39,41 @@ type FileResolver interface {
 	// WriteFile writes content to the given path
 	// Returns true if the write was successful
 	WriteFile(path string, content string) bool
+
+	GetAllPaths(directory string) *PathList
 }
 
 // PathList represents a list of paths for gomobile compatibility
 type PathList struct {
 	Paths []string
+}
+
+// CreatePathList creates a new PathList instance with the given paths
+func CreatePathList() *PathList {
+	return &PathList{Paths: []string{}}
+}
+
+// Add adds a string to the PathList's Paths slice
+func (p *PathList) Add(path string) {
+	p.Paths = append(p.Paths, path)
+}
+
+// GetCount returns the number of paths in the list
+func (p *PathList) GetCount() int {
+	return len(p.Paths)
+}
+
+// GetPath returns the path at the given index
+func (p *PathList) GetPath(index int) string {
+	if index < 0 || index >= len(p.Paths) {
+		return ""
+	}
+	return p.Paths[index]
+}
+
+// Clear removes all paths from the list
+func (p *PathList) Clear() {
+	p.Paths = p.Paths[:0]
 }
 
 // pathEnumerator is an optional interface that FileResolver can implement
@@ -121,42 +151,67 @@ func (c *callbackVFS) GetAccessibleEntries(path string) vfs.Entries {
 	var files []string
 	var directories []string
 
-	// Get all files and directories from the resolver that start with the given path
-	// This is a simple implementation - in a real scenario you might want to optimize this
-	for filePath := range c.getAllKnownPaths(path) {
-		if strings.HasPrefix(filePath, path) {
-			relativePath := strings.TrimPrefix(filePath, path)
-			if relativePath != "" && relativePath[0] == '/' {
-				relativePath = relativePath[1:]
-			}
-
-			// Skip if this is the exact path or empty relative path
-			if relativePath == "" {
+	// First, try to get direct children from the resolver's GetAllPaths method
+	pathList := c.resolver.GetAllPaths(path)
+	if pathList != nil {
+		for _, childName := range pathList.Paths {
+			if childName == "" {
 				continue
 			}
 
-			// Check if this is a direct child (no additional path separators)
-			if !strings.Contains(relativePath, "/") {
-				if c.resolver.FileExists(filePath) {
-					files = append(files, relativePath)
+			// Construct the full path for this child
+			childPath := path
+			if !strings.HasSuffix(path, "/") {
+				childPath += "/"
+			}
+			childPath += childName
+
+			// Check if it's a file or directory
+			if c.resolver.FileExists(childPath) {
+				files = append(files, childName)
+			} else if c.resolver.DirectoryExists(childPath) {
+				directories = append(directories, childName)
+			}
+		}
+	}
+
+	// Fallback: Get all files and directories from known paths
+	if len(files) == 0 && len(directories) == 0 {
+		for filePath := range c.getAllKnownPaths(path) {
+			if strings.HasPrefix(filePath, path) {
+				relativePath := strings.TrimPrefix(filePath, path)
+				if relativePath != "" && relativePath[0] == '/' {
+					relativePath = relativePath[1:]
 				}
-			} else {
-				// This is a subdirectory - extract the first segment
-				segments := strings.Split(relativePath, "/")
-				if len(segments) > 0 {
-					dirName := segments[0]
-					dirPath := path + "/" + dirName
-					if c.resolver.DirectoryExists(dirPath) {
-						// Check if we already added this directory
-						found := false
-						for _, existing := range directories {
-							if existing == dirName {
-								found = true
-								break
+
+				// Skip if this is the exact path or empty relative path
+				if relativePath == "" {
+					continue
+				}
+
+				// Check if this is a direct child (no additional path separators)
+				if !strings.Contains(relativePath, "/") {
+					if c.resolver.FileExists(filePath) {
+						files = append(files, relativePath)
+					}
+				} else {
+					// This is a subdirectory - extract the first segment
+					segments := strings.Split(relativePath, "/")
+					if len(segments) > 0 {
+						dirName := segments[0]
+						dirPath := path + "/" + dirName
+						if c.resolver.DirectoryExists(dirPath) {
+							// Check if we already added this directory
+							found := false
+							for _, existing := range directories {
+								if existing == dirName {
+									found = true
+									break
+								}
 							}
-						}
-						if !found {
-							directories = append(directories, dirName)
+							if !found {
+								directories = append(directories, dirName)
+							}
 						}
 					}
 				}
@@ -727,8 +782,8 @@ func (r *BridgeResult) GetWrittenFilePaths() *PathList {
 	return &PathList{Paths: paths}
 }
 
-// BridgeBuildWithFileSystem builds using only the filesystem (no custom resolver)
-func BridgeBuildWithFileSystem(projectPath string, printErrors bool, configFile string) (*BridgeResult, error) {
+// BuildWithFileSystem builds using only the filesystem (no custom resolver)
+func BuildWithFileSystem(projectPath string, printErrors bool, configFile string) (*BridgeResult, error) {
 	config := BuildConfig{
 		ProjectPath:  projectPath,
 		PrintErrors:  printErrors,
