@@ -1,0 +1,4 @@
+module TSCBridge {
+    header "tsc_bridge.h"
+    export *
+}
