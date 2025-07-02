@@ -13,7 +13,9 @@
       "Bash(go build:*)",
       "Bash(grep:*)",
       "Bash(cp:*)",
-      "Bash(make:*)"
+      "Bash(make:*)",
+      "Bash(mkdir:*)",
+      "Bash(mv:*)"
     ],
     "deny": []
   }
