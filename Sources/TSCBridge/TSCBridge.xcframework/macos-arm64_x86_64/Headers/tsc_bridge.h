@@ -60,6 +60,17 @@ typedef struct {
 
 #line 1 "cgo-generated-wrapper"
 
+#line 3 "esbuild_c_bridge.go"
+
+#include <stdlib.h>
+
+typedef struct {
+    int* values;
+    int count;
+} c_int_array;
+
+#line 1 "cgo-generated-wrapper"
+
 
 /* End of preamble from import "C" comments.  */
 
@@ -123,6 +134,12 @@ extern c_file_resolver_data* tsc_create_resolver_data();
 extern void tsc_add_file_to_resolver(c_file_resolver_data* data, char* path, char* content);
 extern void tsc_add_directory_to_resolver(c_file_resolver_data* data, char* path);
 extern void tsc_free_resolver_data(c_file_resolver_data* data);
+extern int esbuild_platform_default();
+extern int esbuild_platform_browser();
+extern int esbuild_platform_node();
+extern int esbuild_platform_neutral();
+extern c_int_array* esbuild_get_all_platform_values();
+extern void esbuild_free_int_array(c_int_array* arr);
 
 #ifdef __cplusplus
 }
