@@ -433,4 +433,222 @@ struct ESBuildTransformTests {
         #expect(options.logLimit == 0)
         #expect(options.lineLimit == 0)
     }
+
+    // MARK: - C Bridge Validation Tests
+
+    @Test("Default options C bridge conversion")
+    func testDefaultOptionsCBridgeConversion() {
+        let options = ESBuildTransformOptions()
+        let cOptions = options.cValue
+        defer { esbuild_free_transform_options(cOptions) }
+
+        // Validate basic enum conversions
+        #expect(cOptions.pointee.color == options.color.cValue)
+        #expect(cOptions.pointee.log_level == options.logLevel.cValue)
+        #expect(cOptions.pointee.log_limit == options.logLimit)
+        #expect(cOptions.pointee.sourcemap == options.sourcemap.cValue)
+        #expect(cOptions.pointee.sources_content == options.sourcesContent.cValue)
+        #expect(cOptions.pointee.target == options.target.cValue)
+        #expect(cOptions.pointee.platform == options.platform.cValue)
+        #expect(cOptions.pointee.format == options.format.cValue)
+        #expect(cOptions.pointee.mangle_quoted == options.mangleQuoted.cValue)
+        #expect(cOptions.pointee.charset == options.charset.cValue)
+        #expect(cOptions.pointee.tree_shaking == options.treeShaking.cValue)
+        #expect(cOptions.pointee.legal_comments == options.legalComments.cValue)
+        #expect(cOptions.pointee.jsx == options.jsx.cValue)
+        #expect(cOptions.pointee.loader == options.loader.cValue)
+
+        // Validate boolean conversions
+        #expect(cOptions.pointee.minify_whitespace == (options.minifyWhitespace ? 1 : 0))
+        #expect(cOptions.pointee.minify_identifiers == (options.minifyIdentifiers ? 1 : 0))
+        #expect(cOptions.pointee.minify_syntax == (options.minifySyntax ? 1 : 0))
+        #expect(cOptions.pointee.ignore_annotations == (options.ignoreAnnotations ? 1 : 0))
+        #expect(cOptions.pointee.jsx_dev == (options.jsxDev ? 1 : 0))
+        #expect(cOptions.pointee.jsx_side_effects == (options.jsxSideEffects ? 1 : 0))
+        #expect(cOptions.pointee.keep_names == (options.keepNames ? 1 : 0))
+
+        // Validate numeric fields
+        #expect(cOptions.pointee.line_limit == options.lineLimit)
+
+        // Validate nil string fields are null pointers
+        #expect(cOptions.pointee.source_root == nil)
+        #expect(cOptions.pointee.global_name == nil)
+        #expect(cOptions.pointee.mangle_props == nil)
+        #expect(cOptions.pointee.reserve_props == nil)
+        #expect(cOptions.pointee.jsx_factory == nil)
+        #expect(cOptions.pointee.jsx_fragment == nil)
+        #expect(cOptions.pointee.jsx_import_source == nil)
+        #expect(cOptions.pointee.tsconfig_raw == nil)
+        #expect(cOptions.pointee.banner == nil)
+        #expect(cOptions.pointee.footer == nil)
+        #expect(cOptions.pointee.sourcefile == nil)
+    }
+
+    @Test("Custom options C bridge conversion")
+    func testCustomOptionsCBridgeConversion() {
+        let options = ESBuildTransformOptions(
+            color: .always,
+            logLevel: .debug,
+            logLimit: 100,
+            sourcemap: .inline,
+            sourceRoot: "/src",
+            sourcesContent: .exclude,
+            target: .es2020,
+            platform: .browser,
+            format: .esmodule,
+            globalName: "MyLibrary",
+            mangleProps: "^_",
+            reserveProps: "^keep_",
+            mangleQuoted: .true,
+            minifyWhitespace: true,
+            minifyIdentifiers: true,
+            minifySyntax: true,
+            lineLimit: 80,
+            charset: .ascii,
+            treeShaking: .true,
+            ignoreAnnotations: true,
+            legalComments: .inline,
+            jsx: .automatic,
+            jsxFactory: "React.createElement",
+            jsxFragment: "React.Fragment",
+            jsxImportSource: "react",
+            jsxDev: true,
+            jsxSideEffects: true,
+            tsconfigRaw: "{\"compilerOptions\":{\"strict\":true}}",
+            banner: "/* Banner */",
+            footer: "/* Footer */",
+            keepNames: true,
+            sourcefile: "input.ts",
+            loader: .tsx
+        )
+
+        let cOptions = options.cValue
+        defer { esbuild_free_transform_options(cOptions) }
+
+        // Validate enum conversions match
+        #expect(cOptions.pointee.color == options.color.cValue)
+        #expect(cOptions.pointee.log_level == options.logLevel.cValue)
+        #expect(cOptions.pointee.sourcemap == options.sourcemap.cValue)
+        #expect(cOptions.pointee.sources_content == options.sourcesContent.cValue)
+        #expect(cOptions.pointee.target == options.target.cValue)
+        #expect(cOptions.pointee.platform == options.platform.cValue)
+        #expect(cOptions.pointee.format == options.format.cValue)
+        #expect(cOptions.pointee.mangle_quoted == options.mangleQuoted.cValue)
+        #expect(cOptions.pointee.charset == options.charset.cValue)
+        #expect(cOptions.pointee.tree_shaking == options.treeShaking.cValue)
+        #expect(cOptions.pointee.legal_comments == options.legalComments.cValue)
+        #expect(cOptions.pointee.jsx == options.jsx.cValue)
+        #expect(cOptions.pointee.loader == options.loader.cValue)
+
+        // Validate string conversions
+        #expect(String(cString: cOptions.pointee.source_root!) == options.sourceRoot!)
+        #expect(String(cString: cOptions.pointee.global_name!) == options.globalName!)
+        #expect(String(cString: cOptions.pointee.mangle_props!) == options.mangleProps!)
+        #expect(String(cString: cOptions.pointee.reserve_props!) == options.reserveProps!)
+        #expect(String(cString: cOptions.pointee.jsx_factory!) == options.jsxFactory!)
+        #expect(String(cString: cOptions.pointee.jsx_fragment!) == options.jsxFragment!)
+        #expect(String(cString: cOptions.pointee.jsx_import_source!) == options.jsxImportSource!)
+        #expect(String(cString: cOptions.pointee.tsconfig_raw!) == options.tsconfigRaw!)
+        #expect(String(cString: cOptions.pointee.banner!) == options.banner!)
+        #expect(String(cString: cOptions.pointee.footer!) == options.footer!)
+        #expect(String(cString: cOptions.pointee.sourcefile!) == options.sourcefile!)
+
+        // Validate boolean conversions
+        #expect(cOptions.pointee.minify_whitespace == 1)
+        #expect(cOptions.pointee.minify_identifiers == 1)
+        #expect(cOptions.pointee.minify_syntax == 1)
+        #expect(cOptions.pointee.ignore_annotations == 1)
+        #expect(cOptions.pointee.jsx_dev == 1)
+        #expect(cOptions.pointee.jsx_side_effects == 1)
+        #expect(cOptions.pointee.keep_names == 1)
+
+        // Validate numeric fields
+        #expect(cOptions.pointee.log_limit == 100)
+        #expect(cOptions.pointee.line_limit == 80)
+    }
+
+    @Test("Boolean flag C bridge conversion")
+    func testBooleanFlagCBridgeConversion() {
+        // Test all boolean flags set to true
+        let trueOptions = ESBuildTransformOptions(
+            minifyWhitespace: true,
+            minifyIdentifiers: true,
+            minifySyntax: true,
+            ignoreAnnotations: true,
+            jsxDev: true,
+            jsxSideEffects: true,
+            keepNames: true
+        )
+
+        let trueCOptions = trueOptions.cValue
+        defer { esbuild_free_transform_options(trueCOptions) }
+
+        #expect(trueCOptions.pointee.minify_whitespace == 1)
+        #expect(trueCOptions.pointee.minify_identifiers == 1)
+        #expect(trueCOptions.pointee.minify_syntax == 1)
+        #expect(trueCOptions.pointee.ignore_annotations == 1)
+        #expect(trueCOptions.pointee.jsx_dev == 1)
+        #expect(trueCOptions.pointee.jsx_side_effects == 1)
+        #expect(trueCOptions.pointee.keep_names == 1)
+
+        // Test all boolean flags set to false
+        let falseOptions = ESBuildTransformOptions(
+            minifyWhitespace: false,
+            minifyIdentifiers: false,
+            minifySyntax: false,
+            ignoreAnnotations: false,
+            jsxDev: false,
+            jsxSideEffects: false,
+            keepNames: false
+        )
+
+        let falseCOptions = falseOptions.cValue
+        defer { esbuild_free_transform_options(falseCOptions) }
+
+        #expect(falseCOptions.pointee.minify_whitespace == 0)
+        #expect(falseCOptions.pointee.minify_identifiers == 0)
+        #expect(falseCOptions.pointee.minify_syntax == 0)
+        #expect(falseCOptions.pointee.ignore_annotations == 0)
+        #expect(falseCOptions.pointee.jsx_dev == 0)
+        #expect(falseCOptions.pointee.jsx_side_effects == 0)
+        #expect(falseCOptions.pointee.keep_names == 0)
+    }
+
+    @Test("Enum value consistency across C bridge")
+    func testEnumValueConsistency() {
+        // Test a variety of enum combinations to ensure consistency
+        let configurations: [(ESBuildTransformOptions) -> Void] = [
+            { options in
+                var opts = options
+                opts.color = .always
+                opts.logLevel = .error
+                opts.sourcemap = .external
+                opts.target = .es2022
+                let cOpts = opts.cValue
+                defer { esbuild_free_transform_options(cOpts) }
+                #expect(cOpts.pointee.color == opts.color.cValue)
+                #expect(cOpts.pointee.log_level == opts.logLevel.cValue)
+                #expect(cOpts.pointee.sourcemap == opts.sourcemap.cValue)
+                #expect(cOpts.pointee.target == opts.target.cValue)
+            },
+            { options in
+                var opts = options
+                opts.platform = .node
+                opts.format = .commonjs
+                opts.jsx = .preserve
+                opts.loader = .json
+                let cOpts = opts.cValue
+                defer { esbuild_free_transform_options(cOpts) }
+                #expect(cOpts.pointee.platform == opts.platform.cValue)
+                #expect(cOpts.pointee.format == opts.format.cValue)
+                #expect(cOpts.pointee.jsx == opts.jsx.cValue)
+                #expect(cOpts.pointee.loader == opts.loader.cValue)
+            },
+        ]
+
+        let baseOptions = ESBuildTransformOptions()
+        for configure in configurations {
+            configure(baseOptions)
+        }
+    }
 }

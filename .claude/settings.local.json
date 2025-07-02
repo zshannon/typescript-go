@@ -19,7 +19,8 @@
       "Bash(ls:*)",
       "Bash(nm:*)",
       "Bash(go tool cgo:*)",
-      "Bash(swift package:*)"
+      "Bash(swift package:*)",
+      "Bash(rg:*)"
     ],
     "deny": []
   }

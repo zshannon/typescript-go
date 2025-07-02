@@ -146,6 +146,90 @@ public struct ESBuildTransformOptions {
     /// How to interpret the input
     public var loader: ESBuildLoader
 
+    // MARK: - C Bridge
+
+    /// Convert to C bridge representation
+    public var cValue: UnsafeMutablePointer<c_transform_options> {
+        let options = esbuild_create_transform_options()!
+        
+        // Logging and Output Control
+        options.pointee.color = color.cValue
+        options.pointee.log_level = logLevel.cValue
+        options.pointee.log_limit = logLimit
+        
+        // Source Map
+        options.pointee.sourcemap = sourcemap.cValue
+        if let sourceRoot = sourceRoot {
+            options.pointee.source_root = strdup(sourceRoot)
+        }
+        options.pointee.sources_content = sourcesContent.cValue
+        
+        // Target and Compatibility
+        options.pointee.target = target.cValue
+        options.pointee.platform = platform.cValue
+        options.pointee.format = format.cValue
+        if let globalName = globalName {
+            options.pointee.global_name = strdup(globalName)
+        }
+        
+        // Minification and Property Mangling
+        if let mangleProps = mangleProps {
+            options.pointee.mangle_props = strdup(mangleProps)
+        }
+        if let reserveProps = reserveProps {
+            options.pointee.reserve_props = strdup(reserveProps)
+        }
+        options.pointee.mangle_quoted = mangleQuoted.cValue
+        
+        // Boolean flags
+        options.pointee.minify_whitespace = minifyWhitespace ? 1 : 0
+        options.pointee.minify_identifiers = minifyIdentifiers ? 1 : 0
+        options.pointee.minify_syntax = minifySyntax ? 1 : 0
+        options.pointee.line_limit = lineLimit
+        options.pointee.charset = charset.cValue
+        options.pointee.tree_shaking = treeShaking.cValue
+        options.pointee.ignore_annotations = ignoreAnnotations ? 1 : 0
+        options.pointee.legal_comments = legalComments.cValue
+        
+        // JSX Configuration
+        options.pointee.jsx = jsx.cValue
+        if let jsxFactory = jsxFactory {
+            options.pointee.jsx_factory = strdup(jsxFactory)
+        }
+        if let jsxFragment = jsxFragment {
+            options.pointee.jsx_fragment = strdup(jsxFragment)
+        }
+        if let jsxImportSource = jsxImportSource {
+            options.pointee.jsx_import_source = strdup(jsxImportSource)
+        }
+        options.pointee.jsx_dev = jsxDev ? 1 : 0
+        options.pointee.jsx_side_effects = jsxSideEffects ? 1 : 0
+        
+        // TypeScript Configuration
+        if let tsconfigRaw = tsconfigRaw {
+            options.pointee.tsconfig_raw = strdup(tsconfigRaw)
+        }
+        
+        // Code Injection
+        if let banner = banner {
+            options.pointee.banner = strdup(banner)
+        }
+        if let footer = footer {
+            options.pointee.footer = strdup(footer)
+        }
+        
+        // Code Transformation
+        options.pointee.keep_names = keepNames ? 1 : 0
+        
+        // Input Configuration
+        if let sourcefile = sourcefile {
+            options.pointee.sourcefile = strdup(sourcefile)
+        }
+        options.pointee.loader = loader.cValue
+        
+        return options
+    }
+
     // MARK: - Initialization
 
     /// Creates transform options with default values
