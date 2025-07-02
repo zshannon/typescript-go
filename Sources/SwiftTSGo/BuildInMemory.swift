@@ -328,7 +328,7 @@ public func buildInMemory(
 /// - Returns: Build result with compilation status and diagnostics
 public func build(
     config: TSConfig? = nil,
-    resolver: @escaping (String) async throws -> FileResolver?
+    resolver: @escaping @Sendable (String) async throws -> FileResolver?
 ) async throws -> InMemoryBuildResult {
     let projectPath = "/project"
 
