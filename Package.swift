@@ -11,22 +11,26 @@ let package = Package(
         )
     ],
     targets: [
-        .binaryTarget(
-            name: "SwiftTSGoMobile",
-            path: "./Sources/TSGoBindings.xcframework"
+        .systemLibrary(
+            name: "TSCBridge",
+            path: "Sources/TSCBridge"
         ),
         .target(
             name: "SwiftTSGo",
             dependencies: [
-                .target(name: "SwiftTSGoMobile")
-                // .byName(name: "ESBuildMobile")
+                .target(name: "TSCBridge")
+            ],
+            linkerSettings: [
+                .unsafeFlags(["-LSources/TSCBridge"]),
+                .linkedLibrary("tsc_macos", .when(platforms: [.macOS])),
+                .linkedLibrary("tsc_ios_arm64", .when(platforms: [.iOS])),
             ]
         ),
         .testTarget(
             name: "SwiftTSGoTests",
             dependencies: [
                 .target(name: "SwiftTSGo"),
-                .target(name: "SwiftTSGoMobile"),
+                .target(name: "TSCBridge"),
             ],
             resources: [
                 .copy("Resources")

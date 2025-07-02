@@ -12,13 +12,8 @@ struct BuildFileSystemTests {
         let testProjectPath = testBundle.path(forResource: "test-hello", ofType: nil)!
 
         // Configure build with the test project path
-        let config = FileSystemBuildConfig(
-            projectPath: testProjectPath,
-            printErrors: false
-        )
-
         // Build using the file system build function
-        let result = build(config)
+        let result = try buildFromFileSystem(projectPath: testProjectPath, printErrors: false)
 
         // Verify successful compilation
         #expect(result.success == true)
@@ -38,14 +33,8 @@ struct BuildFileSystemTests {
         let testBundle = Bundle.module
         let testProjectPath = testBundle.path(forResource: "test-error", ofType: nil)!
 
-        // Configure build with the test project path
-        let config = FileSystemBuildConfig(
-            projectPath: testProjectPath,
-            printErrors: false
-        )
-
         // Build using the file system build function
-        let result = build(config)
+        let result = try buildFromFileSystem(projectPath: testProjectPath, printErrors: false)
 
         // Verify compilation failed
         #expect(result.success == false)
@@ -79,12 +68,7 @@ struct BuildFileSystemTests {
         let testBundle = Bundle.module
         let testProjectPath = testBundle.path(forResource: "test-error", ofType: nil)!
 
-        let config = FileSystemBuildConfig(
-            projectPath: testProjectPath,
-            printErrors: true
-        )
-
-        let result = build(config)
+        let result = try buildFromFileSystem(projectPath: testProjectPath, printErrors: true)
 
         // Should fail compilation
         #expect(result.success == false)
@@ -133,13 +117,7 @@ struct BuildFileSystemTests {
         )
         try modifiedContent.write(to: tsconfigPath, atomically: true, encoding: .utf8)
 
-        let buildConfig = FileSystemBuildConfig(
-            projectPath: tempProjectDir.path,
-            printErrors: false,
-            configFile: nil
-        )
-
-        let result = build(buildConfig)
+        let result = try buildFromFileSystem(projectPath: tempProjectDir.path, printErrors: false)
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
@@ -177,12 +155,7 @@ struct BuildFileSystemTests {
         let tempProjectDir = tempDir.appendingPathComponent("test-project")
         try FileManager.default.copyItem(atPath: testProjectPath, toPath: tempProjectDir.path)
 
-        let config = FileSystemBuildConfig(
-            projectPath: tempProjectDir.path,
-            printErrors: false
-        )
-
-        let result = build(config)
+        let result = try buildFromFileSystem(projectPath: tempProjectDir.path, printErrors: false)
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
@@ -194,18 +167,16 @@ struct BuildFileSystemTests {
         let testBundle = Bundle.module
         let testProjectPath = testBundle.path(forResource: "test-hello", ofType: nil)!
 
-        let config = FileSystemBuildConfig(
+        let result = try buildFromFileSystem(
             projectPath: testProjectPath,
             printErrors: false,
-            configFile: "\(testProjectPath)/tsconfig.json"  // Explicit config file path
+            configFile: "\(testProjectPath)/custom.config.json"
         )
-
-        let result = build(config)
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
         #expect(!result.configFile.isEmpty)
-        #expect(result.configFile.contains("tsconfig.json"))
+        #expect(result.configFile.contains("custom.config.json"))
     }
 
     @Test func printErrorsConfigTest() throws {
@@ -213,13 +184,7 @@ struct BuildFileSystemTests {
         let testBundle = Bundle.module
         let testProjectPath = testBundle.path(forResource: "test-error", ofType: nil)!
 
-        let config = FileSystemBuildConfig(
-            projectPath: testProjectPath,
-            printErrors: true,  // Enable error printing
-            configFile: nil
-        )
-
-        let result = build(config)
+        let result = try buildFromFileSystem(projectPath: testProjectPath, printErrors: true)
 
         // Should still fail compilation but with error printing enabled
         #expect(result.success == false)
@@ -234,13 +199,7 @@ struct BuildFileSystemTests {
         // Test with a non-existent project path
         let nonExistentPath = "/path/that/does/not/exist"
 
-        let config = FileSystemBuildConfig(
-            projectPath: nonExistentPath,
-            printErrors: false,
-            configFile: nil
-        )
-
-        let result = build(config)
+        let result = try buildFromFileSystem(projectPath: nonExistentPath, printErrors: false)
 
         // Should fail
         #expect(result.success == false)
