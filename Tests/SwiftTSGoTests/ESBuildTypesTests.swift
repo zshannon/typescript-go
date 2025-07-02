@@ -8,10 +8,10 @@ struct ESBuildTypesTests {
 
     @Test("Platform enum values match esbuild Go constants via C bridge")
     func testPlatformRawValues() {
-        #expect(ESBuildPlatform.default.actualRawValue == esbuild_platform_default())
-        #expect(ESBuildPlatform.browser.actualRawValue == esbuild_platform_browser())
-        #expect(ESBuildPlatform.node.actualRawValue == esbuild_platform_node())
-        #expect(ESBuildPlatform.neutral.actualRawValue == esbuild_platform_neutral())
+        #expect(ESBuildPlatform.default.cValue == esbuild_platform_default())
+        #expect(ESBuildPlatform.browser.cValue == esbuild_platform_browser())
+        #expect(ESBuildPlatform.node.cValue == esbuild_platform_node())
+        #expect(ESBuildPlatform.neutral.cValue == esbuild_platform_neutral())
     }
 
     @Test("Platform initialization from C bridge values")

@@ -25,7 +25,7 @@ public enum ESBuildPlatform: Int32, CaseIterable {
     case neutral
 
     /// Get the actual raw value from the C bridge
-    public var actualRawValue: Int32 {
+    public var cValue: Int32 {
         switch self {
         case .default: return esbuild_platform_default()
         case .browser: return esbuild_platform_browser()
@@ -48,15 +48,5 @@ public enum ESBuildPlatform: Int32, CaseIterable {
         case neutralValue: return .neutral
         default: return nil
         }
-    }
-}
-
-// MARK: - C Bridge Integration
-
-extension ESBuildPlatform {
-    /// Get the C bridge integer value for this platform
-    /// - Returns: Integer value used by the C bridge
-    public var cValue: Int32 {
-        return self.actualRawValue
     }
 }
