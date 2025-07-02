@@ -17,46 +17,46 @@ public enum ECMAScriptTarget: String, Codable, CaseIterable, Sendable {
 }
 
 public enum ModuleKind: String, Codable, CaseIterable, Sendable {
-    case none = "none"
-    case commonjs = "commonjs"
-    case amd = "amd"
-    case system = "system"
-    case umd = "umd"
-    case es6 = "es6"
-    case es2015 = "es2015"
-    case es2020 = "es2020"
-    case es2022 = "es2022"
-    case esnext = "esnext"
-    case node16 = "node16"
-    case nodenext = "nodenext"
+    case none
+    case commonjs
+    case amd
+    case system
+    case umd
+    case es6
+    case es2015
+    case es2020
+    case es2022
+    case esnext
+    case node16
+    case nodenext
 }
 
 public enum ModuleResolutionKind: String, Codable, CaseIterable, Sendable {
-    case classic = "classic"
-    case node = "node"
-    case node16 = "node16"
-    case nodenext = "nodenext"
-    case bundler = "bundler"
+    case classic
+    case node
+    case node16
+    case nodenext
+    case bundler
 }
 
 public enum JSXEmit: String, Codable, CaseIterable, Sendable {
-    case none = "none"
-    case preserve = "preserve"
-    case react = "react"
+    case none
+    case preserve
+    case react
     case reactNative = "react-native"
     case reactJSX = "react-jsx"
     case reactJSXDev = "react-jsxdev"
 }
 
 public enum NewLineKind: String, Codable, CaseIterable, Sendable {
-    case crlf = "crlf"
-    case lf = "lf"
+    case crlf
+    case lf
 }
 
 public enum ImportsNotUsedAsValues: String, Codable, CaseIterable, Sendable {
-    case remove = "remove"
-    case preserve = "preserve"
-    case error = "error"
+    case remove
+    case preserve
+    case error
 }
 
 // MARK: - Compiler Options
@@ -541,9 +541,9 @@ public struct TSConfig: Codable, Sendable {
 
 // MARK: - Convenience Extensions
 
-extension TSConfig {
+public extension TSConfig {
     /// Creates a default TypeScript configuration suitable for most projects
-    public static var `default`: TSConfig {
+    static var `default`: TSConfig {
         var compilerOptions = CompilerOptions()
         compilerOptions.target = .es2020
         compilerOptions.module = .commonjs
@@ -562,7 +562,7 @@ extension TSConfig {
     }
 
     /// Creates a configuration optimized for Node.js projects
-    public static var nodeProject: TSConfig {
+    static var nodeProject: TSConfig {
         var compilerOptions = CompilerOptions()
         compilerOptions.target = .es2020
         compilerOptions.module = .commonjs
@@ -584,7 +584,7 @@ extension TSConfig {
     }
 
     /// Creates a configuration optimized for React projects
-    public static var reactProject: TSConfig {
+    static var reactProject: TSConfig {
         var compilerOptions = CompilerOptions()
         compilerOptions.target = .es2020
         compilerOptions.lib = ["dom", "dom.iterable", "es6"]
@@ -610,7 +610,7 @@ extension TSConfig {
     }
 
     /// Converts the configuration to JSON string
-    public func toJSONString(prettyPrinted: Bool = true) throws -> String {
+    func toJSONString(prettyPrinted: Bool = true) throws -> String {
         let encoder = JSONEncoder()
         if prettyPrinted {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

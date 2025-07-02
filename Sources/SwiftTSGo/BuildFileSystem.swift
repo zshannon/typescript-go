@@ -6,7 +6,7 @@ import TSCBridge
 private func withMutableCString<T>(_ string: String, _ body: (UnsafeMutablePointer<CChar>) -> T)
     -> T
 {
-    return string.withCString { cString in
+    string.withCString { cString in
         let mutableCString = strdup(cString)!
         defer { free(mutableCString) }
         return body(mutableCString)
@@ -83,14 +83,14 @@ public enum BuildError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .systemError(let message):
-            return "System error: \(message)"
-        case .configurationError(let message):
-            return "Configuration error: \(message)"
-        case .fileNotFound(let path):
-            return "File not found: \(path)"
-        case .invalidPath(let path):
-            return "Invalid path: \(path)"
+        case let .systemError(message):
+            "System error: \(message)"
+        case let .configurationError(message):
+            "Configuration error: \(message)"
+        case let .fileNotFound(path):
+            "File not found: \(path)"
+        case let .invalidPath(path):
+            "Invalid path: \(path)"
         }
     }
 }
@@ -100,7 +100,7 @@ public enum BuildError: LocalizedError {
 private func processFileSystemResult(_ cResult: UnsafeMutablePointer<c_build_result>?)
     -> InMemoryBuildResult
 {
-    guard let cResult = cResult else {
+    guard let cResult else {
         return InMemoryBuildResult(
             success: false,
             diagnostics: [
@@ -108,7 +108,7 @@ private func processFileSystemResult(_ cResult: UnsafeMutablePointer<c_build_res
                     code: 0,
                     category: "error",
                     message: "Build failed with no result"
-                )
+                ),
             ]
         )
     }
@@ -127,8 +127,8 @@ private func processFileSystemResult(_ cResult: UnsafeMutablePointer<c_build_res
                 DiagnosticInfo(
                     code: 0,
                     category: "error",
-                    message: String(configFile.dropFirst(7))  // Remove "error: " prefix
-                )
+                    message: String(configFile.dropFirst(7)) // Remove "error: " prefix
+                ),
             ]
         )
     }
@@ -163,10 +163,10 @@ private func processFileSystemResult(_ cResult: UnsafeMutablePointer<c_build_res
 private func convertCDiagnostics(_ cDiagnostics: UnsafeMutablePointer<c_diagnostic>?, count: Int)
     -> [DiagnosticInfo]
 {
-    guard let cDiagnostics = cDiagnostics, count > 0 else { return [] }
+    guard let cDiagnostics, count > 0 else { return [] }
 
     var diagnostics: [DiagnosticInfo] = []
-    for i in 0..<count {
+    for i in 0 ..< count {
         let cDiag = cDiagnostics[i]
         let diagnostic = DiagnosticInfo(
             code: Int(cDiag.code),
@@ -186,10 +186,10 @@ private func convertCEmittedFiles(
     _ files: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
     count: Int
 ) -> [String] {
-    guard let files = files, count > 0 else { return [] }
+    guard let files, count > 0 else { return [] }
 
     var emittedFiles: [String] = []
-    for i in 0..<count {
+    for i in 0 ..< count {
         if let filePtr = files[i] {
             let filePath = String(cString: filePtr)
             emittedFiles.append(filePath)
@@ -203,10 +203,10 @@ private func convertCWrittenFiles(
     _ contents: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
     count: Int
 ) -> [String: String] {
-    guard let paths = paths, let contents = contents, count > 0 else { return [:] }
+    guard let paths, let contents, count > 0 else { return [:] }
 
     var writtenFiles: [String: String] = [:]
-    for i in 0..<count {
+    for i in 0 ..< count {
         if let pathPtr = paths[i], let contentPtr = contents[i] {
             let path = String(cString: pathPtr)
             let content = String(cString: contentPtr)
@@ -217,7 +217,7 @@ private func convertCWrittenFiles(
 }
 
 private func convertCCompiledFiles(from writtenFiles: [String: String]) -> [Source] {
-    return writtenFiles.map { (path, content) in
+    writtenFiles.map { path, content in
         let filename = (path as NSString).lastPathComponent
         return Source(name: filename, content: content)
     }
@@ -232,13 +232,13 @@ private func convertCCompiledFiles(from writtenFiles: [String: String]) -> [Sour
 public func validateProject(projectPath: String) throws -> InMemoryBuildResult {
     // Use noEmit option to validate without generating output
     let tempConfigContent = """
-        {
-            "extends": "./tsconfig.json",
-            "compilerOptions": {
-                "noEmit": true
-            }
+    {
+        "extends": "./tsconfig.json",
+        "compilerOptions": {
+            "noEmit": true
         }
-        """
+    }
+    """
 
     // Create temporary config file path
     let tempDir = NSTemporaryDirectory()
@@ -278,7 +278,7 @@ public func getCompilationDiagnostics(projectPath: String) -> [DiagnosticInfo] {
                 code: 0,
                 category: "error",
                 message: "Failed to get diagnostics: \(error.localizedDescription)"
-            )
+            ),
         ]
     }
 }

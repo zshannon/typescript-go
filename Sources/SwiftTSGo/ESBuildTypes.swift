@@ -27,10 +27,10 @@ public enum ESBuildPlatform: Int32, CaseIterable {
     /// Get the actual raw value from the C bridge
     public var cValue: Int32 {
         switch self {
-        case .default: return esbuild_platform_default()
-        case .browser: return esbuild_platform_browser()
-        case .node: return esbuild_platform_node()
-        case .neutral: return esbuild_platform_neutral()
+        case .default: esbuild_platform_default()
+        case .browser: esbuild_platform_browser()
+        case .node: esbuild_platform_node()
+        case .neutral: esbuild_platform_neutral()
         }
     }
 
@@ -66,17 +66,17 @@ public enum ESBuildFormat: Int32, CaseIterable {
 
     public var cValue: Int32 {
         switch self {
-        case .default: return esbuild_format_default()
-        case .iife: return esbuild_format_iife()
-        case .commonjs: return esbuild_format_commonjs()
-        case .esmodule: return esbuild_format_esmodule()
+        case .default: esbuild_format_default()
+        case .iife: esbuild_format_iife()
+        case .commonjs: esbuild_format_commonjs()
+        case .esmodule: esbuild_format_esmodule()
         }
     }
 
     public static func from(cValue: Int32) -> ESBuildFormat? {
         let cases: [(Int32, ESBuildFormat)] = [
             (esbuild_format_default(), .default), (esbuild_format_iife(), .iife),
-            (esbuild_format_commonjs(), .commonjs), (esbuild_format_esmodule(), .esmodule)
+            (esbuild_format_commonjs(), .commonjs), (esbuild_format_esmodule(), .esmodule),
         ]
         return cases.first { $0.0 == cValue }?.1
     }
@@ -90,19 +90,19 @@ public enum ESBuildTarget: Int32, CaseIterable {
 
     public var cValue: Int32 {
         switch self {
-        case .default: return esbuild_target_default()
-        case .esnext: return esbuild_target_esnext()
-        case .es5: return esbuild_target_es5()
-        case .es2015: return esbuild_target_es2015()
-        case .es2016: return esbuild_target_es2016()
-        case .es2017: return esbuild_target_es2017()
-        case .es2018: return esbuild_target_es2018()
-        case .es2019: return esbuild_target_es2019()
-        case .es2020: return esbuild_target_es2020()
-        case .es2021: return esbuild_target_es2021()
-        case .es2022: return esbuild_target_es2022()
-        case .es2023: return esbuild_target_es2023()
-        case .es2024: return esbuild_target_es2024()
+        case .default: esbuild_target_default()
+        case .esnext: esbuild_target_esnext()
+        case .es5: esbuild_target_es5()
+        case .es2015: esbuild_target_es2015()
+        case .es2016: esbuild_target_es2016()
+        case .es2017: esbuild_target_es2017()
+        case .es2018: esbuild_target_es2018()
+        case .es2019: esbuild_target_es2019()
+        case .es2020: esbuild_target_es2020()
+        case .es2021: esbuild_target_es2021()
+        case .es2022: esbuild_target_es2022()
+        case .es2023: esbuild_target_es2023()
+        case .es2024: esbuild_target_es2024()
         }
     }
 
@@ -114,7 +114,7 @@ public enum ESBuildTarget: Int32, CaseIterable {
             (esbuild_target_es2018(), .es2018), (esbuild_target_es2019(), .es2019),
             (esbuild_target_es2020(), .es2020), (esbuild_target_es2021(), .es2021),
             (esbuild_target_es2022(), .es2022), (esbuild_target_es2023(), .es2023),
-            (esbuild_target_es2024(), .es2024)
+            (esbuild_target_es2024(), .es2024),
         ]
         return cases.first { $0.0 == cValue }?.1
     }
@@ -124,27 +124,28 @@ public enum ESBuildTarget: Int32, CaseIterable {
 
 /// ESBuild file loader options
 public enum ESBuildLoader: Int32, CaseIterable {
-    case none, base64, binary, copy, css, dataurl, `default`, empty, file, globalcss, js, json, jsx, localcss, text, ts, tsx
+    case none, base64, binary, copy, css, dataurl, `default`, empty, file, globalcss, js, json, jsx, localcss, text, ts,
+         tsx
 
     public var cValue: Int32 {
         switch self {
-        case .none: return esbuild_loader_none()
-        case .base64: return esbuild_loader_base64()
-        case .binary: return esbuild_loader_binary()
-        case .copy: return esbuild_loader_copy()
-        case .css: return esbuild_loader_css()
-        case .dataurl: return esbuild_loader_dataurl()
-        case .default: return esbuild_loader_default()
-        case .empty: return esbuild_loader_empty()
-        case .file: return esbuild_loader_file()
-        case .globalcss: return esbuild_loader_globalcss()
-        case .js: return esbuild_loader_js()
-        case .json: return esbuild_loader_json()
-        case .jsx: return esbuild_loader_jsx()
-        case .localcss: return esbuild_loader_localcss()
-        case .text: return esbuild_loader_text()
-        case .ts: return esbuild_loader_ts()
-        case .tsx: return esbuild_loader_tsx()
+        case .none: esbuild_loader_none()
+        case .base64: esbuild_loader_base64()
+        case .binary: esbuild_loader_binary()
+        case .copy: esbuild_loader_copy()
+        case .css: esbuild_loader_css()
+        case .dataurl: esbuild_loader_dataurl()
+        case .default: esbuild_loader_default()
+        case .empty: esbuild_loader_empty()
+        case .file: esbuild_loader_file()
+        case .globalcss: esbuild_loader_globalcss()
+        case .js: esbuild_loader_js()
+        case .json: esbuild_loader_json()
+        case .jsx: esbuild_loader_jsx()
+        case .localcss: esbuild_loader_localcss()
+        case .text: esbuild_loader_text()
+        case .ts: esbuild_loader_ts()
+        case .tsx: esbuild_loader_tsx()
         }
     }
 
@@ -157,7 +158,7 @@ public enum ESBuildLoader: Int32, CaseIterable {
             (esbuild_loader_file(), .file), (esbuild_loader_globalcss(), .globalcss),
             (esbuild_loader_js(), .js), (esbuild_loader_json(), .json),
             (esbuild_loader_jsx(), .jsx), (esbuild_loader_localcss(), .localcss),
-            (esbuild_loader_text(), .text), (esbuild_loader_ts(), .ts), (esbuild_loader_tsx(), .tsx)
+            (esbuild_loader_text(), .text), (esbuild_loader_ts(), .ts), (esbuild_loader_tsx(), .tsx),
         ]
         return cases.first { $0.0 == cValue }?.1
     }
@@ -171,11 +172,11 @@ public enum ESBuildSourceMap: Int32, CaseIterable {
 
     public var cValue: Int32 {
         switch self {
-        case .none: return esbuild_sourcemap_none()
-        case .inline: return esbuild_sourcemap_inline()
-        case .linked: return esbuild_sourcemap_linked()
-        case .external: return esbuild_sourcemap_external()
-        case .inlineAndExternal: return esbuild_sourcemap_inlineandexternal()
+        case .none: esbuild_sourcemap_none()
+        case .inline: esbuild_sourcemap_inline()
+        case .linked: esbuild_sourcemap_linked()
+        case .external: esbuild_sourcemap_external()
+        case .inlineAndExternal: esbuild_sourcemap_inlineandexternal()
         }
     }
 
@@ -183,7 +184,7 @@ public enum ESBuildSourceMap: Int32, CaseIterable {
         let cases: [(Int32, ESBuildSourceMap)] = [
             (esbuild_sourcemap_none(), .none), (esbuild_sourcemap_inline(), .inline),
             (esbuild_sourcemap_linked(), .linked), (esbuild_sourcemap_external(), .external),
-            (esbuild_sourcemap_inlineandexternal(), .inlineAndExternal)
+            (esbuild_sourcemap_inlineandexternal(), .inlineAndExternal),
         ]
         return cases.first { $0.0 == cValue }?.1
     }
@@ -197,16 +198,16 @@ public enum ESBuildJSX: Int32, CaseIterable {
 
     public var cValue: Int32 {
         switch self {
-        case .transform: return esbuild_jsx_transform()
-        case .preserve: return esbuild_jsx_preserve()
-        case .automatic: return esbuild_jsx_automatic()
+        case .transform: esbuild_jsx_transform()
+        case .preserve: esbuild_jsx_preserve()
+        case .automatic: esbuild_jsx_automatic()
         }
     }
 
     public static func from(cValue: Int32) -> ESBuildJSX? {
         let cases: [(Int32, ESBuildJSX)] = [
             (esbuild_jsx_transform(), .transform), (esbuild_jsx_preserve(), .preserve),
-            (esbuild_jsx_automatic(), .automatic)
+            (esbuild_jsx_automatic(), .automatic),
         ]
         return cases.first { $0.0 == cValue }?.1
     }
@@ -220,12 +221,12 @@ public enum ESBuildLogLevel: Int32, CaseIterable {
 
     public var cValue: Int32 {
         switch self {
-        case .silent: return esbuild_loglevel_silent()
-        case .verbose: return esbuild_loglevel_verbose()
-        case .debug: return esbuild_loglevel_debug()
-        case .info: return esbuild_loglevel_info()
-        case .warning: return esbuild_loglevel_warning()
-        case .error: return esbuild_loglevel_error()
+        case .silent: esbuild_loglevel_silent()
+        case .verbose: esbuild_loglevel_verbose()
+        case .debug: esbuild_loglevel_debug()
+        case .info: esbuild_loglevel_info()
+        case .warning: esbuild_loglevel_warning()
+        case .error: esbuild_loglevel_error()
         }
     }
 
@@ -233,7 +234,7 @@ public enum ESBuildLogLevel: Int32, CaseIterable {
         let cases: [(Int32, ESBuildLogLevel)] = [
             (esbuild_loglevel_silent(), .silent), (esbuild_loglevel_verbose(), .verbose),
             (esbuild_loglevel_debug(), .debug), (esbuild_loglevel_info(), .info),
-            (esbuild_loglevel_warning(), .warning), (esbuild_loglevel_error(), .error)
+            (esbuild_loglevel_warning(), .warning), (esbuild_loglevel_error(), .error),
         ]
         return cases.first { $0.0 == cValue }?.1
     }
@@ -247,12 +248,12 @@ public enum ESBuildLegalComments: Int32, CaseIterable {
 
     public var cValue: Int32 {
         switch self {
-        case .default: return esbuild_legalcomments_default()
-        case .none: return esbuild_legalcomments_none()
-        case .inline: return esbuild_legalcomments_inline()
-        case .endOfFile: return esbuild_legalcomments_endoffile()
-        case .linked: return esbuild_legalcomments_linked()
-        case .external: return esbuild_legalcomments_external()
+        case .default: esbuild_legalcomments_default()
+        case .none: esbuild_legalcomments_none()
+        case .inline: esbuild_legalcomments_inline()
+        case .endOfFile: esbuild_legalcomments_endoffile()
+        case .linked: esbuild_legalcomments_linked()
+        case .external: esbuild_legalcomments_external()
         }
     }
 
@@ -260,7 +261,7 @@ public enum ESBuildLegalComments: Int32, CaseIterable {
         let cases: [(Int32, ESBuildLegalComments)] = [
             (esbuild_legalcomments_default(), .default), (esbuild_legalcomments_none(), .none),
             (esbuild_legalcomments_inline(), .inline), (esbuild_legalcomments_endoffile(), .endOfFile),
-            (esbuild_legalcomments_linked(), .linked), (esbuild_legalcomments_external(), .external)
+            (esbuild_legalcomments_linked(), .linked), (esbuild_legalcomments_external(), .external),
         ]
         return cases.first { $0.0 == cValue }?.1
     }
@@ -274,16 +275,16 @@ public enum ESBuildCharset: Int32, CaseIterable {
 
     public var cValue: Int32 {
         switch self {
-        case .default: return esbuild_charset_default()
-        case .ascii: return esbuild_charset_ascii()
-        case .utf8: return esbuild_charset_utf8()
+        case .default: esbuild_charset_default()
+        case .ascii: esbuild_charset_ascii()
+        case .utf8: esbuild_charset_utf8()
         }
     }
 
     public static func from(cValue: Int32) -> ESBuildCharset? {
         let cases: [(Int32, ESBuildCharset)] = [
             (esbuild_charset_default(), .default), (esbuild_charset_ascii(), .ascii),
-            (esbuild_charset_utf8(), .utf8)
+            (esbuild_charset_utf8(), .utf8),
         ]
         return cases.first { $0.0 == cValue }?.1
     }
@@ -297,16 +298,16 @@ public enum ESBuildTreeShaking: Int32, CaseIterable {
 
     public var cValue: Int32 {
         switch self {
-        case .default: return esbuild_treeshaking_default()
-        case .false: return esbuild_treeshaking_false()
-        case .true: return esbuild_treeshaking_true()
+        case .default: esbuild_treeshaking_default()
+        case .false: esbuild_treeshaking_false()
+        case .true: esbuild_treeshaking_true()
         }
     }
 
     public static func from(cValue: Int32) -> ESBuildTreeShaking? {
         let cases: [(Int32, ESBuildTreeShaking)] = [
             (esbuild_treeshaking_default(), .default), (esbuild_treeshaking_false(), .false),
-            (esbuild_treeshaking_true(), .true)
+            (esbuild_treeshaking_true(), .true),
         ]
         return cases.first { $0.0 == cValue }?.1
     }
@@ -320,16 +321,16 @@ public enum ESBuildColor: Int32, CaseIterable {
 
     public var cValue: Int32 {
         switch self {
-        case .ifTerminal: return esbuild_color_ifterminal()
-        case .never: return esbuild_color_never()
-        case .always: return esbuild_color_always()
+        case .ifTerminal: esbuild_color_ifterminal()
+        case .never: esbuild_color_never()
+        case .always: esbuild_color_always()
         }
     }
 
     public static func from(cValue: Int32) -> ESBuildColor? {
         let cases: [(Int32, ESBuildColor)] = [
             (esbuild_color_ifterminal(), .ifTerminal), (esbuild_color_never(), .never),
-            (esbuild_color_always(), .always)
+            (esbuild_color_always(), .always),
         ]
         return cases.first { $0.0 == cValue }?.1
     }
@@ -343,16 +344,16 @@ public enum ESBuildPackages: Int32, CaseIterable {
 
     public var cValue: Int32 {
         switch self {
-        case .default: return esbuild_packages_default()
-        case .bundle: return esbuild_packages_bundle()
-        case .external: return esbuild_packages_external()
+        case .default: esbuild_packages_default()
+        case .bundle: esbuild_packages_bundle()
+        case .external: esbuild_packages_external()
         }
     }
 
     public static func from(cValue: Int32) -> ESBuildPackages? {
         let cases: [(Int32, ESBuildPackages)] = [
             (esbuild_packages_default(), .default), (esbuild_packages_bundle(), .bundle),
-            (esbuild_packages_external(), .external)
+            (esbuild_packages_external(), .external),
         ]
         return cases.first { $0.0 == cValue }?.1
     }
@@ -366,14 +367,14 @@ public enum ESBuildSourcesContent: Int32, CaseIterable {
 
     public var cValue: Int32 {
         switch self {
-        case .include: return esbuild_sourcescontent_include()
-        case .exclude: return esbuild_sourcescontent_exclude()
+        case .include: esbuild_sourcescontent_include()
+        case .exclude: esbuild_sourcescontent_exclude()
         }
     }
 
     public static func from(cValue: Int32) -> ESBuildSourcesContent? {
         let cases: [(Int32, ESBuildSourcesContent)] = [
-            (esbuild_sourcescontent_include(), .include), (esbuild_sourcescontent_exclude(), .exclude)
+            (esbuild_sourcescontent_include(), .include), (esbuild_sourcescontent_exclude(), .exclude),
         ]
         return cases.first { $0.0 == cValue }?.1
     }
@@ -387,14 +388,14 @@ public enum ESBuildMangleQuoted: Int32, CaseIterable {
 
     public var cValue: Int32 {
         switch self {
-        case .false: return esbuild_manglequoted_false()
-        case .true: return esbuild_manglequoted_true()
+        case .false: esbuild_manglequoted_false()
+        case .true: esbuild_manglequoted_true()
         }
     }
 
     public static func from(cValue: Int32) -> ESBuildMangleQuoted? {
         let cases: [(Int32, ESBuildMangleQuoted)] = [
-            (esbuild_manglequoted_false(), .false), (esbuild_manglequoted_true(), .true)
+            (esbuild_manglequoted_false(), .false), (esbuild_manglequoted_true(), .true),
         ]
         return cases.first { $0.0 == cValue }?.1
     }
@@ -408,14 +409,14 @@ public enum ESBuildDrop: Int32, CaseIterable {
 
     public var cValue: Int32 {
         switch self {
-        case .console: return esbuild_drop_console()
-        case .debugger: return esbuild_drop_debugger()
+        case .console: esbuild_drop_console()
+        case .debugger: esbuild_drop_debugger()
         }
     }
 
     public static func from(cValue: Int32) -> ESBuildDrop? {
         let cases: [(Int32, ESBuildDrop)] = [
-            (esbuild_drop_console(), .console), (esbuild_drop_debugger(), .debugger)
+            (esbuild_drop_console(), .console), (esbuild_drop_debugger(), .debugger),
         ]
         return cases.first { $0.0 == cValue }?.1
     }
@@ -429,17 +430,17 @@ public enum ESBuildEngine: Int32, CaseIterable {
 
     public var cValue: Int32 {
         switch self {
-        case .chrome: return esbuild_engine_chrome()
-        case .deno: return esbuild_engine_deno()
-        case .edge: return esbuild_engine_edge()
-        case .firefox: return esbuild_engine_firefox()
-        case .hermes: return esbuild_engine_hermes()
-        case .ie: return esbuild_engine_ie()
-        case .ios: return esbuild_engine_ios()
-        case .node: return esbuild_engine_node()
-        case .opera: return esbuild_engine_opera()
-        case .rhino: return esbuild_engine_rhino()
-        case .safari: return esbuild_engine_safari()
+        case .chrome: esbuild_engine_chrome()
+        case .deno: esbuild_engine_deno()
+        case .edge: esbuild_engine_edge()
+        case .firefox: esbuild_engine_firefox()
+        case .hermes: esbuild_engine_hermes()
+        case .ie: esbuild_engine_ie()
+        case .ios: esbuild_engine_ios()
+        case .node: esbuild_engine_node()
+        case .opera: esbuild_engine_opera()
+        case .rhino: esbuild_engine_rhino()
+        case .safari: esbuild_engine_safari()
         }
     }
 
@@ -450,7 +451,7 @@ public enum ESBuildEngine: Int32, CaseIterable {
             (esbuild_engine_hermes(), .hermes), (esbuild_engine_ie(), .ie),
             (esbuild_engine_ios(), .ios), (esbuild_engine_node(), .node),
             (esbuild_engine_opera(), .opera), (esbuild_engine_rhino(), .rhino),
-            (esbuild_engine_safari(), .safari)
+            (esbuild_engine_safari(), .safari),
         ]
         return cases.first { $0.0 == cValue }?.1
     }
@@ -464,14 +465,14 @@ public enum ESBuildSideEffects: Int32, CaseIterable {
 
     public var cValue: Int32 {
         switch self {
-        case .true: return esbuild_sideeffects_true()
-        case .false: return esbuild_sideeffects_false()
+        case .true: esbuild_sideeffects_true()
+        case .false: esbuild_sideeffects_false()
         }
     }
 
     public static func from(cValue: Int32) -> ESBuildSideEffects? {
         let cases: [(Int32, ESBuildSideEffects)] = [
-            (esbuild_sideeffects_true(), .true), (esbuild_sideeffects_false(), .false)
+            (esbuild_sideeffects_true(), .true), (esbuild_sideeffects_false(), .false),
         ]
         return cases.first { $0.0 == cValue }?.1
     }
@@ -481,29 +482,39 @@ public enum ESBuildSideEffects: Int32, CaseIterable {
 
 /// ESBuild resolve kind options
 public enum ESBuildResolveKind: Int32, CaseIterable {
-    case none, entryPoint, jsImportStatement, jsRequireCall, jsDynamicImport, jsRequireResolve, cssImportRule, cssComposesFrom, cssURLToken
+    case none, entryPoint, jsImportStatement, jsRequireCall, jsDynamicImport, jsRequireResolve, cssImportRule,
+         cssComposesFrom, cssURLToken
 
     public var cValue: Int32 {
         switch self {
-        case .none: return esbuild_resolvekind_none()
-        case .entryPoint: return esbuild_resolvekind_entrypoint()
-        case .jsImportStatement: return esbuild_resolvekind_jsimportstatement()
-        case .jsRequireCall: return esbuild_resolvekind_jsrequirecall()
-        case .jsDynamicImport: return esbuild_resolvekind_jsdynamicimport()
-        case .jsRequireResolve: return esbuild_resolvekind_jsrequireresolve()
-        case .cssImportRule: return esbuild_resolvekind_cssimportrule()
-        case .cssComposesFrom: return esbuild_resolvekind_csscomposesfrom()
-        case .cssURLToken: return esbuild_resolvekind_cssurltoken()
+        case .none: esbuild_resolvekind_none()
+        case .entryPoint: esbuild_resolvekind_entrypoint()
+        case .jsImportStatement: esbuild_resolvekind_jsimportstatement()
+        case .jsRequireCall: esbuild_resolvekind_jsrequirecall()
+        case .jsDynamicImport: esbuild_resolvekind_jsdynamicimport()
+        case .jsRequireResolve: esbuild_resolvekind_jsrequireresolve()
+        case .cssImportRule: esbuild_resolvekind_cssimportrule()
+        case .cssComposesFrom: esbuild_resolvekind_csscomposesfrom()
+        case .cssURLToken: esbuild_resolvekind_cssurltoken()
         }
     }
 
     public static func from(cValue: Int32) -> ESBuildResolveKind? {
         let cases: [(Int32, ESBuildResolveKind)] = [
             (esbuild_resolvekind_none(), .none), (esbuild_resolvekind_entrypoint(), .entryPoint),
-            (esbuild_resolvekind_jsimportstatement(), .jsImportStatement), (esbuild_resolvekind_jsrequirecall(), .jsRequireCall),
-            (esbuild_resolvekind_jsdynamicimport(), .jsDynamicImport), (esbuild_resolvekind_jsrequireresolve(), .jsRequireResolve),
-            (esbuild_resolvekind_cssimportrule(), .cssImportRule), (esbuild_resolvekind_csscomposesfrom(), .cssComposesFrom),
-            (esbuild_resolvekind_cssurltoken(), .cssURLToken)
+            (esbuild_resolvekind_jsimportstatement(), .jsImportStatement), (
+                esbuild_resolvekind_jsrequirecall(),
+                .jsRequireCall
+            ),
+            (esbuild_resolvekind_jsdynamicimport(), .jsDynamicImport), (
+                esbuild_resolvekind_jsrequireresolve(),
+                .jsRequireResolve
+            ),
+            (esbuild_resolvekind_cssimportrule(), .cssImportRule), (
+                esbuild_resolvekind_csscomposesfrom(),
+                .cssComposesFrom
+            ),
+            (esbuild_resolvekind_cssurltoken(), .cssURLToken),
         ]
         return cases.first { $0.0 == cValue }?.1
     }
@@ -517,14 +528,14 @@ public enum ESBuildMessageKind: Int32, CaseIterable {
 
     public var cValue: Int32 {
         switch self {
-        case .error: return esbuild_messagekind_error()
-        case .warning: return esbuild_messagekind_warning()
+        case .error: esbuild_messagekind_error()
+        case .warning: esbuild_messagekind_warning()
         }
     }
 
     public static func from(cValue: Int32) -> ESBuildMessageKind? {
         let cases: [(Int32, ESBuildMessageKind)] = [
-            (esbuild_messagekind_error(), .error), (esbuild_messagekind_warning(), .warning)
+            (esbuild_messagekind_error(), .error), (esbuild_messagekind_warning(), .warning),
         ]
         return cases.first { $0.0 == cValue }?.1
     }

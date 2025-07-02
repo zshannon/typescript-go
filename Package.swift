@@ -8,7 +8,7 @@ let package = Package(
         .library(
             name: "SwiftTSGo",
             targets: ["SwiftTSGo"]
-        )
+        ),
     ],
     targets: [
         .systemLibrary(
@@ -29,10 +29,10 @@ let package = Package(
         .testTarget(
             name: "SwiftTSGoTests",
             dependencies: [
-                .target(name: "SwiftTSGo")
+                .target(name: "SwiftTSGo"),
             ],
             resources: [
-                .copy("Resources")
+                .copy("Resources"),
             ]
         ),
     ]

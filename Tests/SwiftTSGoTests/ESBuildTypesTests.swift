@@ -1,11 +1,10 @@
-import TSCBridge
 import Testing
+import TSCBridge
 
 @testable import SwiftTSGo
 
 @Suite("ESBuild Types Tests")
 struct ESBuildTypesTests {
-
     @Test("Platform enum values match esbuild Go constants via C bridge")
     func testPlatformRawValues() {
         #expect(ESBuildPlatform.default.cValue == esbuild_platform_default())
@@ -44,7 +43,7 @@ struct ESBuildTypesTests {
 
         // Convert C array to Swift array
         var cPlatformValues: [Int32] = []
-        for i in 0..<count {
+        for i in 0 ..< count {
             let value = cArray.values.advanced(by: i).pointee
             cPlatformValues.append(value)
         }
@@ -78,14 +77,14 @@ struct ESBuildTypesTests {
         let cArrayPtr = esbuild_get_all_format_values()
         defer { esbuild_free_int_array(cArrayPtr) }
         guard let cArrayPtr else { return }
-        
+
         let cArray = cArrayPtr.pointee
         let count = Int(cArray.count)
         var cValues: [Int32] = []
-        for i in 0..<count {
+        for i in 0 ..< count {
             cValues.append(cArray.values.advanced(by: i).pointee)
         }
-        
+
         #expect(cValues.count == ESBuildFormat.allCases.count)
         for value in cValues {
             #expect(ESBuildFormat.from(cValue: value) != nil)
@@ -108,14 +107,14 @@ struct ESBuildTypesTests {
         let cArrayPtr = esbuild_get_all_target_values()
         defer { esbuild_free_int_array(cArrayPtr) }
         guard let cArrayPtr else { return }
-        
+
         let cArray = cArrayPtr.pointee
         let count = Int(cArray.count)
         var cValues: [Int32] = []
-        for i in 0..<count {
+        for i in 0 ..< count {
             cValues.append(cArray.values.advanced(by: i).pointee)
         }
-        
+
         #expect(cValues.count == ESBuildTarget.allCases.count)
         for value in cValues {
             #expect(ESBuildTarget.from(cValue: value) != nil)
@@ -138,14 +137,14 @@ struct ESBuildTypesTests {
         let cArrayPtr = esbuild_get_all_loader_values()
         defer { esbuild_free_int_array(cArrayPtr) }
         guard let cArrayPtr else { return }
-        
+
         let cArray = cArrayPtr.pointee
         let count = Int(cArray.count)
         var cValues: [Int32] = []
-        for i in 0..<count {
+        for i in 0 ..< count {
             cValues.append(cArray.values.advanced(by: i).pointee)
         }
-        
+
         #expect(cValues.count == ESBuildLoader.allCases.count)
         for value in cValues {
             #expect(ESBuildLoader.from(cValue: value) != nil)
@@ -166,14 +165,14 @@ struct ESBuildTypesTests {
         let cArrayPtr = esbuild_get_all_sourcemap_values()
         defer { esbuild_free_int_array(cArrayPtr) }
         guard let cArrayPtr else { return }
-        
+
         let cArray = cArrayPtr.pointee
         let count = Int(cArray.count)
         var cValues: [Int32] = []
-        for i in 0..<count {
+        for i in 0 ..< count {
             cValues.append(cArray.values.advanced(by: i).pointee)
         }
-        
+
         #expect(cValues.count == ESBuildSourceMap.allCases.count)
         for value in cValues {
             #expect(ESBuildSourceMap.from(cValue: value) != nil)
@@ -194,14 +193,14 @@ struct ESBuildTypesTests {
         let cArrayPtr = esbuild_get_all_jsx_values()
         defer { esbuild_free_int_array(cArrayPtr) }
         guard let cArrayPtr else { return }
-        
+
         let cArray = cArrayPtr.pointee
         let count = Int(cArray.count)
         var cValues: [Int32] = []
-        for i in 0..<count {
+        for i in 0 ..< count {
             cValues.append(cArray.values.advanced(by: i).pointee)
         }
-        
+
         #expect(cValues.count == ESBuildJSX.allCases.count)
         for value in cValues {
             #expect(ESBuildJSX.from(cValue: value) != nil)
@@ -330,14 +329,14 @@ struct ESBuildTypesTests {
         let cArrayPtr = esbuild_get_all_sideeffects_values()
         defer { esbuild_free_int_array(cArrayPtr) }
         guard let cArrayPtr else { return }
-        
+
         let cArray = cArrayPtr.pointee
         let count = Int(cArray.count)
         var cValues: [Int32] = []
-        for i in 0..<count {
+        for i in 0 ..< count {
             cValues.append(cArray.values.advanced(by: i).pointee)
         }
-        
+
         #expect(cValues.count == ESBuildSideEffects.allCases.count)
         for value in cValues {
             #expect(ESBuildSideEffects.from(cValue: value) != nil)
@@ -359,14 +358,14 @@ struct ESBuildTypesTests {
         let cArrayPtr = esbuild_get_all_resolvekind_values()
         defer { esbuild_free_int_array(cArrayPtr) }
         guard let cArrayPtr else { return }
-        
+
         let cArray = cArrayPtr.pointee
         let count = Int(cArray.count)
         var cValues: [Int32] = []
-        for i in 0..<count {
+        for i in 0 ..< count {
             cValues.append(cArray.values.advanced(by: i).pointee)
         }
-        
+
         #expect(cValues.count == ESBuildResolveKind.allCases.count)
         for value in cValues {
             #expect(ESBuildResolveKind.from(cValue: value) != nil)
@@ -386,14 +385,14 @@ struct ESBuildTypesTests {
         let cArrayPtr = esbuild_get_all_messagekind_values()
         defer { esbuild_free_int_array(cArrayPtr) }
         guard let cArrayPtr else { return }
-        
+
         let cArray = cArrayPtr.pointee
         let count = Int(cArray.count)
         var cValues: [Int32] = []
-        for i in 0..<count {
+        for i in 0 ..< count {
             cValues.append(cArray.values.advanced(by: i).pointee)
         }
-        
+
         #expect(cValues.count == ESBuildMessageKind.allCases.count)
         for value in cValues {
             #expect(ESBuildMessageKind.from(cValue: value) != nil)

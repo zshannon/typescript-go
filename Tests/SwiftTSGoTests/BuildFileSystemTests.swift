@@ -5,7 +5,6 @@ import Testing
 
 @Suite(.serialized)
 struct BuildFileSystemTests {
-
     @Test func helloWorldTest() throws {
         // Get the path to the test project directory
         let testBundle = Bundle.module
@@ -95,7 +94,8 @@ struct BuildFileSystemTests {
 
         // Create a temporary directory for output
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(
-            UUID().uuidString)
+            UUID().uuidString
+        )
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
         defer {
@@ -144,7 +144,8 @@ struct BuildFileSystemTests {
 
         // Create a temporary directory
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(
-            UUID().uuidString)
+            UUID().uuidString
+        )
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
         defer {
