@@ -32,16 +32,16 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
+      - uses: swift-actions/setup-swift@v2
+
+      - name: Get swift version
+        run: swift --version # Swift 6.1.0
+
       - name: Run Go tests
         run: make test
 
       - name: Build framework
         run: make setup && make build
-
-      - uses: swift-actions/setup-swift@v2
-
-      - name: Get swift version
-        run: swift --version # Swift 6.1.0
 
       - name: Run Swift tests
         run: swift test
