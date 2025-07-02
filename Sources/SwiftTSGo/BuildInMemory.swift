@@ -329,7 +329,7 @@ public func buildInMemory(
 public func build(
     config: TSConfig? = nil,
     resolver: @escaping (String) -> FileResolver?
-) throws -> InMemoryBuildResult {
+) async throws -> InMemoryBuildResult {
     let projectPath = "/project"
 
     // Create resolver data
