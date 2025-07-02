@@ -69,6 +69,81 @@ typedef struct {
     int count;
 } c_int_array;
 
+typedef struct {
+	// Logging and Output Control
+	int color;                    // StderrColor enum
+	int log_level;               // LogLevel enum  
+	int log_limit;               // int
+	char** log_override_keys;    // keys for map[string]LogLevel
+	int* log_override_values;    // values for map[string]LogLevel
+	int log_override_count;      // count of log override entries
+
+	// Source Map
+	int sourcemap;               // SourceMap enum
+	char* source_root;           // string
+	int sources_content;         // SourcesContent enum
+
+	// Target and Compatibility  
+	int target;                  // Target enum
+	int* engine_names;           // EngineName enum array
+	char** engine_versions;      // string array for engine versions
+	int engines_count;           // count of engines
+	char** supported_keys;       // keys for map[string]bool
+	int* supported_values;       // values for map[string]bool (0/1)
+	int supported_count;         // count of supported entries
+
+	// Platform and Format
+	int platform;                // Platform enum
+	int format;                  // Format enum
+	char* global_name;           // string
+
+	// Minification and Property Mangling
+	char* mangle_props;          // string (regex)
+	char* reserve_props;         // string (regex)
+	int mangle_quoted;           // MangleQuoted enum
+	char** mangle_cache_keys;    // keys for map[string]interface{}
+	char** mangle_cache_values;  // values as JSON strings
+	int mangle_cache_count;      // count of mangle cache entries
+	int drop;                    // Drop enum (bitfield)
+	char** drop_labels;          // string array
+	int drop_labels_count;       // count of drop labels
+	int minify_whitespace;       // bool (0/1)
+	int minify_identifiers;      // bool (0/1)
+	int minify_syntax;           // bool (0/1)
+	int line_limit;              // int
+	int charset;                 // Charset enum
+	int tree_shaking;            // TreeShaking enum
+	int ignore_annotations;      // bool (0/1)
+	int legal_comments;          // LegalComments enum
+
+	// JSX Configuration
+	int jsx;                     // JSX enum
+	char* jsx_factory;           // string
+	char* jsx_fragment;          // string
+	char* jsx_import_source;     // string
+	int jsx_dev;                 // bool (0/1)
+	int jsx_side_effects;        // bool (0/1)
+
+	// TypeScript Configuration
+	char* tsconfig_raw;          // string (JSON)
+
+	// Code Injection
+	char* banner;                // string
+	char* footer;                // string
+
+	// Code Transformation
+	char** define_keys;          // keys for map[string]string
+	char** define_values;        // values for map[string]string
+	int define_count;            // count of define entries
+	char** pure;                 // string array
+	int pure_count;              // count of pure functions
+	int keep_names;              // bool (0/1)
+
+	// Input Configuration
+	char* sourcefile;            // string
+	int loader;                  // Loader enum
+} c_transform_options;
+
 #line 1 "cgo-generated-wrapper"
 
 
@@ -299,6 +374,8 @@ extern c_int_array* esbuild_get_all_resolvekind_values();
 extern int esbuild_messagekind_error();
 extern int esbuild_messagekind_warning();
 extern c_int_array* esbuild_get_all_messagekind_values();
+extern c_transform_options* esbuild_create_transform_options();
+extern void esbuild_free_transform_options(c_transform_options* opts);
 
 #ifdef __cplusplus
 }

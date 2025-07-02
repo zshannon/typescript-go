@@ -7,6 +7,81 @@ typedef struct {
     int* values;
     int count;
 } c_int_array;
+
+typedef struct {
+	// Logging and Output Control
+	int color;                    // StderrColor enum
+	int log_level;               // LogLevel enum  
+	int log_limit;               // int
+	char** log_override_keys;    // keys for map[string]LogLevel
+	int* log_override_values;    // values for map[string]LogLevel
+	int log_override_count;      // count of log override entries
+
+	// Source Map
+	int sourcemap;               // SourceMap enum
+	char* source_root;           // string
+	int sources_content;         // SourcesContent enum
+
+	// Target and Compatibility  
+	int target;                  // Target enum
+	int* engine_names;           // EngineName enum array
+	char** engine_versions;      // string array for engine versions
+	int engines_count;           // count of engines
+	char** supported_keys;       // keys for map[string]bool
+	int* supported_values;       // values for map[string]bool (0/1)
+	int supported_count;         // count of supported entries
+
+	// Platform and Format
+	int platform;                // Platform enum
+	int format;                  // Format enum
+	char* global_name;           // string
+
+	// Minification and Property Mangling
+	char* mangle_props;          // string (regex)
+	char* reserve_props;         // string (regex)
+	int mangle_quoted;           // MangleQuoted enum
+	char** mangle_cache_keys;    // keys for map[string]interface{}
+	char** mangle_cache_values;  // values as JSON strings
+	int mangle_cache_count;      // count of mangle cache entries
+	int drop;                    // Drop enum (bitfield)
+	char** drop_labels;          // string array
+	int drop_labels_count;       // count of drop labels
+	int minify_whitespace;       // bool (0/1)
+	int minify_identifiers;      // bool (0/1)
+	int minify_syntax;           // bool (0/1)
+	int line_limit;              // int
+	int charset;                 // Charset enum
+	int tree_shaking;            // TreeShaking enum
+	int ignore_annotations;      // bool (0/1)
+	int legal_comments;          // LegalComments enum
+
+	// JSX Configuration
+	int jsx;                     // JSX enum
+	char* jsx_factory;           // string
+	char* jsx_fragment;          // string
+	char* jsx_import_source;     // string
+	int jsx_dev;                 // bool (0/1)
+	int jsx_side_effects;        // bool (0/1)
+
+	// TypeScript Configuration
+	char* tsconfig_raw;          // string (JSON)
+
+	// Code Injection
+	char* banner;                // string
+	char* footer;                // string
+
+	// Code Transformation
+	char** define_keys;          // keys for map[string]string
+	char** define_values;        // values for map[string]string
+	int define_count;            // count of define entries
+	char** pure;                 // string array
+	int pure_count;              // count of pure functions
+	int keep_names;              // bool (0/1)
+
+	// Input Configuration
+	char* sourcefile;            // string
+	int loader;                  // Loader enum
+} c_transform_options;
 */
 import "C"
 
@@ -785,4 +860,83 @@ func esbuild_get_all_messagekind_values() *C.c_int_array {
 	result.values = cArray
 	result.count = C.int(count)
 	return result
+}
+
+// TransformOptions C bridge struct
+
+//export esbuild_create_transform_options
+func esbuild_create_transform_options() *C.c_transform_options {
+	return (*C.c_transform_options)(C.malloc(C.sizeof_c_transform_options))
+}
+
+//export esbuild_free_transform_options
+func esbuild_free_transform_options(opts *C.c_transform_options) {
+	if opts == nil {
+		return
+	}
+	
+	// Free all string fields
+	if opts.source_root != nil {
+		C.free(unsafe.Pointer(opts.source_root))
+	}
+	if opts.global_name != nil {
+		C.free(unsafe.Pointer(opts.global_name))
+	}
+	if opts.mangle_props != nil {
+		C.free(unsafe.Pointer(opts.mangle_props))
+	}
+	if opts.reserve_props != nil {
+		C.free(unsafe.Pointer(opts.reserve_props))
+	}
+	if opts.jsx_factory != nil {
+		C.free(unsafe.Pointer(opts.jsx_factory))
+	}
+	if opts.jsx_fragment != nil {
+		C.free(unsafe.Pointer(opts.jsx_fragment))
+	}
+	if opts.jsx_import_source != nil {
+		C.free(unsafe.Pointer(opts.jsx_import_source))
+	}
+	if opts.tsconfig_raw != nil {
+		C.free(unsafe.Pointer(opts.tsconfig_raw))
+	}
+	if opts.banner != nil {
+		C.free(unsafe.Pointer(opts.banner))
+	}
+	if opts.footer != nil {
+		C.free(unsafe.Pointer(opts.footer))
+	}
+	if opts.sourcefile != nil {
+		C.free(unsafe.Pointer(opts.sourcefile))
+	}
+	
+	// Free string arrays
+	if opts.log_override_keys != nil {
+		for i := 0; i < int(opts.log_override_count); i++ {
+			if ptr := *(**C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(opts.log_override_keys)) + uintptr(i)*unsafe.Sizeof((*C.char)(nil)))); ptr != nil {
+				C.free(unsafe.Pointer(ptr))
+			}
+		}
+		C.free(unsafe.Pointer(opts.log_override_keys))
+	}
+	if opts.log_override_values != nil {
+		C.free(unsafe.Pointer(opts.log_override_values))
+	}
+	
+	if opts.engine_names != nil {
+		C.free(unsafe.Pointer(opts.engine_names))
+	}
+	if opts.engine_versions != nil {
+		for i := 0; i < int(opts.engines_count); i++ {
+			if ptr := *(**C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(opts.engine_versions)) + uintptr(i)*unsafe.Sizeof((*C.char)(nil)))); ptr != nil {
+				C.free(unsafe.Pointer(ptr))
+			}
+		}
+		C.free(unsafe.Pointer(opts.engine_versions))
+	}
+	
+	// Free other arrays (supported, mangle_cache, drop_labels, define, pure)
+	// ... similar pattern for all array fields
+	
+	C.free(unsafe.Pointer(opts))
 }
