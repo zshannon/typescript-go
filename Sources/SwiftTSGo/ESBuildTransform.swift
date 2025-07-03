@@ -724,7 +724,52 @@ public struct ESBuildTransformResult: Sendable {
 ///   - options: Transform options
 /// - Returns: Transform result containing transformed code and metadata
 public func esbuildTransform(code: String, options: ESBuildTransformOptions = ESBuildTransformOptions()) -> ESBuildTransformResult? {
-    let cOptions = options.cValue
+    // Create options with silent logging to capture errors in result instead of printing to console
+    let silentOptions = ESBuildTransformOptions(
+        color: options.color,
+        logLevel: .silent, // Override to silent
+        logLimit: options.logLimit,
+        logOverride: options.logOverride,
+        sourcemap: options.sourcemap,
+        sourceRoot: options.sourceRoot,
+        sourcesContent: options.sourcesContent,
+        target: options.target,
+        engines: options.engines,
+        supported: options.supported,
+        platform: options.platform,
+        format: options.format,
+        globalName: options.globalName,
+        mangleProps: options.mangleProps,
+        reserveProps: options.reserveProps,
+        mangleQuoted: options.mangleQuoted,
+        mangleCache: options.mangleCache,
+        drop: options.drop,
+        dropLabels: options.dropLabels,
+        minifyWhitespace: options.minifyWhitespace,
+        minifyIdentifiers: options.minifyIdentifiers,
+        minifySyntax: options.minifySyntax,
+        lineLimit: options.lineLimit,
+        charset: options.charset,
+        treeShaking: options.treeShaking,
+        ignoreAnnotations: options.ignoreAnnotations,
+        legalComments: options.legalComments,
+        jsx: options.jsx,
+        jsxFactory: options.jsxFactory,
+        jsxFragment: options.jsxFragment,
+        jsxImportSource: options.jsxImportSource,
+        jsxDev: options.jsxDev,
+        jsxSideEffects: options.jsxSideEffects,
+        tsconfigRaw: options.tsconfigRaw,
+        banner: options.banner,
+        footer: options.footer,
+        define: options.define,
+        pure: options.pure,
+        keepNames: options.keepNames,
+        sourcefile: options.sourcefile,
+        loader: options.loader
+    )
+    
+    let cOptions = silentOptions.cValue
     defer { esbuild_free_transform_options(cOptions) }
     
     let cResult = code.withCString { cCode in

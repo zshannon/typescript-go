@@ -1074,21 +1074,29 @@ struct ESBuildTransformTests {
         #expect(minifiedCode!.count > 0)
     }
     
-    @Test("Invalid code handling", .disabled("Crashes due to memory management issue"))
+    @Test("Invalid code handling")
     func testInvalidCodeHandling() {
         let invalidCode = "this is not valid JavaScript syntax !!!"
         
         let result = esbuildTransform(code: invalidCode)
         
-        // ESBuild should still return a result even for invalid code
-        // The result may contain error information, but shouldn't crash
+        // ESBuild should return a result with error information, not crash
+        #expect(result != nil)
+        
         if let result = result {
-            // If result is returned, it should have some content
+            // Should have at least one error for invalid syntax
+            #expect(result.errors.count > 0)
+            
+            // Check the first error
+            let firstError = result.errors[0]
+            #expect(firstError.text.contains("Expected"))
+            #expect(firstError.text.contains("found"))
+            
+            // Code might be empty or contain error recovery, but count should be valid
             #expect(result.code.count >= 0)
-            // The transformed result might be empty or contain error recovery code
-        } else {
-            // It's also acceptable if esbuild returns nil for completely invalid code
-            #expect(result == nil)
+            
+            // Should have no warnings for this simple syntax error
+            #expect(result.warnings.count == 0)
         }
     }
 }
