@@ -66,16 +66,16 @@ jobs:
 
       - name: Verify build output
         run: |
-          ls -la Sources/
-          if [ ! -d "Sources/TSGoBindings.xcframework" ]; then
-            echo "TSGoBindings.xcframework not found!"
+          ls -la Sources/TSCBridge
+          if [ ! -d "Sources/TSCBridge/TSCBridge.xcframework" ]; then
+            echo "TSCBridge.xcframework not found!"
             exit 1
           fi
 
       - name: Create framework archive
         run: |
-          cd Sources
-          zip -r TSGoBindings.xcframework.zip TSGoBindings.xcframework/
+          cd Sources/TSCBridge/TSCBridge.xcframework
+          zip -r TSCBridge.xcframework.zip TSCBridge.xcframework/
           cd ..
 
       - name: Upload build artifacts
