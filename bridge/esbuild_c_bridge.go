@@ -144,6 +144,108 @@ typedef struct {
 	char* hash;
 } esbuild_output_file;
 
+// Plugin API structures - moved here to be available for build options
+
+typedef enum {
+	RESOLVE_KIND_ENTRY_POINT = 0,
+	RESOLVE_KIND_IMPORT_STATEMENT = 1,
+	RESOLVE_KIND_REQUIRE_CALL = 2,
+	RESOLVE_KIND_DYNAMIC_IMPORT = 3,
+	RESOLVE_KIND_REQUIRE_RESOLVE = 4,
+	RESOLVE_KIND_IMPORT_RULE = 5,
+	RESOLVE_KIND_COMPOSES_FROM = 6,
+	RESOLVE_KIND_URL_TOKEN = 7
+} c_resolve_kind;
+
+typedef struct {
+	char* path;                  // string
+	char* importer;              // string
+	char* namespace;             // string
+	char* resolve_dir;           // string
+	int kind;                    // c_resolve_kind enum
+	char* plugin_data;           // JSON string for pluginData
+	char** with_keys;            // keys for with map
+	char** with_values;          // values for with map
+	int with_count;              // count of with entries
+} c_on_resolve_args;
+
+typedef struct {
+	char* path;                  // string
+	char* namespace;             // string
+	char* suffix;                // string
+	char* plugin_data;           // JSON string for pluginData
+	char** with_keys;            // keys for with map
+	char** with_values;          // values for with map
+	int with_count;              // count of with entries
+} c_on_load_args;
+
+typedef struct {
+	char* path;                  // optional string
+	char* namespace;             // optional string
+	int external;                // bool (0/1) (-1 for nil)
+	int side_effects;            // bool (0/1) (-1 for nil)
+	char* suffix;                // optional string
+	char* plugin_data;           // JSON string for pluginData
+	char* plugin_name;           // optional string
+	c_message* errors;           // array of errors
+	int errors_count;            // count of errors
+	c_message* warnings;         // array of warnings
+	int warnings_count;          // count of warnings
+	char** watch_files;          // array of file paths
+	int watch_files_count;       // count of watch files
+	char** watch_dirs;           // array of directory paths
+	int watch_dirs_count;        // count of watch dirs
+} c_on_resolve_result;
+
+typedef struct {
+	char* contents;              // optional byte array
+	int contents_length;         // length of contents (0 if nil)
+	int loader;                  // Loader enum (-1 for nil)
+	char* resolve_dir;           // optional string
+	char* plugin_data;           // JSON string for pluginData
+	char* plugin_name;           // optional string
+	c_message* errors;           // array of errors
+	int errors_count;            // count of errors
+	c_message* warnings;         // array of warnings
+	int warnings_count;          // count of warnings
+	char** watch_files;          // array of file paths
+	int watch_files_count;       // count of watch files
+	char** watch_dirs;           // array of directory paths
+	int watch_dirs_count;        // count of watch dirs
+} c_on_load_result;
+
+// Plugin callback function pointer types
+typedef c_on_resolve_result* (*on_resolve_callback)(c_on_resolve_args*, void*);
+typedef c_on_load_result* (*on_load_callback)(c_on_load_args*, void*);
+typedef void (*on_start_callback)(void*);
+typedef void (*on_end_callback)(void*);
+
+typedef struct {
+	char* filter;                // filter regex for the callback
+	char* namespace;             // namespace filter (optional)
+	on_resolve_callback callback; // callback function pointer
+	void* callback_data;         // Swift closure context
+} c_plugin_resolve_hook;
+
+typedef struct {
+	char* filter;                // filter regex for the callback
+	char* namespace;             // namespace filter (optional) 
+	on_load_callback callback;   // callback function pointer
+	void* callback_data;         // Swift closure context
+} c_plugin_load_hook;
+
+typedef struct {
+	char* name;                  // plugin name
+	c_plugin_resolve_hook* resolve_hooks; // array of resolve hooks
+	int resolve_hooks_count;     // count of resolve hooks
+	c_plugin_load_hook* load_hooks; // array of load hooks
+	int load_hooks_count;        // count of load hooks
+	on_start_callback on_start;  // start callback (optional)
+	on_end_callback on_end;      // end callback (optional)
+	void* start_data;            // start callback context
+	void* end_data;              // end callback context
+} c_plugin;
+
 typedef struct {
 	// Logging and Output Control
 	int color;                    // StderrColor enum
@@ -267,6 +369,10 @@ typedef struct {
 	esbuild_entry_point* entry_points_advanced; // advanced entry points
 	int entry_points_advanced_count;      // count of advanced entry points
 	esbuild_stdin_options* stdin;      // stdin options (optional)
+
+	// Plugin Configuration
+	c_plugin* plugins;           // array of plugins
+	int plugins_count;           // count of plugins
 } esbuild_build_options;
 
 typedef struct {
@@ -281,6 +387,12 @@ typedef struct {
 	char** mangle_cache_values;  // values for mangle cache
 	int mangle_cache_count;      // count of mangle cache entries
 } esbuild_build_result;
+
+// Forward declarations for Swift callback functions
+c_on_resolve_result* swift_plugin_on_resolve_callback(c_on_resolve_args* args, void* callbackData);
+c_on_load_result* swift_plugin_on_load_callback(c_on_load_args* args, void* callbackData);
+void swift_plugin_on_start_callback(void* callbackData);
+void swift_plugin_on_end_callback(void* callbackData);
 */
 import "C"
 
@@ -2196,6 +2308,205 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 		}
 	}
 	
+	// Plugin configuration
+	if opts.plugins_count > 0 && opts.plugins != nil {
+		pluginsSlice := (*[1000]C.c_plugin)(unsafe.Pointer(opts.plugins))[:opts.plugins_count:opts.plugins_count]
+		
+		for _, cPlugin := range pluginsSlice {
+			// Create a Go plugin from the C plugin
+			goPlugin := api.Plugin{
+				Name: C.GoString(cPlugin.name),
+				Setup: func(build api.PluginBuild) {
+					// Handle resolve hooks
+					if cPlugin.resolve_hooks_count > 0 && cPlugin.resolve_hooks != nil {
+						resolveHooksSlice := (*[1000]C.c_plugin_resolve_hook)(unsafe.Pointer(cPlugin.resolve_hooks))[:cPlugin.resolve_hooks_count:cPlugin.resolve_hooks_count]
+						
+						for _, hook := range resolveHooksSlice {
+							filter := C.GoString(hook.filter)
+							var namespace string
+							if hook.namespace != nil {
+								namespace = C.GoString(hook.namespace)
+							}
+							
+							build.OnResolve(api.OnResolveOptions{
+								Filter:    filter,
+								Namespace: namespace,
+							}, func(args api.OnResolveArgs) (api.OnResolveResult, error) {
+								// Convert Go args to C args
+								cArgs := (*C.c_on_resolve_args)(C.malloc(C.sizeof_c_on_resolve_args))
+								defer C.free(unsafe.Pointer(cArgs))
+								
+								cArgs.path = C.CString(args.Path)
+								defer C.free(unsafe.Pointer(cArgs.path))
+								cArgs.importer = C.CString(args.Importer)
+								defer C.free(unsafe.Pointer(cArgs.importer))
+								cArgs.namespace = C.CString(args.Namespace)
+								defer C.free(unsafe.Pointer(cArgs.namespace))
+								cArgs.resolve_dir = C.CString(args.ResolveDir)
+								defer C.free(unsafe.Pointer(cArgs.resolve_dir))
+								cArgs.kind = C.int(args.Kind)
+								
+								// Call the Swift callback
+								result := C.swift_plugin_on_resolve_callback(cArgs, hook.callback_data)
+								if result != nil {
+									defer C.free(unsafe.Pointer(result))
+									
+									// Convert C result to Go result
+									goResult := api.OnResolveResult{}
+									if result.path != nil {
+										goResult.Path = C.GoString(result.path)
+									}
+									if result.namespace != nil {
+										goResult.Namespace = C.GoString(result.namespace)
+									}
+									if result.external >= 0 {
+										goResult.External = result.external != 0
+									}
+									if result.side_effects >= 0 {
+										if result.side_effects != 0 {
+											goResult.SideEffects = api.SideEffectsTrue
+										} else {
+											goResult.SideEffects = api.SideEffectsFalse
+										}
+									}
+									
+									// Handle errors
+									if result.errors_count > 0 && result.errors != nil {
+										errorsSlice := (*[1000]C.c_message)(unsafe.Pointer(result.errors))[:result.errors_count:result.errors_count]
+										for _, cError := range errorsSlice {
+											goError := api.Message{
+												Text: C.GoString(cError.text),
+											}
+											if cError.plugin_name != nil {
+												goError.PluginName = C.GoString(cError.plugin_name)
+											}
+											goResult.Errors = append(goResult.Errors, goError)
+										}
+									}
+									
+									// Handle warnings
+									if result.warnings_count > 0 && result.warnings != nil {
+										warningsSlice := (*[1000]C.c_message)(unsafe.Pointer(result.warnings))[:result.warnings_count:result.warnings_count]
+										for _, cWarning := range warningsSlice {
+											goWarning := api.Message{
+												Text: C.GoString(cWarning.text),
+											}
+											if cWarning.plugin_name != nil {
+												goWarning.PluginName = C.GoString(cWarning.plugin_name)
+											}
+											goResult.Warnings = append(goResult.Warnings, goWarning)
+										}
+									}
+									
+									return goResult, nil
+								}
+								
+								return api.OnResolveResult{}, nil
+							})
+						}
+					}
+					
+					// Handle load hooks
+					if cPlugin.load_hooks_count > 0 && cPlugin.load_hooks != nil {
+						loadHooksSlice := (*[1000]C.c_plugin_load_hook)(unsafe.Pointer(cPlugin.load_hooks))[:cPlugin.load_hooks_count:cPlugin.load_hooks_count]
+						
+						for _, hook := range loadHooksSlice {
+							filter := C.GoString(hook.filter)
+							var namespace string
+							if hook.namespace != nil {
+								namespace = C.GoString(hook.namespace)
+							}
+							
+							build.OnLoad(api.OnLoadOptions{
+								Filter:    filter,
+								Namespace: namespace,
+							}, func(args api.OnLoadArgs) (api.OnLoadResult, error) {
+								// Convert Go args to C args
+								cArgs := (*C.c_on_load_args)(C.malloc(C.sizeof_c_on_load_args))
+								defer C.free(unsafe.Pointer(cArgs))
+								
+								cArgs.path = C.CString(args.Path)
+								defer C.free(unsafe.Pointer(cArgs.path))
+								cArgs.namespace = C.CString(args.Namespace)
+								defer C.free(unsafe.Pointer(cArgs.namespace))
+								cArgs.suffix = C.CString(args.Suffix)
+								defer C.free(unsafe.Pointer(cArgs.suffix))
+								
+								// Call the Swift callback
+								result := C.swift_plugin_on_load_callback(cArgs, hook.callback_data)
+								if result != nil {
+									defer C.free(unsafe.Pointer(result))
+									
+									// Convert C result to Go result
+									goResult := api.OnLoadResult{}
+									if result.contents != nil {
+										contents := C.GoStringN(result.contents, result.contents_length)
+										goResult.Contents = &contents
+									}
+									if result.loader >= 0 {
+										goResult.Loader = api.Loader(result.loader)
+									}
+									if result.resolve_dir != nil {
+										goResult.ResolveDir = C.GoString(result.resolve_dir)
+									}
+									
+									// Handle errors
+									if result.errors_count > 0 && result.errors != nil {
+										errorsSlice := (*[1000]C.c_message)(unsafe.Pointer(result.errors))[:result.errors_count:result.errors_count]
+										for _, cError := range errorsSlice {
+											goError := api.Message{
+												Text: C.GoString(cError.text),
+											}
+											if cError.plugin_name != nil {
+												goError.PluginName = C.GoString(cError.plugin_name)
+											}
+											goResult.Errors = append(goResult.Errors, goError)
+										}
+									}
+									
+									// Handle warnings
+									if result.warnings_count > 0 && result.warnings != nil {
+										warningsSlice := (*[1000]C.c_message)(unsafe.Pointer(result.warnings))[:result.warnings_count:result.warnings_count]
+										for _, cWarning := range warningsSlice {
+											goWarning := api.Message{
+												Text: C.GoString(cWarning.text),
+											}
+											if cWarning.plugin_name != nil {
+												goWarning.PluginName = C.GoString(cWarning.plugin_name)
+											}
+											goResult.Warnings = append(goResult.Warnings, goWarning)
+										}
+									}
+									
+									return goResult, nil
+								}
+								
+								return api.OnLoadResult{}, nil
+							})
+						}
+					}
+					
+					// Handle start/end callbacks
+					if cPlugin.on_start != nil {
+						build.OnStart(func() (api.OnStartResult, error) {
+							C.swift_plugin_on_start_callback(cPlugin.start_data)
+							return api.OnStartResult{}, nil
+						})
+					}
+					
+					if cPlugin.on_end != nil {
+						build.OnEnd(func(result *api.BuildResult) (api.OnEndResult, error) {
+							C.swift_plugin_on_end_callback(cPlugin.end_data)
+							return api.OnEndResult{}, nil
+						})
+					}
+				},
+			}
+			
+			buildOpts.Plugins = append(buildOpts.Plugins, goPlugin)
+		}
+	}
+	
 	// Perform the build
 	result := api.Build(buildOpts)
 	
@@ -2295,3 +2606,26 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 	
 	return cResult
 }
+
+// Plugin callback bridge functions
+
+// Note: swift_plugin_on_* functions are implemented in Swift
+// and linked externally. No Go implementations needed.
+
+// Plugin registry to store registered plugins
+var pluginRegistry = make(map[unsafe.Pointer]*C.c_plugin)
+
+//export register_plugin
+func register_plugin(plugin *C.c_plugin) unsafe.Pointer {
+	// Generate a unique ID for this plugin
+	pluginID := unsafe.Pointer(plugin)
+	pluginRegistry[pluginID] = plugin
+	return pluginID
+}
+
+//export unregister_plugin
+func unregister_plugin(pluginID unsafe.Pointer) {
+	delete(pluginRegistry, pluginID)
+}
+
+// Main function is already defined in c_bridge.go

@@ -70,6 +70,9 @@ public struct ESBuildBuildOptions {
     /// Array of labels to drop
     public var dropLabels: [String]
     
+    /// Enable all minification options
+    public var minify: Bool
+    
     /// Remove unnecessary whitespace
     public var minifyWhitespace: Bool
     
@@ -229,6 +232,9 @@ public struct ESBuildBuildOptions {
     
     /// Stdin input configuration
     public var stdin: ESBuildStdinOptions?
+    
+    /// Plugins to use during the build
+    public var plugins: [ESBuildPlugin]
     
     // MARK: - C Bridge
     
@@ -569,6 +575,31 @@ public struct ESBuildBuildOptions {
             options.pointee.stdin = stdin.cValue
         }
         
+        // Plugins configuration
+        if !plugins.isEmpty {
+            print("Build has \(plugins.count) plugins configured")
+            
+            // Create C plugins array
+            options.pointee.plugins_count = Int32(plugins.count)
+            options.pointee.plugins = UnsafeMutablePointer<c_plugin>.allocate(capacity: plugins.count)
+            
+            // Convert each Swift plugin to C plugin
+            for (index, plugin) in plugins.enumerated() {
+                let cPlugin = plugin.createCPlugin()
+                // Store the plugin pointer directly in the array
+                options.pointee.plugins[index] = cPlugin.pointee
+                
+                // Register the plugin for callback management using the array element
+                let arrayElementPtr = options.pointee.plugins.advanced(by: index)
+                let _ = register_plugin(arrayElementPtr)
+                
+                // The plugin memory is now managed by the build options
+            }
+        } else {
+            options.pointee.plugins = nil
+            options.pointee.plugins_count = 0
+        }
+        
         return options
     }
     
@@ -595,9 +626,10 @@ public struct ESBuildBuildOptions {
         mangleCache: [String: String] = [:],
         drop: Set<ESBuildDrop> = [],
         dropLabels: [String] = [],
-        minifyWhitespace: Bool = false,
-        minifyIdentifiers: Bool = false,
-        minifySyntax: Bool = false,
+        minify: Bool = false,
+        minifyWhitespace: Bool? = nil,
+        minifyIdentifiers: Bool? = nil,
+        minifySyntax: Bool? = nil,
         lineLimit: Int32 = 0,
         charset: ESBuildCharset = .default,
         treeShaking: ESBuildTreeShaking = .default,
@@ -642,7 +674,8 @@ public struct ESBuildBuildOptions {
         assetNames: String? = nil,
         entryPoints: [String] = [],
         entryPointsAdvanced: [ESBuildEntryPoint] = [],
-        stdin: ESBuildStdinOptions? = nil
+        stdin: ESBuildStdinOptions? = nil,
+        plugins: [ESBuildPlugin] = []
     ) {
         self.color = color
         self.logLevel = logLevel
@@ -663,9 +696,10 @@ public struct ESBuildBuildOptions {
         self.mangleCache = mangleCache
         self.drop = drop
         self.dropLabels = dropLabels
-        self.minifyWhitespace = minifyWhitespace
-        self.minifyIdentifiers = minifyIdentifiers
-        self.minifySyntax = minifySyntax
+        self.minify = minify
+        self.minifyWhitespace = minifyWhitespace ?? minify
+        self.minifyIdentifiers = minifyIdentifiers ?? minify
+        self.minifySyntax = minifySyntax ?? minify
         self.lineLimit = lineLimit
         self.charset = charset
         self.treeShaking = treeShaking
@@ -711,6 +745,7 @@ public struct ESBuildBuildOptions {
         self.entryPoints = entryPoints
         self.entryPointsAdvanced = entryPointsAdvanced
         self.stdin = stdin
+        self.plugins = plugins
     }
 }
 
@@ -1005,7 +1040,8 @@ public func esbuildBuild(options: ESBuildBuildOptions = ESBuildBuildOptions()) -
         assetNames: options.assetNames,
         entryPoints: options.entryPoints,
         entryPointsAdvanced: options.entryPointsAdvanced,
-        stdin: options.stdin
+        stdin: options.stdin,
+        plugins: options.plugins
     )
     
     let cOptions = silentOptions.cValue

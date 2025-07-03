@@ -205,6 +205,108 @@ typedef struct {
 	char* hash;
 } esbuild_output_file;
 
+// Plugin API structures - moved here to be available for build options
+
+typedef enum {
+	RESOLVE_KIND_ENTRY_POINT = 0,
+	RESOLVE_KIND_IMPORT_STATEMENT = 1,
+	RESOLVE_KIND_REQUIRE_CALL = 2,
+	RESOLVE_KIND_DYNAMIC_IMPORT = 3,
+	RESOLVE_KIND_REQUIRE_RESOLVE = 4,
+	RESOLVE_KIND_IMPORT_RULE = 5,
+	RESOLVE_KIND_COMPOSES_FROM = 6,
+	RESOLVE_KIND_URL_TOKEN = 7
+} c_resolve_kind;
+
+typedef struct {
+	char* path;                  // string
+	char* importer;              // string
+	char* namespace;             // string
+	char* resolve_dir;           // string
+	int kind;                    // c_resolve_kind enum
+	char* plugin_data;           // JSON string for pluginData
+	char** with_keys;            // keys for with map
+	char** with_values;          // values for with map
+	int with_count;              // count of with entries
+} c_on_resolve_args;
+
+typedef struct {
+	char* path;                  // string
+	char* namespace;             // string
+	char* suffix;                // string
+	char* plugin_data;           // JSON string for pluginData
+	char** with_keys;            // keys for with map
+	char** with_values;          // values for with map
+	int with_count;              // count of with entries
+} c_on_load_args;
+
+typedef struct {
+	char* path;                  // optional string
+	char* namespace;             // optional string
+	int external;                // bool (0/1) (-1 for nil)
+	int side_effects;            // bool (0/1) (-1 for nil)
+	char* suffix;                // optional string
+	char* plugin_data;           // JSON string for pluginData
+	char* plugin_name;           // optional string
+	c_message* errors;           // array of errors
+	int errors_count;            // count of errors
+	c_message* warnings;         // array of warnings
+	int warnings_count;          // count of warnings
+	char** watch_files;          // array of file paths
+	int watch_files_count;       // count of watch files
+	char** watch_dirs;           // array of directory paths
+	int watch_dirs_count;        // count of watch dirs
+} c_on_resolve_result;
+
+typedef struct {
+	char* contents;              // optional byte array
+	int contents_length;         // length of contents (0 if nil)
+	int loader;                  // Loader enum (-1 for nil)
+	char* resolve_dir;           // optional string
+	char* plugin_data;           // JSON string for pluginData
+	char* plugin_name;           // optional string
+	c_message* errors;           // array of errors
+	int errors_count;            // count of errors
+	c_message* warnings;         // array of warnings
+	int warnings_count;          // count of warnings
+	char** watch_files;          // array of file paths
+	int watch_files_count;       // count of watch files
+	char** watch_dirs;           // array of directory paths
+	int watch_dirs_count;        // count of watch dirs
+} c_on_load_result;
+
+// Plugin callback function pointer types
+typedef c_on_resolve_result* (*on_resolve_callback)(c_on_resolve_args*, void*);
+typedef c_on_load_result* (*on_load_callback)(c_on_load_args*, void*);
+typedef void (*on_start_callback)(void*);
+typedef void (*on_end_callback)(void*);
+
+typedef struct {
+	char* filter;                // filter regex for the callback
+	char* namespace;             // namespace filter (optional)
+	on_resolve_callback callback; // callback function pointer
+	void* callback_data;         // Swift closure context
+} c_plugin_resolve_hook;
+
+typedef struct {
+	char* filter;                // filter regex for the callback
+	char* namespace;             // namespace filter (optional) 
+	on_load_callback callback;   // callback function pointer
+	void* callback_data;         // Swift closure context
+} c_plugin_load_hook;
+
+typedef struct {
+	char* name;                  // plugin name
+	c_plugin_resolve_hook* resolve_hooks; // array of resolve hooks
+	int resolve_hooks_count;     // count of resolve hooks
+	c_plugin_load_hook* load_hooks; // array of load hooks
+	int load_hooks_count;        // count of load hooks
+	on_start_callback on_start;  // start callback (optional)
+	on_end_callback on_end;      // end callback (optional)
+	void* start_data;            // start callback context
+	void* end_data;              // end callback context
+} c_plugin;
+
 typedef struct {
 	// Logging and Output Control
 	int color;                    // StderrColor enum
@@ -328,6 +430,10 @@ typedef struct {
 	esbuild_entry_point* entry_points_advanced; // advanced entry points
 	int entry_points_advanced_count;      // count of advanced entry points
 	esbuild_stdin_options* stdin;      // stdin options (optional)
+
+	// Plugin Configuration
+	c_plugin* plugins;           // array of plugins
+	int plugins_count;           // count of plugins
 } esbuild_build_options;
 
 typedef struct {
@@ -342,6 +448,12 @@ typedef struct {
 	char** mangle_cache_values;  // values for mangle cache
 	int mangle_cache_count;      // count of mangle cache entries
 } esbuild_build_result;
+
+// Forward declarations for Swift callback functions
+c_on_resolve_result* swift_plugin_on_resolve_callback(c_on_resolve_args* args, void* callbackData);
+c_on_load_result* swift_plugin_on_load_callback(c_on_load_args* args, void* callbackData);
+void swift_plugin_on_start_callback(void* callbackData);
+void swift_plugin_on_end_callback(void* callbackData);
 
 #line 1 "cgo-generated-wrapper"
 
@@ -595,6 +707,8 @@ extern void esbuild_free_output_file(esbuild_output_file* file);
 extern void esbuild_free_build_options(esbuild_build_options* opts);
 extern void esbuild_free_build_result(esbuild_build_result* result);
 extern esbuild_build_result* esbuild_build(esbuild_build_options* opts);
+extern void* register_plugin(c_plugin* plugin);
+extern void unregister_plugin(void* pluginID);
 
 #ifdef __cplusplus
 }

@@ -70,6 +70,9 @@ public struct ESBuildTransformOptions {
     /// Array of labels to drop
     public var dropLabels: [String]
 
+    /// Enable all minification options
+    public var minify: Bool
+
     /// Remove unnecessary whitespace
     public var minifyWhitespace: Bool
 
@@ -341,9 +344,10 @@ public struct ESBuildTransformOptions {
         mangleCache: [String: String] = [:],
         drop: Set<ESBuildDrop> = [],
         dropLabels: [String] = [],
-        minifyWhitespace: Bool = false,
-        minifyIdentifiers: Bool = false,
-        minifySyntax: Bool = false,
+        minify: Bool = false,
+        minifyWhitespace: Bool? = nil,
+        minifyIdentifiers: Bool? = nil,
+        minifySyntax: Bool? = nil,
         lineLimit: Int32 = 0,
         charset: ESBuildCharset = .default,
         treeShaking: ESBuildTreeShaking = .default,
@@ -383,9 +387,10 @@ public struct ESBuildTransformOptions {
         self.mangleCache = mangleCache
         self.drop = drop
         self.dropLabels = dropLabels
-        self.minifyWhitespace = minifyWhitespace
-        self.minifyIdentifiers = minifyIdentifiers
-        self.minifySyntax = minifySyntax
+        self.minify = minify
+        self.minifyWhitespace = minifyWhitespace ?? minify
+        self.minifyIdentifiers = minifyIdentifiers ?? minify
+        self.minifySyntax = minifySyntax ?? minify
         self.lineLimit = lineLimit
         self.charset = charset
         self.treeShaking = treeShaking
