@@ -995,6 +995,141 @@ public struct ESBuildBuildResult: Sendable {
 /// - Parameters:
 ///   - options: Build options
 /// - Returns: Build result containing output files and metadata
+/// Build with ESBuild using a custom file resolver
+/// - Parameters:
+///   - options: ESBuild build options
+///   - resolver: Function that resolves file paths to FileResolver cases or nil
+/// - Returns: Build result with compilation status and output files
+public func esbuildBuild(
+    options: ESBuildBuildOptions = ESBuildBuildOptions(),
+    resolver: @escaping @Sendable (String) async throws -> FileResolver?
+) async throws -> ESBuildBuildResult? {
+    
+    // Create a resolver plugin that uses the provided callback
+    let resolverPlugin = ESBuildPlugin(name: "dynamic-resolver") { build in
+        
+        // Handle all file resolution
+        build.onResolve(filter: ".*", namespace: nil) { args in
+            do {
+                // Try to resolve the import path
+                let resolvedPath = try await resolveImportPath(args.path, from: args.importer, resolver: resolver)
+                if let path = resolvedPath {
+                    return ESBuildOnResolveResult(path: path)
+                }
+            } catch {
+                return ESBuildOnResolveResult(
+                    errors: [ESBuildPluginMessage(text: "Failed to resolve '\(args.path)': \(error.localizedDescription)")]
+                )
+            }
+            return nil
+        }
+        
+        // Handle all file loading
+        build.onLoad(filter: ".*", namespace: nil) { args in
+            do {
+                if let fileResolver = try await resolver(args.path) {
+                    if case .file(let content) = fileResolver {
+                        return ESBuildOnLoadResult(
+                            contents: content,
+                            loader: detectLoader(for: args.path)
+                        )
+                    }
+                }
+            } catch {
+                return ESBuildOnLoadResult(
+                    errors: [ESBuildPluginMessage(text: "Failed to load '\(args.path)': \(error.localizedDescription)")]
+                )
+            }
+            return nil
+        }
+    }
+    
+    // Add the resolver plugin to the build options
+    var buildOptions = options
+    buildOptions.plugins = buildOptions.plugins + [resolverPlugin]
+    
+    return esbuildBuild(options: buildOptions)
+}
+
+/// Helper function to resolve import paths relative to the importer
+private func resolveImportPath(
+    _ importPath: String,
+    from importer: String?,
+    resolver: @Sendable (String) async throws -> FileResolver?
+) async throws -> String? {
+    
+    // Handle absolute paths
+    if importPath.hasPrefix("/") {
+        return try await resolver(importPath) != nil ? importPath : nil
+    }
+    
+    // Handle relative paths
+    if importPath.hasPrefix("./") || importPath.hasPrefix("../") {
+        guard let importer = importer else { return nil }
+        
+        let importerDir = (importer as NSString).deletingLastPathComponent
+        let resolvedPath = (importerDir as NSString).appendingPathComponent(importPath)
+        let normalizedPath = (resolvedPath as NSString).standardizingPath
+        
+        return try await resolver(normalizedPath) != nil ? normalizedPath : nil
+    }
+    
+    // Handle node_modules style imports (simplified)
+    // For now, just check if the path exists as-is
+    return try await resolver(importPath) != nil ? importPath : nil
+}
+
+/// Detect the appropriate loader based on file extension
+private func detectLoader(for path: String) -> ESBuildLoader {
+    let ext = (path as NSString).pathExtension.lowercased()
+    
+    switch ext {
+    case "js": return .js
+    case "jsx": return .jsx
+    case "ts": return .ts
+    case "tsx": return .tsx
+    case "json": return .json
+    case "css": return .css
+    case "txt": return .text
+    default: return .js  // Default to JS
+    }
+}
+
+/// Build with ESBuild using in-memory files
+/// - Parameters:
+///   - files: Dictionary of file paths to content
+///   - options: ESBuild build options
+/// - Returns: Build result with compilation status and output files
+public func esbuildBuild(
+    files: [String: String],
+    options: ESBuildBuildOptions = ESBuildBuildOptions()
+) async throws -> ESBuildBuildResult? {
+    
+    try await esbuildBuild(options: options) { path in
+        if let content = files[path] {
+            return .file(content)
+        }
+        
+        // Check if it's a directory by looking for child files
+        let childFiles = files.keys
+            .filter { $0.hasPrefix(path + "/") }
+            .compactMap { filePath -> String? in
+                let relativePath = String(filePath.dropFirst(path.count + 1))
+                // Only return direct children, not nested paths
+                if !relativePath.contains("/") {
+                    return relativePath
+                }
+                return nil
+            }
+        
+        if !childFiles.isEmpty {
+            return .directory(childFiles)
+        }
+        
+        return nil
+    }
+}
+
 public func esbuildBuild(options: ESBuildBuildOptions = ESBuildBuildOptions()) -> ESBuildBuildResult? {
     // Create options with silent logging to capture errors in result instead of printing to console
     let silentOptions = ESBuildBuildOptions(

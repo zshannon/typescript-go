@@ -15,7 +15,32 @@ private func buildWithSimpleResolver(
         }
         // Check if it's a directory that should exist
         if directories.contains(path) || path == "/project" || path == "/project/src" {
-            return .directory([])
+            // Find all files that are children of this directory
+            let childFiles = files.keys
+                .filter { $0.hasPrefix(path + "/") }
+                .compactMap { filePath -> String? in
+                    let relativePath = String(filePath.dropFirst(path.count + 1))
+                    // Only return direct children, not nested paths
+                    if !relativePath.contains("/") {
+                        return relativePath
+                    }
+                    return nil
+                }
+            
+            // Find all subdirectories that are children of this directory
+            let childDirs = directories
+                .filter { $0.hasPrefix(path + "/") }
+                .compactMap { dirPath -> String? in
+                    let relativePath = String(dirPath.dropFirst(path.count + 1))
+                    // Only return direct children, not nested paths
+                    if !relativePath.contains("/") {
+                        return relativePath
+                    }
+                    return nil
+                }
+            
+            let allChildren = childFiles + childDirs
+            return .directory(allChildren)
         }
         return nil
     }
@@ -30,7 +55,7 @@ private func buildWithSimpleResolver(
         }
     }
 
-    return try await build(config: config, resolver: resolver)
+    return try await build(config: config ?? .default, resolver: resolver)
 }
 
 @Suite(.serialized)
@@ -50,7 +75,14 @@ struct BuildInMemoryTests {
             ),
         ]
 
-        let result = try await build(sources)
+        var compilerOptions = CompilerOptions()
+        compilerOptions.target = .es2020
+        compilerOptions.module = .commonjs
+        compilerOptions.noEmit = true
+        compilerOptions.strict = true
+        
+        let config = TSConfig(compilerOptions: compilerOptions, include: ["src/**/*"])
+        let result = try await build(config: config, sources)
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
@@ -127,7 +159,8 @@ struct BuildInMemoryTests {
         var strictOptions = CompilerOptions()
         strictOptions.strict = true
         strictOptions.noImplicitAny = true
-        let strictConfig = TSConfig(compilerOptions: strictOptions)
+        strictOptions.noEmit = true
+        let strictConfig = TSConfig(compilerOptions: strictOptions, include: ["src/**/*"])
 
         let strictResult = try await build(config: strictConfig, sources)
         #expect(strictResult.success == false)
@@ -136,7 +169,8 @@ struct BuildInMemoryTests {
         var lenientOptions = CompilerOptions()
         lenientOptions.strict = false
         lenientOptions.noImplicitAny = false
-        let lenientConfig = TSConfig(compilerOptions: lenientOptions)
+        lenientOptions.noEmit = true
+        let lenientConfig = TSConfig(compilerOptions: lenientOptions, include: ["src/**/*"])
 
         let lenientResult = try await build(config: lenientConfig, sources)
         #expect(lenientResult.success == true)
@@ -213,7 +247,7 @@ struct BuildInMemoryTests {
                     }
                 }
                 """,
-            ], directories: ["/project"]
+            ], directories: ["/project", "/project/dist"]
         )
 
         #expect(result.success == true)
