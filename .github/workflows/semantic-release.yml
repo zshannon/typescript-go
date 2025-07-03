@@ -74,7 +74,7 @@ jobs:
 
       - name: Create framework archive
         run: |
-          cd Sources/TSCBridge/TSCBridge.xcframework
+          cd Sources/TSCBridge
           zip -r TSCBridge.xcframework.zip TSCBridge.xcframework/
           cd ..
 
@@ -82,7 +82,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: TSGoBindings.xcframework
-          path: Sources/TSGoBindings.xcframework.zip
+          path: Sources/TSCBridge/TSGoBindings.xcframework.zip
 
   semantic-release:
     needs: build
