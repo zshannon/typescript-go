@@ -116,7 +116,7 @@ struct ESBuildBuildTests {
             resolveDir: "/src",
             sourcefile: "input.js"
         )
-        
+
         let entryPoint = ESBuildEntryPoint(
             inputPath: "src/index.ts",
             outputPath: "dist/index.js"
@@ -309,7 +309,7 @@ struct ESBuildBuildTests {
         let result = esbuildBuild(options: options)
 
         #expect(result != nil)
-        if let result = result {
+        if let result {
             #expect(result.errors.count == 0)
             #expect(result.outputFiles.count > 0)
 
@@ -347,14 +347,14 @@ struct ESBuildBuildTests {
             let result = esbuildBuild(options: options)
 
             #expect(result != nil)
-            if let result = result {
+            if let result {
                 if result.errors.count > 0 {
                     print("Build errors:")
                     for error in result.errors {
                         print("  \(error.text)")
                     }
                 }
-                
+
                 // If there are errors, this is likely a file system issue in the test environment
                 // In a real scenario, we'd expect this to work, but for testing we can be more lenient
                 if result.errors.count == 0 {
@@ -390,7 +390,7 @@ struct ESBuildBuildTests {
         let result = esbuildBuild(options: options)
 
         #expect(result != nil)
-        if let result = result {
+        if let result {
             #expect(result.errors.count > 0)
             let firstError = result.errors[0]
             #expect(firstError.text.contains("Could not resolve") || firstError.text.contains("No such file"))
@@ -422,7 +422,7 @@ struct ESBuildBuildTests {
         let result = esbuildBuild(options: options)
 
         #expect(result != nil)
-        if let result = result {
+        if let result {
             #expect(result.errors.count == 0)
             #expect(result.outputFiles.count > 0)
 
@@ -453,7 +453,7 @@ struct ESBuildBuildTests {
         let result = esbuildBuild(options: options)
 
         #expect(result != nil)
-        if let result = result {
+        if let result {
             #expect(result.errors.count == 0)
             #expect(result.metafile != nil)
 
@@ -516,46 +516,46 @@ struct ESBuildBuildTests {
             logOverride: [
                 "ts": .warning,
                 "js": .error,
-                "css": .silent
+                "css": .silent,
             ]
         )
-        
+
         let cOptions = options.cValue
         defer { esbuild_free_build_options(cOptions) }
-        
+
         // Verify log override conversion
         #expect(cOptions.pointee.log_override_count == 3)
         #expect(cOptions.pointee.log_override_keys != nil)
         #expect(cOptions.pointee.log_override_values != nil)
-        
+
         // Check that all keys and values are properly converted
         var foundKeys: Set<String> = []
         var foundValues: [Int32] = []
-        
-        for i in 0..<Int(cOptions.pointee.log_override_count) {
+
+        for i in 0 ..< Int(cOptions.pointee.log_override_count) {
             if let keyPtr = cOptions.pointee.log_override_keys[i] {
                 let key = String(cString: keyPtr)
                 foundKeys.insert(key)
             }
             foundValues.append(cOptions.pointee.log_override_values[i])
         }
-        
+
         // Verify all expected keys are present
         #expect(foundKeys.contains("ts"))
         #expect(foundKeys.contains("js"))
         #expect(foundKeys.contains("css"))
         #expect(foundKeys.count == 3)
-        
+
         // Verify values are correct enum values
         #expect(foundValues.contains(ESBuildLogLevel.warning.cValue))
         #expect(foundValues.contains(ESBuildLogLevel.error.cValue))
         #expect(foundValues.contains(ESBuildLogLevel.silent.cValue))
-        
+
         // Test empty logOverride
         let emptyOptions = ESBuildBuildOptions(logOverride: [:])
         let cEmptyOptions = emptyOptions.cValue
         defer { esbuild_free_build_options(cEmptyOptions) }
-        
+
         #expect(cEmptyOptions.pointee.log_override_count == 0)
     }
 
@@ -565,27 +565,27 @@ struct ESBuildBuildTests {
             engines: [
                 (engine: .chrome, version: "90"),
                 (engine: .firefox, version: "88"),
-                (engine: .node, version: "16.0.0")
+                (engine: .node, version: "16.0.0"),
             ]
         )
-        
+
         let cOptions = options.cValue
         defer { esbuild_free_build_options(cOptions) }
-        
+
         #expect(cOptions.pointee.engines_count == 3)
         #expect(cOptions.pointee.engine_names != nil)
         #expect(cOptions.pointee.engine_versions != nil)
-        
+
         var foundEngines: [Int32] = []
         var foundVersions: [String] = []
-        
-        for i in 0..<Int(cOptions.pointee.engines_count) {
+
+        for i in 0 ..< Int(cOptions.pointee.engines_count) {
             foundEngines.append(cOptions.pointee.engine_names[i])
             if let versionPtr = cOptions.pointee.engine_versions[i] {
                 foundVersions.append(String(cString: versionPtr))
             }
         }
-        
+
         #expect(foundEngines.contains(ESBuildEngine.chrome.cValue))
         #expect(foundEngines.contains(ESBuildEngine.firefox.cValue))
         #expect(foundEngines.contains(ESBuildEngine.node.cValue))
@@ -601,27 +601,27 @@ struct ESBuildBuildTests {
                 "bigint": true,
                 "import-meta": false,
                 "dynamic-import": true,
-                "async-await": false
+                "async-await": false,
             ]
         )
-        
+
         let cOptions = options.cValue
         defer { esbuild_free_build_options(cOptions) }
-        
+
         #expect(cOptions.pointee.supported_count == 4)
         #expect(cOptions.pointee.supported_keys != nil)
         #expect(cOptions.pointee.supported_values != nil)
-        
+
         var foundFeatures: Set<String> = []
         var foundValues: [Int32] = []
-        
-        for i in 0..<Int(cOptions.pointee.supported_count) {
+
+        for i in 0 ..< Int(cOptions.pointee.supported_count) {
             if let keyPtr = cOptions.pointee.supported_keys[i] {
                 foundFeatures.insert(String(cString: keyPtr))
             }
             foundValues.append(cOptions.pointee.supported_values[i])
         }
-        
+
         #expect(foundFeatures.contains("bigint"))
         #expect(foundFeatures.contains("import-meta"))
         #expect(foundFeatures.contains("dynamic-import"))
@@ -630,32 +630,33 @@ struct ESBuildBuildTests {
         #expect(foundValues.filter { $0 == 0 }.count == 2) // import-meta and async-await
     }
 
-    @Test("MangleCache parameter C bridge conversion") 
+    @Test("MangleCache parameter C bridge conversion")
     func testMangleCacheParameterConversion() {
         let options = ESBuildBuildOptions(
             mangleCache: [
                 "originalName1": "a",
                 "originalName2": "b",
-                "veryLongPropertyName": "c"
+                "veryLongPropertyName": "c",
             ]
         )
-        
+
         let cOptions = options.cValue
         defer { esbuild_free_build_options(cOptions) }
-        
+
         #expect(cOptions.pointee.mangle_cache_count == 3)
         #expect(cOptions.pointee.mangle_cache_keys != nil)
         #expect(cOptions.pointee.mangle_cache_values != nil)
-        
+
         var foundMappings: [String: String] = [:]
-        
-        for i in 0..<Int(cOptions.pointee.mangle_cache_count) {
+
+        for i in 0 ..< Int(cOptions.pointee.mangle_cache_count) {
             if let keyPtr = cOptions.pointee.mangle_cache_keys[i],
-               let valuePtr = cOptions.pointee.mangle_cache_values[i] {
+               let valuePtr = cOptions.pointee.mangle_cache_values[i]
+            {
                 foundMappings[String(cString: keyPtr)] = String(cString: valuePtr)
             }
         }
-        
+
         #expect(foundMappings["originalName1"] == "a")
         #expect(foundMappings["originalName2"] == "b")
         #expect(foundMappings["veryLongPropertyName"] == "c")
@@ -666,18 +667,18 @@ struct ESBuildBuildTests {
         let options = ESBuildBuildOptions(
             drop: [.console, .debugger]
         )
-        
+
         let cOptions = options.cValue
         defer { esbuild_free_build_options(cOptions) }
-        
+
         let expectedValue = ESBuildDrop.console.cValue | ESBuildDrop.debugger.cValue
         #expect(cOptions.pointee.drop == expectedValue)
-        
+
         // Test empty drop
         let emptyOptions = ESBuildBuildOptions(drop: [])
         let cEmptyOptions = emptyOptions.cValue
         defer { esbuild_free_build_options(cEmptyOptions) }
-        
+
         #expect(cEmptyOptions.pointee.drop == 0)
     }
 
@@ -686,20 +687,20 @@ struct ESBuildBuildTests {
         let options = ESBuildBuildOptions(
             dropLabels: ["DEV", "TEST", "DEBUG"]
         )
-        
+
         let cOptions = options.cValue
         defer { esbuild_free_build_options(cOptions) }
-        
+
         #expect(cOptions.pointee.drop_labels_count == 3)
         #expect(cOptions.pointee.drop_labels != nil)
-        
+
         var foundLabels: Set<String> = []
-        for i in 0..<Int(cOptions.pointee.drop_labels_count) {
+        for i in 0 ..< Int(cOptions.pointee.drop_labels_count) {
             if let labelPtr = cOptions.pointee.drop_labels[i] {
                 foundLabels.insert(String(cString: labelPtr))
             }
         }
-        
+
         #expect(foundLabels.contains("DEV"))
         #expect(foundLabels.contains("TEST"))
         #expect(foundLabels.contains("DEBUG"))
@@ -712,25 +713,26 @@ struct ESBuildBuildTests {
             banner: [
                 "js": "/* JS Banner */",
                 "css": "/* CSS Banner */",
-                "ts": "/* TS Banner */"
+                "ts": "/* TS Banner */",
             ]
         )
-        
+
         let cOptions = options.cValue
         defer { esbuild_free_build_options(cOptions) }
-        
+
         #expect(cOptions.pointee.banner_count == 3)
         #expect(cOptions.pointee.banner_keys != nil)
         #expect(cOptions.pointee.banner_values != nil)
-        
+
         var foundBanners: [String: String] = [:]
-        for i in 0..<Int(cOptions.pointee.banner_count) {
+        for i in 0 ..< Int(cOptions.pointee.banner_count) {
             if let keyPtr = cOptions.pointee.banner_keys[i],
-               let valuePtr = cOptions.pointee.banner_values[i] {
+               let valuePtr = cOptions.pointee.banner_values[i]
+            {
                 foundBanners[String(cString: keyPtr)] = String(cString: valuePtr)
             }
         }
-        
+
         #expect(foundBanners["js"] == "/* JS Banner */")
         #expect(foundBanners["css"] == "/* CSS Banner */")
         #expect(foundBanners["ts"] == "/* TS Banner */")
@@ -741,25 +743,26 @@ struct ESBuildBuildTests {
         let options = ESBuildBuildOptions(
             footer: [
                 "js": "/* JS Footer */",
-                "css": "/* CSS Footer */"
+                "css": "/* CSS Footer */",
             ]
         )
-        
+
         let cOptions = options.cValue
         defer { esbuild_free_build_options(cOptions) }
-        
+
         #expect(cOptions.pointee.footer_count == 2)
         #expect(cOptions.pointee.footer_keys != nil)
         #expect(cOptions.pointee.footer_values != nil)
-        
+
         var foundFooters: [String: String] = [:]
-        for i in 0..<Int(cOptions.pointee.footer_count) {
+        for i in 0 ..< Int(cOptions.pointee.footer_count) {
             if let keyPtr = cOptions.pointee.footer_keys[i],
-               let valuePtr = cOptions.pointee.footer_values[i] {
+               let valuePtr = cOptions.pointee.footer_values[i]
+            {
                 foundFooters[String(cString: keyPtr)] = String(cString: valuePtr)
             }
         }
-        
+
         #expect(foundFooters["js"] == "/* JS Footer */")
         #expect(foundFooters["css"] == "/* CSS Footer */")
     }
@@ -770,25 +773,26 @@ struct ESBuildBuildTests {
             define: [
                 "NODE_ENV": "\"production\"",
                 "VERSION": "\"1.0.0\"",
-                "DEBUG": "false"
+                "DEBUG": "false",
             ]
         )
-        
+
         let cOptions = options.cValue
         defer { esbuild_free_build_options(cOptions) }
-        
+
         #expect(cOptions.pointee.define_count == 3)
         #expect(cOptions.pointee.define_keys != nil)
         #expect(cOptions.pointee.define_values != nil)
-        
+
         var foundDefines: [String: String] = [:]
-        for i in 0..<Int(cOptions.pointee.define_count) {
+        for i in 0 ..< Int(cOptions.pointee.define_count) {
             if let keyPtr = cOptions.pointee.define_keys[i],
-               let valuePtr = cOptions.pointee.define_values[i] {
+               let valuePtr = cOptions.pointee.define_values[i]
+            {
                 foundDefines[String(cString: keyPtr)] = String(cString: valuePtr)
             }
         }
-        
+
         #expect(foundDefines["NODE_ENV"] == "\"production\"")
         #expect(foundDefines["VERSION"] == "\"1.0.0\"")
         #expect(foundDefines["DEBUG"] == "false")
@@ -799,20 +803,20 @@ struct ESBuildBuildTests {
         let options = ESBuildBuildOptions(
             pure: ["console.log", "debug", "assert"]
         )
-        
+
         let cOptions = options.cValue
         defer { esbuild_free_build_options(cOptions) }
-        
+
         #expect(cOptions.pointee.pure_count == 3)
         #expect(cOptions.pointee.pure != nil)
-        
+
         var foundPure: Set<String> = []
-        for i in 0..<Int(cOptions.pointee.pure_count) {
+        for i in 0 ..< Int(cOptions.pointee.pure_count) {
             if let purePtr = cOptions.pointee.pure[i] {
                 foundPure.insert(String(cString: purePtr))
             }
         }
-        
+
         #expect(foundPure.contains("console.log"))
         #expect(foundPure.contains("debug"))
         #expect(foundPure.contains("assert"))
@@ -824,20 +828,20 @@ struct ESBuildBuildTests {
         let options = ESBuildBuildOptions(
             external: ["react", "lodash", "moment"]
         )
-        
+
         let cOptions = options.cValue
         defer { esbuild_free_build_options(cOptions) }
-        
+
         #expect(cOptions.pointee.external_count == 3)
         #expect(cOptions.pointee.external != nil)
-        
+
         var foundExternal: Set<String> = []
-        for i in 0..<Int(cOptions.pointee.external_count) {
+        for i in 0 ..< Int(cOptions.pointee.external_count) {
             if let externalPtr = cOptions.pointee.external[i] {
                 foundExternal.insert(String(cString: externalPtr))
             }
         }
-        
+
         #expect(foundExternal.contains("react"))
         #expect(foundExternal.contains("lodash"))
         #expect(foundExternal.contains("moment"))
@@ -850,25 +854,26 @@ struct ESBuildBuildTests {
             alias: [
                 "@": "./src",
                 "~": "./components",
-                "utils": "./src/utils"
+                "utils": "./src/utils",
             ]
         )
-        
+
         let cOptions = options.cValue
         defer { esbuild_free_build_options(cOptions) }
-        
+
         #expect(cOptions.pointee.alias_count == 3)
         #expect(cOptions.pointee.alias_keys != nil)
         #expect(cOptions.pointee.alias_values != nil)
-        
+
         var foundAliases: [String: String] = [:]
-        for i in 0..<Int(cOptions.pointee.alias_count) {
+        for i in 0 ..< Int(cOptions.pointee.alias_count) {
             if let keyPtr = cOptions.pointee.alias_keys[i],
-               let valuePtr = cOptions.pointee.alias_values[i] {
+               let valuePtr = cOptions.pointee.alias_values[i]
+            {
                 foundAliases[String(cString: keyPtr)] = String(cString: valuePtr)
             }
         }
-        
+
         #expect(foundAliases["@"] == "./src")
         #expect(foundAliases["~"] == "./components")
         #expect(foundAliases["utils"] == "./src/utils")
@@ -879,20 +884,20 @@ struct ESBuildBuildTests {
         let options = ESBuildBuildOptions(
             mainFields: ["browser", "module", "main"]
         )
-        
+
         let cOptions = options.cValue
         defer { esbuild_free_build_options(cOptions) }
-        
+
         #expect(cOptions.pointee.main_fields_count == 3)
         #expect(cOptions.pointee.main_fields != nil)
-        
+
         var foundFields: [String] = []
-        for i in 0..<Int(cOptions.pointee.main_fields_count) {
+        for i in 0 ..< Int(cOptions.pointee.main_fields_count) {
             if let fieldPtr = cOptions.pointee.main_fields[i] {
                 foundFields.append(String(cString: fieldPtr))
             }
         }
-        
+
         #expect(foundFields.contains("browser"))
         #expect(foundFields.contains("module"))
         #expect(foundFields.contains("main"))
@@ -904,20 +909,20 @@ struct ESBuildBuildTests {
         let options = ESBuildBuildOptions(
             conditions: ["development", "browser", "import"]
         )
-        
+
         let cOptions = options.cValue
         defer { esbuild_free_build_options(cOptions) }
-        
+
         #expect(cOptions.pointee.conditions_count == 3)
         #expect(cOptions.pointee.conditions != nil)
-        
+
         var foundConditions: Set<String> = []
-        for i in 0..<Int(cOptions.pointee.conditions_count) {
+        for i in 0 ..< Int(cOptions.pointee.conditions_count) {
             if let conditionPtr = cOptions.pointee.conditions[i] {
                 foundConditions.insert(String(cString: conditionPtr))
             }
         }
-        
+
         #expect(foundConditions.contains("development"))
         #expect(foundConditions.contains("browser"))
         #expect(foundConditions.contains("import"))
@@ -930,24 +935,24 @@ struct ESBuildBuildTests {
             loader: [
                 ".svg": .dataurl,
                 ".png": .file,
-                ".txt": .text
+                ".txt": .text,
             ]
         )
-        
+
         let cOptions = options.cValue
         defer { esbuild_free_build_options(cOptions) }
-        
+
         #expect(cOptions.pointee.loader_count == 3)
         #expect(cOptions.pointee.loader_keys != nil)
         #expect(cOptions.pointee.loader_values != nil)
-        
+
         var foundLoaders: [String: Int32] = [:]
-        for i in 0..<Int(cOptions.pointee.loader_count) {
+        for i in 0 ..< Int(cOptions.pointee.loader_count) {
             if let keyPtr = cOptions.pointee.loader_keys[i] {
                 foundLoaders[String(cString: keyPtr)] = cOptions.pointee.loader_values[i]
             }
         }
-        
+
         #expect(foundLoaders[".svg"] == ESBuildLoader.dataurl.cValue)
         #expect(foundLoaders[".png"] == ESBuildLoader.file.cValue)
         #expect(foundLoaders[".txt"] == ESBuildLoader.text.cValue)
@@ -958,20 +963,20 @@ struct ESBuildBuildTests {
         let options = ESBuildBuildOptions(
             resolveExtensions: [".tsx", ".ts", ".jsx", ".js"]
         )
-        
+
         let cOptions = options.cValue
         defer { esbuild_free_build_options(cOptions) }
-        
+
         #expect(cOptions.pointee.resolve_extensions_count == 4)
         #expect(cOptions.pointee.resolve_extensions != nil)
-        
+
         var foundExtensions: [String] = []
-        for i in 0..<Int(cOptions.pointee.resolve_extensions_count) {
+        for i in 0 ..< Int(cOptions.pointee.resolve_extensions_count) {
             if let extPtr = cOptions.pointee.resolve_extensions[i] {
                 foundExtensions.append(String(cString: extPtr))
             }
         }
-        
+
         #expect(foundExtensions.contains(".tsx"))
         #expect(foundExtensions.contains(".ts"))
         #expect(foundExtensions.contains(".jsx"))
@@ -984,25 +989,26 @@ struct ESBuildBuildTests {
         let options = ESBuildBuildOptions(
             outExtension: [
                 ".js": ".mjs",
-                ".css": ".styles.css"
+                ".css": ".styles.css",
             ]
         )
-        
+
         let cOptions = options.cValue
         defer { esbuild_free_build_options(cOptions) }
-        
+
         #expect(cOptions.pointee.out_extension_count == 2)
         #expect(cOptions.pointee.out_extension_keys != nil)
         #expect(cOptions.pointee.out_extension_values != nil)
-        
+
         var foundExtensions: [String: String] = [:]
-        for i in 0..<Int(cOptions.pointee.out_extension_count) {
+        for i in 0 ..< Int(cOptions.pointee.out_extension_count) {
             if let keyPtr = cOptions.pointee.out_extension_keys[i],
-               let valuePtr = cOptions.pointee.out_extension_values[i] {
+               let valuePtr = cOptions.pointee.out_extension_values[i]
+            {
                 foundExtensions[String(cString: keyPtr)] = String(cString: valuePtr)
             }
         }
-        
+
         #expect(foundExtensions[".js"] == ".mjs")
         #expect(foundExtensions[".css"] == ".styles.css")
     }
@@ -1012,20 +1018,20 @@ struct ESBuildBuildTests {
         let options = ESBuildBuildOptions(
             inject: ["./polyfill.js", "./globals.js"]
         )
-        
+
         let cOptions = options.cValue
         defer { esbuild_free_build_options(cOptions) }
-        
+
         #expect(cOptions.pointee.inject_count == 2)
         #expect(cOptions.pointee.inject != nil)
-        
+
         var foundInjects: Set<String> = []
-        for i in 0..<Int(cOptions.pointee.inject_count) {
+        for i in 0 ..< Int(cOptions.pointee.inject_count) {
             if let injectPtr = cOptions.pointee.inject[i] {
                 foundInjects.insert(String(cString: injectPtr))
             }
         }
-        
+
         #expect(foundInjects.contains("./polyfill.js"))
         #expect(foundInjects.contains("./globals.js"))
         #expect(foundInjects.count == 2)
@@ -1036,20 +1042,20 @@ struct ESBuildBuildTests {
         let options = ESBuildBuildOptions(
             nodePaths: ["/usr/lib/node_modules", "/opt/node_modules"]
         )
-        
+
         let cOptions = options.cValue
         defer { esbuild_free_build_options(cOptions) }
-        
+
         #expect(cOptions.pointee.node_paths_count == 2)
         #expect(cOptions.pointee.node_paths != nil)
-        
+
         var foundPaths: Set<String> = []
-        for i in 0..<Int(cOptions.pointee.node_paths_count) {
+        for i in 0 ..< Int(cOptions.pointee.node_paths_count) {
             if let pathPtr = cOptions.pointee.node_paths[i] {
                 foundPaths.insert(String(cString: pathPtr))
             }
         }
-        
+
         #expect(foundPaths.contains("/usr/lib/node_modules"))
         #expect(foundPaths.contains("/opt/node_modules"))
         #expect(foundPaths.count == 2)
@@ -1065,26 +1071,27 @@ struct ESBuildBuildTests {
             inputPath: "src/worker.ts",
             outputPath: "dist/worker.js"
         )
-        
+
         let options = ESBuildBuildOptions(
             entryPointsAdvanced: [entryPoint1, entryPoint2]
         )
-        
+
         let cOptions = options.cValue
         defer { esbuild_free_build_options(cOptions) }
-        
+
         #expect(cOptions.pointee.entry_points_advanced_count == 2)
         #expect(cOptions.pointee.entry_points_advanced != nil)
-        
+
         var foundEntryPoints: [(String, String)] = []
-        for i in 0..<Int(cOptions.pointee.entry_points_advanced_count) {
+        for i in 0 ..< Int(cOptions.pointee.entry_points_advanced_count) {
             let entryPoint = cOptions.pointee.entry_points_advanced[i]
             if let inputPtr = entryPoint.input_path,
-               let outputPtr = entryPoint.output_path {
+               let outputPtr = entryPoint.output_path
+            {
                 foundEntryPoints.append((String(cString: inputPtr), String(cString: outputPtr)))
             }
         }
-        
+
         #expect(foundEntryPoints.count == 2)
         #expect(foundEntryPoints.contains { $0.0 == "src/main.ts" && $0.1 == "dist/main.js" })
         #expect(foundEntryPoints.contains { $0.0 == "src/worker.ts" && $0.1 == "dist/worker.js" })

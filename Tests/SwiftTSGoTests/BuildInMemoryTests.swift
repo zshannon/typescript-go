@@ -3,6 +3,36 @@ import Testing
 
 @testable import SwiftTSGo
 
+// Helper function to replace buildWithSimpleResolver
+private func buildWithSimpleResolver(
+    _ files: [String: String],
+    directories: [String] = []
+) async throws -> InMemoryBuildResult {
+    // Use the resolver-based build function to handle arbitrary file paths
+    let resolver: @Sendable (String) async throws -> FileResolver? = { path in
+        if let content = files[path] {
+            return .file(content)
+        }
+        // Check if it's a directory that should exist
+        if directories.contains(path) || path == "/project" || path == "/project/src" {
+            return .directory([])
+        }
+        return nil
+    }
+
+    // If there's a tsconfig.json, extract it and use it as config
+    var config: TSConfig? = nil
+    if let tsconfigContent = files["/project/tsconfig.json"] {
+        if let data = tsconfigContent.data(using: .utf8),
+           let decoded = try? JSONDecoder().decode(TSConfig.self, from: data)
+        {
+            config = decoded
+        }
+    }
+
+    return try await build(config: config, resolver: resolver)
+}
+
 @Suite(.serialized)
 struct BuildInMemoryTests {
     @Test func basicCompilationTest() async throws {
@@ -20,7 +50,7 @@ struct BuildInMemoryTests {
             ),
         ]
 
-        let result = try buildInMemory(sources)
+        let result = try await build(sources)
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
@@ -28,7 +58,7 @@ struct BuildInMemoryTests {
     }
 
     @Test func basicCompilationTestWithGlob() async throws {
-        let result = try buildWithSimpleResolver(
+        let result = try await buildWithSimpleResolver(
             [
                 "/project/tsconfig.json": """
                 {
@@ -64,7 +94,7 @@ struct BuildInMemoryTests {
             ),
         ]
 
-        let result = try buildInMemory(sources)
+        let result = try await build(sources)
 
         #expect(result.success == false)
         #expect(!result.diagnostics.isEmpty)
@@ -99,7 +129,7 @@ struct BuildInMemoryTests {
         strictOptions.noImplicitAny = true
         let strictConfig = TSConfig(compilerOptions: strictOptions)
 
-        let strictResult = try buildInMemory(sources, config: strictConfig)
+        let strictResult = try await build(config: strictConfig, sources)
         #expect(strictResult.success == false)
 
         // Test with non-strict mode
@@ -108,12 +138,12 @@ struct BuildInMemoryTests {
         lenientOptions.noImplicitAny = false
         let lenientConfig = TSConfig(compilerOptions: lenientOptions)
 
-        let lenientResult = try buildInMemory(sources, config: lenientConfig)
+        let lenientResult = try await build(config: lenientConfig, sources)
         #expect(lenientResult.success == true)
     }
 
     @Test func multipleFilesTest() async throws {
-        let result = try buildWithSimpleResolver(
+        let result = try await buildWithSimpleResolver(
             [
                 "/project/tsconfig.json": """
                 {
@@ -136,7 +166,7 @@ struct BuildInMemoryTests {
     }
 
     @Test func customResolverTest() async throws {
-        let result = try buildWithSimpleResolver(
+        let result = try await buildWithSimpleResolver(
             [
                 "/project/tsconfig.json": """
                 {
@@ -157,7 +187,7 @@ struct BuildInMemoryTests {
     }
 
     @Test func emitFilesTest() async throws {
-        let result = try buildWithSimpleResolver(
+        let result = try await buildWithSimpleResolver(
             [
                 "/project/tsconfig.json": """
                 {
@@ -240,14 +270,14 @@ struct BuildInMemoryTests {
 
         let config = TSConfig(compilerOptions: compilerOptions)
 
-        let result = try buildInMemory(sources, config: config)
+        let result = try await build(config: config, sources)
 
         // This might fail due to missing React types, but should not crash
         #expect(result.diagnostics.filter { $0.category == "error" }.count >= 0)
     }
 
     @Test func libConfigTest() async throws {
-        let result = try buildWithSimpleResolver(
+        let result = try await buildWithSimpleResolver(
             [
                 "/project/tsconfig.json": """
                 {
@@ -280,7 +310,7 @@ struct BuildInMemoryTests {
     }
 
     @Test func pathMappingTest() async throws {
-        let result = try buildWithSimpleResolver(
+        let result = try await buildWithSimpleResolver(
             [
                 "/project/tsconfig.json": """
                 {
@@ -311,7 +341,7 @@ struct BuildInMemoryTests {
     }
 
     @Test func simpleTypeCheckTest() async throws {
-        let result = try buildWithSimpleResolver(
+        let result = try await buildWithSimpleResolver(
             [
                 "/project/tsconfig.json": """
                 {
@@ -345,7 +375,7 @@ struct BuildInMemoryTests {
     }
 
     @Test func validationOnlyTest() async throws {
-        let result = try buildWithSimpleResolver(
+        let result = try await buildWithSimpleResolver(
             [
                 "/project/tsconfig.json": """
                 {
