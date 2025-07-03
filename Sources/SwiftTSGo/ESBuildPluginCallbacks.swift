@@ -329,9 +329,9 @@ extension ESBuildPlugin {
             cPlugin.pointee.end_data = nil
         }
 
-        print(
-            "Plugin '\(name)' registered with \(storage.resolveCallbacks.count) async resolve callbacks, \(storage.loadCallbacks.count) async load callbacks, \(storage.startCallbacks.count) async start callbacks, \(storage.endCallbacks.count) async end callbacks"
-        )
+        // print(
+        //     "Plugin '\(name)' registered with \(storage.resolveCallbacks.count) async resolve callbacks, \(storage.loadCallbacks.count) async load callbacks, \(storage.startCallbacks.count) async start callbacks, \(storage.endCallbacks.count) async end callbacks"
+        // )
 
         return cPlugin
     }
