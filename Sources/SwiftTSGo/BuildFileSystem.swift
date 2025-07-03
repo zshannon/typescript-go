@@ -1,18 +1,6 @@
 import Foundation
 import TSCBridge
 
-// MARK: - C String Helpers
-
-private func withMutableCString<T>(_ string: String, _ body: (UnsafeMutablePointer<CChar>) -> T)
-    -> T
-{
-    string.withCString { cString in
-        let mutableCString = strdup(cString)!
-        defer { free(mutableCString) }
-        return body(mutableCString)
-    }
-}
-
 // MARK: - File System Build Functions
 
 /// Build TypeScript project from filesystem
@@ -160,28 +148,6 @@ private func processFileSystemResult(_ cResult: UnsafeMutablePointer<c_build_res
     )
 }
 
-private func convertCDiagnostics(_ cDiagnostics: UnsafeMutablePointer<c_diagnostic>?, count: Int)
-    -> [DiagnosticInfo]
-{
-    guard let cDiagnostics, count > 0 else { return [] }
-
-    var diagnostics: [DiagnosticInfo] = []
-    for i in 0 ..< count {
-        let cDiag = cDiagnostics[i]
-        let diagnostic = DiagnosticInfo(
-            code: Int(cDiag.code),
-            category: String(cString: cDiag.category),
-            message: String(cString: cDiag.message),
-            file: String(cString: cDiag.file),
-            line: Int(cDiag.line),
-            column: Int(cDiag.column),
-            length: Int(cDiag.length)
-        )
-        diagnostics.append(diagnostic)
-    }
-    return diagnostics
-}
-
 private func convertCEmittedFiles(
     _ files: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
     count: Int
@@ -196,31 +162,6 @@ private func convertCEmittedFiles(
         }
     }
     return emittedFiles
-}
-
-private func convertCWrittenFiles(
-    _ paths: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
-    _ contents: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
-    count: Int
-) -> [String: String] {
-    guard let paths, let contents, count > 0 else { return [:] }
-
-    var writtenFiles: [String: String] = [:]
-    for i in 0 ..< count {
-        if let pathPtr = paths[i], let contentPtr = contents[i] {
-            let path = String(cString: pathPtr)
-            let content = String(cString: contentPtr)
-            writtenFiles[path] = content
-        }
-    }
-    return writtenFiles
-}
-
-private func convertCCompiledFiles(from writtenFiles: [String: String]) -> [Source] {
-    writtenFiles.map { path, content in
-        let filename = (path as NSString).lastPathComponent
-        return Source(name: filename, content: content)
-    }
 }
 
 // MARK: - Convenience Functions

@@ -58,6 +58,34 @@ typedef struct {
     int directory_count;
 } c_file_resolver_data;
 
+// Dynamic file resolver callback types (like ESBuild plugin callbacks)
+typedef struct {
+    char* path;
+    int path_length;
+} c_file_resolve_args;
+
+typedef struct {
+    char* content;
+    int content_length;
+    int exists;  // 0 = not found, 1 = file, 2 = directory
+    char** directory_files;  // for directories
+    int directory_files_count;
+} c_file_resolve_result;
+
+// Callback function pointer (like plugin callbacks)
+typedef c_file_resolve_result* (*file_resolve_callback)(c_file_resolve_args*, void*);
+
+// Resolver callbacks structure (like plugin system)
+typedef struct {
+    file_resolve_callback resolver;
+    void* resolver_data;  // Swift callback context
+} c_resolver_callbacks;
+
+// Helper function to call function pointer (needed for CGO)
+static inline c_file_resolve_result* call_file_resolve_callback(file_resolve_callback cb, c_file_resolve_args* args, void* data) {
+    return cb(args, data);
+}
+
 #line 1 "cgo-generated-wrapper"
 
 #line 3 "esbuild_c_bridge.go"
@@ -513,6 +541,7 @@ extern "C" {
 
 extern c_build_result* tsc_build_filesystem(char* projectPath, int printErrors, char* configFile);
 extern c_build_result* tsc_build_with_resolver(char* projectPath, int printErrors, char* configFile, c_file_resolver_data* resolverData);
+extern c_build_result* tsc_build_with_dynamic_resolver(char* projectPath, int printErrors, char* configFile, c_resolver_callbacks* callbacks);
 extern char* tsc_validate_simple(char* code);
 extern void tsc_free_string(char* str);
 extern void tsc_free_result(c_build_result* result);

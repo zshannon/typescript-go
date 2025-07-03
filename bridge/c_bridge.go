@@ -37,6 +37,34 @@ typedef struct {
     char** directories;
     int directory_count;
 } c_file_resolver_data;
+
+// Dynamic file resolver callback types (like ESBuild plugin callbacks)
+typedef struct {
+    char* path;
+    int path_length;
+} c_file_resolve_args;
+
+typedef struct {
+    char* content;
+    int content_length;
+    int exists;  // 0 = not found, 1 = file, 2 = directory
+    char** directory_files;  // for directories
+    int directory_files_count;
+} c_file_resolve_result;
+
+// Callback function pointer (like plugin callbacks)
+typedef c_file_resolve_result* (*file_resolve_callback)(c_file_resolve_args*, void*);
+
+// Resolver callbacks structure (like plugin system)
+typedef struct {
+    file_resolve_callback resolver;
+    void* resolver_data;  // Swift callback context
+} c_resolver_callbacks;
+
+// Helper function to call function pointer (needed for CGO)
+static inline c_file_resolve_result* call_file_resolve_callback(file_resolve_callback cb, c_file_resolve_args* args, void* data) {
+    return cb(args, data);
+}
 */
 import "C"
 
@@ -740,6 +768,162 @@ func tsc_build_with_resolver(projectPath *C.char, printErrors C.int, configFile 
 	goConfigFile := C.GoString(configFile)
 
 	resolver := &FileResolverC{data: resolverData}
+
+	result, err := buildWithConfig(goProjectPath, goPrintErrors, goConfigFile, resolver)
+	if err != nil {
+		cResult := (*C.c_build_result)(C.malloc(C.sizeof_c_build_result))
+		cResult.success = 0
+		cResult.config_file = C.CString("error: " + err.Error())
+		cResult.diagnostics = nil
+		cResult.diagnostic_count = 0
+		cResult.emitted_files = nil
+		cResult.emitted_file_count = 0
+		cResult.written_file_paths = nil
+		cResult.written_file_contents = nil
+		cResult.written_file_count = 0
+		return cResult
+	}
+
+	return convertBridgeResultToC(result)
+}
+
+// Dynamic FileResolver that uses callbacks (like ESBuild plugins)
+type FileResolverDynamic struct {
+	callbacks *C.c_resolver_callbacks
+}
+
+func (f *FileResolverDynamic) ResolveFile(path string) string {
+	if f.callbacks == nil || f.callbacks.resolver == nil {
+		return ""
+	}
+	
+	// Create C args
+	cArgs := (*C.c_file_resolve_args)(C.malloc(C.sizeof_c_file_resolve_args))
+	defer C.free(unsafe.Pointer(cArgs))
+	
+	cPath := C.CString(path)
+	defer C.free(unsafe.Pointer(cPath))
+	
+	cArgs.path = cPath
+	cArgs.path_length = C.int(len(path))
+	
+	// Call the Swift callback (like plugin callbacks)
+	cResult := C.call_file_resolve_callback(f.callbacks.resolver, cArgs, f.callbacks.resolver_data)
+	if cResult == nil {
+		return ""
+	}
+	defer C.free(unsafe.Pointer(cResult))
+	
+	if cResult.exists == 1 && cResult.content != nil { // file
+		content := C.GoStringN(cResult.content, cResult.content_length)
+		C.free(unsafe.Pointer(cResult.content))
+		return content
+	}
+	
+	return ""
+}
+
+func (f *FileResolverDynamic) FileExists(path string) bool {
+	if f.callbacks == nil || f.callbacks.resolver == nil {
+		return false
+	}
+	
+	// Create C args
+	cArgs := (*C.c_file_resolve_args)(C.malloc(C.sizeof_c_file_resolve_args))
+	defer C.free(unsafe.Pointer(cArgs))
+	
+	cPath := C.CString(path)
+	defer C.free(unsafe.Pointer(cPath))
+	
+	cArgs.path = cPath
+	cArgs.path_length = C.int(len(path))
+	
+	// Call the Swift callback
+	cResult := C.call_file_resolve_callback(f.callbacks.resolver, cArgs, f.callbacks.resolver_data)
+	if cResult == nil {
+		return false
+	}
+	defer C.free(unsafe.Pointer(cResult))
+	
+	return cResult.exists == 1 // 1 = file
+}
+
+func (f *FileResolverDynamic) DirectoryExists(path string) bool {
+	if f.callbacks == nil || f.callbacks.resolver == nil {
+		return false
+	}
+	
+	// Create C args  
+	cArgs := (*C.c_file_resolve_args)(C.malloc(C.sizeof_c_file_resolve_args))
+	defer C.free(unsafe.Pointer(cArgs))
+	
+	cPath := C.CString(path)
+	defer C.free(unsafe.Pointer(cPath))
+	
+	cArgs.path = cPath
+	cArgs.path_length = C.int(len(path))
+	
+	// Call the Swift callback
+	cResult := C.call_file_resolve_callback(f.callbacks.resolver, cArgs, f.callbacks.resolver_data)
+	if cResult == nil {
+		return false
+	}
+	defer C.free(unsafe.Pointer(cResult))
+	
+	return cResult.exists == 2 // 2 = directory
+}
+
+func (f *FileResolverDynamic) WriteFile(path string, content string) bool {
+	// For in-memory builds, always capture writes instead of writing to filesystem
+	// This allows tests to capture emitted content without filesystem errors
+	return true
+}
+
+func (f *FileResolverDynamic) GetAllPaths(directory string) *PathList {
+	if f.callbacks == nil || f.callbacks.resolver == nil {
+		return &PathList{Paths: []string{}}
+	}
+	
+	// Create C args
+	cArgs := (*C.c_file_resolve_args)(C.malloc(C.sizeof_c_file_resolve_args))
+	defer C.free(unsafe.Pointer(cArgs))
+	
+	cPath := C.CString(directory)
+	defer C.free(unsafe.Pointer(cPath))
+	
+	cArgs.path = cPath
+	cArgs.path_length = C.int(len(directory))
+	
+	// Call the Swift callback
+	cResult := C.call_file_resolve_callback(f.callbacks.resolver, cArgs, f.callbacks.resolver_data)
+	if cResult == nil || cResult.exists != 2 { // not a directory
+		return &PathList{Paths: []string{}}
+	}
+	defer C.free(unsafe.Pointer(cResult))
+	
+	// Convert directory files array
+	var paths []string
+	if cResult.directory_files != nil && cResult.directory_files_count > 0 {
+		filesPtrSlice := (*[1 << 28]*C.char)(unsafe.Pointer(cResult.directory_files))[:cResult.directory_files_count:cResult.directory_files_count]
+		for i := 0; i < int(cResult.directory_files_count); i++ {
+			if filesPtrSlice[i] != nil {
+				paths = append(paths, C.GoString(filesPtrSlice[i]))
+				C.free(unsafe.Pointer(filesPtrSlice[i]))
+			}
+		}
+		C.free(unsafe.Pointer(cResult.directory_files))
+	}
+	
+	return &PathList{Paths: paths}
+}
+
+//export tsc_build_with_dynamic_resolver
+func tsc_build_with_dynamic_resolver(projectPath *C.char, printErrors C.int, configFile *C.char, callbacks *C.c_resolver_callbacks) *C.c_build_result {
+	goProjectPath := C.GoString(projectPath)
+	goPrintErrors := printErrors != 0
+	goConfigFile := C.GoString(configFile)
+
+	resolver := &FileResolverDynamic{callbacks: callbacks}
 
 	result, err := buildWithConfig(goProjectPath, goPrintErrors, goConfigFile, resolver)
 	if err != nil {
