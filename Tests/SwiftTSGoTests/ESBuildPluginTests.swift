@@ -1,9 +1,8 @@
-import Testing
 @testable import SwiftTSGo
+import Testing
 
 @Suite("ESBuild Plugin API Tests")
 struct ESBuildPluginTests {
-
     // MARK: - ResolveKind Tests
 
     @Test("ResolveKind enum has correct raw values")
@@ -253,9 +252,13 @@ struct ESBuildPluginTests {
 
     @Test("Plugin initializes with name and setup")
     func testPluginInit() {
-        var setupCalled = false
+        final class SetupState: @unchecked Sendable {
+            var called = false
+        }
+        let setupState = SetupState()
+
         let plugin = ESBuildPlugin(name: "test-plugin") { _ in
-            setupCalled = true
+            setupState.called = true
         }
 
         #expect(plugin.name == "test-plugin")
@@ -263,7 +266,7 @@ struct ESBuildPluginTests {
         // Create a dummy build object to test setup
         let dummyBuild = DummyPluginBuild()
         plugin.setup(dummyBuild)
-        #expect(setupCalled)
+        #expect(setupState.called)
     }
 
     // MARK: - ResolveOptions Tests
@@ -331,34 +334,44 @@ struct ESBuildPluginTests {
 // MARK: - Test Helpers
 
 private class DummyPluginBuild: ESBuildPluginBuild {
-    func onResolve(filter: String, namespace: String?, callback: @escaping (ESBuildOnResolveArgs) -> ESBuildOnResolveResult?) {}
-    func onLoad(filter: String, namespace: String?, callback: @escaping (ESBuildOnLoadArgs) -> ESBuildOnLoadResult?) {}
-    func onStart(callback: @escaping () -> Void) {}
-    func onEnd(callback: @escaping () -> Void) {}
-    func onDispose(callback: @escaping () -> Void) {}
-    func resolve(path: String, options: ESBuildResolveOptions) -> ESBuildResolveResult {
-        return ESBuildResolveResult(path: path)
+    func onResolve(
+        filter _: String,
+        namespace _: String?,
+        callback _: @escaping @Sendable (ESBuildOnResolveArgs) async -> ESBuildOnResolveResult?
+    ) {}
+    func onLoad(
+        filter _: String,
+        namespace _: String?,
+        callback _: @escaping @Sendable (ESBuildOnLoadArgs) async -> ESBuildOnLoadResult?
+    ) {}
+    func onStart(callback _: @escaping @Sendable () async -> Void) {}
+    func onEnd(callback _: @escaping @Sendable () async -> Void) {}
+    func onDispose(callback _: @escaping () -> Void) {}
+    func resolve(path: String, options _: ESBuildResolveOptions) -> ESBuildResolveResult {
+        ESBuildResolveResult(path: path)
     }
 }
 
 // MARK: - Integration Tests
 
 extension ESBuildPluginTests {
-
     @Test("Plugin intercepts imports and transforms content")
     func testPluginIntegration() {
-        // Track what the plugin sees
-        var resolveCallCount = 0
-        var loadCallCount = 0
-        var resolvedPaths: [String] = []
-        var loadedPaths: [String] = []
+        // Track what the plugin sees using a Sendable class
+        final class PluginState: @unchecked Sendable {
+            var resolveCallCount = 0
+            var loadCallCount = 0
+            var resolvedPaths: [String] = []
+            var loadedPaths: [String] = []
+        }
+        let pluginState = PluginState()
 
         // Create a plugin that redirects 'virtual:test' imports
         let testPlugin = ESBuildPlugin(name: "test-plugin") { build in
             // Intercept virtual: imports
             build.onResolve(filter: "^virtual:", namespace: nil) { args in
-                resolveCallCount += 1
-                resolvedPaths.append(args.path)
+                pluginState.resolveCallCount += 1
+                pluginState.resolvedPaths.append(args.path)
 
                 if args.path == "virtual:test" {
                     return ESBuildOnResolveResult(
@@ -371,8 +384,8 @@ extension ESBuildPluginTests {
 
             // Load virtual modules
             build.onLoad(filter: ".*", namespace: "virtual") { args in
-                loadCallCount += 1
-                loadedPaths.append(args.path)
+                pluginState.loadCallCount += 1
+                pluginState.loadedPaths.append(args.path)
 
                 if args.path == "virtual:test" {
                     return ESBuildOnLoadResult(
@@ -385,7 +398,7 @@ extension ESBuildPluginTests {
         }
 
         // Create build options with the plugin
-        let buildOptions = ESBuildBuildOptions(
+        _ = ESBuildBuildOptions(
             bundle: true,
             plugins: [testPlugin],
             write: false
@@ -417,13 +430,13 @@ extension ESBuildPluginTests {
         #expect(result != nil, "Build should return a result")
 
         // Verify the plugin was called
-        #expect(resolveCallCount > 0, "Plugin onResolve should have been called")
-        #expect(loadCallCount > 0, "Plugin onLoad should have been called")
-        #expect(resolvedPaths.contains("virtual:test"), "Should have resolved virtual:test")
-        #expect(loadedPaths.contains("virtual:test"), "Should have loaded virtual:test")
+        #expect(pluginState.resolveCallCount > 0, "Plugin onResolve should have been called")
+        #expect(pluginState.loadCallCount > 0, "Plugin onLoad should have been called")
+        #expect(pluginState.resolvedPaths.contains("virtual:test"), "Should have resolved virtual:test")
+        #expect(pluginState.loadedPaths.contains("virtual:test"), "Should have loaded virtual:test")
 
         // Verify the build succeeded
-        if let result = result {
+        if let result {
             #expect(result.errors.isEmpty, "Build should succeed with plugin")
             #expect(!result.outputFiles.isEmpty, "Should have output files")
 
@@ -431,19 +444,21 @@ extension ESBuildPluginTests {
             if let outputFile = result.outputFiles.first {
                 let outputContent = String(data: outputFile.contents, encoding: .utf8)
                 #expect(outputContent?.contains("Hello from virtual module!") == true,
-                       "Output should contain virtual module content")
+                        "Output should contain virtual module content")
             }
         }
     }
 
     @Test("Plugin handles errors and warnings")
     func testPluginErrorHandling() {
-        var errorReported = false
-        var warningReported = false
+        final class ErrorState: @unchecked Sendable {
+            var errorReported = false
+        }
+        let errorState = ErrorState()
 
         let errorPlugin = ESBuildPlugin(name: "error-plugin") { build in
             build.onResolve(filter: "error-module", namespace: nil) { args in
-                errorReported = true
+                errorState.errorReported = true
                 return ESBuildOnResolveResult(
                     errors: [ESBuildPluginMessage(text: "Plugin error: Cannot resolve \(args.path)")],
                     warnings: [ESBuildPluginMessage(text: "Plugin warning: \(args.path) is deprecated")]
@@ -470,9 +485,9 @@ extension ESBuildPluginTests {
         let result = esbuildBuild(options: buildOptions)
         #expect(result != nil, "Build should return a result")
 
-        #expect(errorReported, "Plugin should have been called")
+        #expect(errorState.errorReported, "Plugin should have been called")
 
-        if let result = result {
+        if let result {
             #expect(!result.errors.isEmpty, "Should have plugin errors")
             #expect(!result.warnings.isEmpty, "Should have plugin warnings")
 
@@ -486,20 +501,23 @@ extension ESBuildPluginTests {
 
     @Test("Multiple plugins work together")
     func testMultiplePlugins() {
-        var plugin1Called = false
-        var plugin2Called = false
+        final class PluginStates: @unchecked Sendable {
+            var plugin1Called = false
+            var plugin2Called = false
+        }
+        let states = PluginStates()
 
         let plugin1 = ESBuildPlugin(name: "plugin-1") { build in
             build.onResolve(filter: "^plugin1:", namespace: nil) { args in
-                plugin1Called = true
+                states.plugin1Called = true
                 return ESBuildOnResolveResult(
                     namespace: "plugin1",
                     path: args.path
                 )
             }
 
-            build.onLoad(filter: ".*", namespace: "plugin1") { args in
-                return ESBuildOnLoadResult(
+            build.onLoad(filter: ".*", namespace: "plugin1") { _ in
+                ESBuildOnLoadResult(
                     contents: "export const from = 'plugin1';",
                     loader: .js
                 )
@@ -508,15 +526,15 @@ extension ESBuildPluginTests {
 
         let plugin2 = ESBuildPlugin(name: "plugin-2") { build in
             build.onResolve(filter: "^plugin2:", namespace: nil) { args in
-                plugin2Called = true
+                states.plugin2Called = true
                 return ESBuildOnResolveResult(
                     namespace: "plugin2",
                     path: args.path
                 )
             }
 
-            build.onLoad(filter: ".*", namespace: "plugin2") { args in
-                return ESBuildOnLoadResult(
+            build.onLoad(filter: ".*", namespace: "plugin2") { _ in
+                ESBuildOnLoadResult(
                     contents: "export const from = 'plugin2';",
                     loader: .js
                 )
@@ -546,10 +564,10 @@ extension ESBuildPluginTests {
         let result = esbuildBuild(options: buildOptions)
         #expect(result != nil, "Build should return a result")
 
-        #expect(plugin1Called, "Plugin 1 should have been called")
-        #expect(plugin2Called, "Plugin 2 should have been called")
+        #expect(states.plugin1Called, "Plugin 1 should have been called")
+        #expect(states.plugin2Called, "Plugin 2 should have been called")
 
-        if let result = result {
+        if let result {
             #expect(result.errors.isEmpty, "Build should succeed with multiple plugins")
 
             if let outputFile = result.outputFiles.first {
@@ -600,7 +618,7 @@ extension ESBuildPluginTests {
         let result = esbuildBuild(options: buildOptions)
         #expect(result != nil, "Build should return a result")
 
-        if let result = result {
+        if let result {
             #expect(result.errors.isEmpty, "Build should succeed")
             #expect(!result.outputFiles.isEmpty, "Should have output files")
 
@@ -609,7 +627,7 @@ extension ESBuildPluginTests {
                 #expect(!output.isEmpty, "Output should not be empty")
                 #expect(output.contains("_FLICKCORE_$REACT.createElement"), "Should contain JSX factory")
                 #expect(output.contains("import_react.useState") || output.contains("useState"),
-                       "Should transform react import")
+                        "Should transform react import")
             }
         }
     }
@@ -643,7 +661,7 @@ extension ESBuildPluginTests {
         let result = esbuildBuild(options: buildOptions)
         #expect(result != nil, "Build should return a result")
 
-        if let result = result {
+        if let result {
             #expect(result.errors.isEmpty, "Build should succeed")
             #expect(!result.outputFiles.isEmpty, "Should have output files")
 
@@ -654,7 +672,7 @@ extension ESBuildPluginTests {
             }
         }
     }
-    
+
     @Test("Minify option enables all minification settings")
     func testMinifyOption() {
         let jsx = """
@@ -665,16 +683,16 @@ extension ESBuildPluginTests {
             return React.createElement('div', null, anotherVeryLongVariableName);
         };
         """
-        
+
         let plugin = ESBuildPlugin.reactGlobalTransform(globalName: "REACT_GLOBAL")
-        
+
         let stdinOptions = ESBuildStdinOptions(
             contents: jsx,
             loader: .jsx,
             resolveDir: "/test",
             sourcefile: "Component.jsx"
         )
-        
+
         // Test with minify: true
         let buildOptionsMinified = ESBuildBuildOptions(
             bundle: true,
@@ -684,10 +702,10 @@ extension ESBuildPluginTests {
             plugins: [plugin],
             stdin: stdinOptions
         )
-        
+
         let minifiedResult = esbuildBuild(options: buildOptionsMinified)
         #expect(minifiedResult != nil, "Minified build should return a result")
-        
+
         // Test with minify: false (default individual settings)
         let buildOptionsUnminified = ESBuildBuildOptions(
             bundle: true,
@@ -697,30 +715,30 @@ extension ESBuildPluginTests {
             plugins: [plugin],
             stdin: stdinOptions
         )
-        
+
         let unminifiedResult = esbuildBuild(options: buildOptionsUnminified)
         #expect(unminifiedResult != nil, "Unminified build should return a result")
-        
-        if let minifiedResult = minifiedResult,
-           let unminifiedResult = unminifiedResult,
+
+        if let minifiedResult,
+           let unminifiedResult,
            let minifiedOutput = minifiedResult.outputFiles.first,
-           let unminifiedOutput = unminifiedResult.outputFiles.first {
-            
+           let unminifiedOutput = unminifiedResult.outputFiles.first
+        {
             let minifiedCode = String(data: minifiedOutput.contents, encoding: .utf8) ?? ""
             let unminifiedCode = String(data: unminifiedOutput.contents, encoding: .utf8) ?? ""
-            
+
             #expect(!minifiedCode.isEmpty, "Minified output should not be empty")
             #expect(!unminifiedCode.isEmpty, "Unminified output should not be empty")
-            
+
             // Minified code should be significantly shorter
             #expect(minifiedCode.count < unminifiedCode.count, "Minified code should be shorter than unminified")
-            
+
             // Both should use the custom React global
             #expect(minifiedCode.contains("REACT_GLOBAL"), "Minified code should use custom React global")
             #expect(unminifiedCode.contains("REACT_GLOBAL"), "Unminified code should use custom React global")
         }
     }
-    
+
     @Test("Minify option with individual overrides")
     func testMinifyWithOverrides() {
         let jsx = """
@@ -729,14 +747,14 @@ extension ESBuildPluginTests {
             return longVariableName;
         };
         """
-        
+
         let stdinOptions = ESBuildStdinOptions(
             contents: jsx,
             loader: .jsx,
             resolveDir: "/test",
             sourcefile: "Test.jsx"
         )
-        
+
         // Enable minify but disable identifier minification specifically
         let buildOptions = ESBuildBuildOptions(
             bundle: true,
@@ -746,19 +764,19 @@ extension ESBuildPluginTests {
             platform: .neutral,
             stdin: stdinOptions
         )
-        
+
         let result = esbuildBuild(options: buildOptions)
         #expect(result != nil, "Build should return a result")
-        
-        if let result = result,
-           let outputFile = result.outputFiles.first {
-            
+
+        if let result,
+           let outputFile = result.outputFiles.first
+        {
             let output = String(data: outputFile.contents, encoding: .utf8) ?? ""
             #expect(!output.isEmpty, "Output should not be empty")
-            
+
             // Should still contain readable variable names since minifyIdentifiers: false
-            #expect(output.contains("longVariableName") || output.contains("TestComponent"), 
-                   "Should preserve variable names when minifyIdentifiers is false")
+            #expect(output.contains("longVariableName") || output.contains("TestComponent"),
+                    "Should preserve variable names when minifyIdentifiers is false")
         }
     }
 }

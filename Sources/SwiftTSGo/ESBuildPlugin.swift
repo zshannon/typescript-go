@@ -1,8 +1,10 @@
 import Foundation
 
+public typealias PluginData = any Sendable
+
 // MARK: - ResolveKind
 
-public enum ESBuildPluginResolveKind: CaseIterable {
+public enum ESBuildPluginResolveKind: CaseIterable, Sendable {
     case entryPoint
     case importStatement
     case requireCall
@@ -11,20 +13,20 @@ public enum ESBuildPluginResolveKind: CaseIterable {
     case importRule
     case composesFrom
     case urlToken
-    
+
     var cValue: Int32 {
         switch self {
-        case .entryPoint: return 0
-        case .importStatement: return 1
-        case .requireCall: return 2
-        case .dynamicImport: return 3
-        case .requireResolve: return 4
-        case .importRule: return 5
-        case .composesFrom: return 6
-        case .urlToken: return 7
+        case .entryPoint: 0
+        case .importStatement: 1
+        case .requireCall: 2
+        case .dynamicImport: 3
+        case .requireResolve: 4
+        case .importRule: 5
+        case .composesFrom: 6
+        case .urlToken: 7
         }
     }
-    
+
     init?(cValue: Int32) {
         switch cValue {
         case 0: self = .entryPoint
@@ -42,14 +44,14 @@ public enum ESBuildPluginResolveKind: CaseIterable {
 
 // MARK: - Location
 
-public struct ESBuildPluginLocation {
+public struct ESBuildPluginLocation: Sendable {
     public let file: String
     public let namespace: String
     public let line: Int // 1-based
     public let column: Int // 0-based
     public let length: Int
     public let lineText: String
-    
+
     public init(
         column: Int,
         file: String,
@@ -69,11 +71,11 @@ public struct ESBuildPluginLocation {
 
 // MARK: - Message
 
-public struct ESBuildPluginMessage {
+public struct ESBuildPluginMessage: @unchecked Sendable {
     public let text: String
     public let location: ESBuildPluginLocation?
     public let detail: Any?
-    
+
     public init(
         detail: Any? = nil,
         location: ESBuildPluginLocation? = nil,
@@ -87,21 +89,21 @@ public struct ESBuildPluginMessage {
 
 // MARK: - OnResolveArgs
 
-public struct ESBuildOnResolveArgs {
+public struct ESBuildOnResolveArgs: Sendable {
     public let path: String
     public let importer: String
     public let namespace: String
     public let resolveDir: String
     public let kind: ESBuildPluginResolveKind
-    public let pluginData: Any?
+    public let pluginData: PluginData?
     public let with: [String: String]
-    
+
     public init(
         importer: String,
         kind: ESBuildPluginResolveKind,
         namespace: String,
         path: String,
-        pluginData: Any? = nil,
+        pluginData: PluginData? = nil,
         resolveDir: String,
         with: [String: String] = [:]
     ) {
@@ -117,17 +119,17 @@ public struct ESBuildOnResolveArgs {
 
 // MARK: - OnLoadArgs
 
-public struct ESBuildOnLoadArgs {
+public struct ESBuildOnLoadArgs: Sendable {
     public let path: String
     public let namespace: String
     public let suffix: String
-    public let pluginData: Any?
+    public let pluginData: PluginData?
     public let with: [String: String]
-    
+
     public init(
         namespace: String,
         path: String,
-        pluginData: Any? = nil,
+        pluginData: PluginData? = nil,
         suffix: String = "",
         with: [String: String] = [:]
     ) {
@@ -141,25 +143,25 @@ public struct ESBuildOnLoadArgs {
 
 // MARK: - OnResolveResult
 
-public struct ESBuildOnResolveResult {
+public struct ESBuildOnResolveResult: Sendable {
     public let path: String?
     public let namespace: String?
     public let external: Bool?
     public let sideEffects: Bool?
     public let suffix: String?
-    public let pluginData: Any?
+    public let pluginData: PluginData?
     public let pluginName: String?
     public let errors: [ESBuildPluginMessage]
     public let warnings: [ESBuildPluginMessage]
     public let watchFiles: [String]
     public let watchDirs: [String]
-    
+
     public init(
         errors: [ESBuildPluginMessage] = [],
         external: Bool? = nil,
         namespace: String? = nil,
         path: String? = nil,
-        pluginData: Any? = nil,
+        pluginData: PluginData? = nil,
         pluginName: String? = nil,
         sideEffects: Bool? = nil,
         suffix: String? = nil,
@@ -183,22 +185,22 @@ public struct ESBuildOnResolveResult {
 
 // MARK: - OnLoadResult
 
-public struct ESBuildOnLoadResult {
+public struct ESBuildOnLoadResult: Sendable {
     public let contents: Data?
     public let loader: ESBuildLoader?
     public let resolveDir: String?
-    public let pluginData: Any?
+    public let pluginData: PluginData?
     public let pluginName: String?
     public let errors: [ESBuildPluginMessage]
     public let warnings: [ESBuildPluginMessage]
     public let watchFiles: [String]
     public let watchDirs: [String]
-    
+
     public init(
         contents: Data? = nil,
         errors: [ESBuildPluginMessage] = [],
         loader: ESBuildLoader? = nil,
-        pluginData: Any? = nil,
+        pluginData: PluginData? = nil,
         pluginName: String? = nil,
         resolveDir: String? = nil,
         warnings: [ESBuildPluginMessage] = [],
@@ -215,12 +217,12 @@ public struct ESBuildOnLoadResult {
         self.watchDirs = watchDirs
         self.watchFiles = watchFiles
     }
-    
+
     public init(
         contents: String,
         errors: [ESBuildPluginMessage] = [],
         loader: ESBuildLoader? = nil,
-        pluginData: Any? = nil,
+        pluginData: PluginData? = nil,
         pluginName: String? = nil,
         resolveDir: String? = nil,
         warnings: [ESBuildPluginMessage] = [],
@@ -243,11 +245,11 @@ public struct ESBuildOnLoadResult {
 
 // MARK: - Plugin
 
-public struct ESBuildPlugin {
+public struct ESBuildPlugin: @unchecked Sendable {
     public let name: String
-    public let setup: (ESBuildPluginBuild) -> Void
-    
-    public init(name: String, setup: @escaping (ESBuildPluginBuild) -> Void) {
+    public let setup: @Sendable (ESBuildPluginBuild) -> Void
+
+    public init(name: String, setup: @escaping @Sendable (ESBuildPluginBuild) -> Void) {
         self.name = name
         self.setup = setup
     }
@@ -259,36 +261,36 @@ public protocol ESBuildPluginBuild {
     func onResolve(
         filter: String,
         namespace: String?,
-        callback: @escaping (ESBuildOnResolveArgs) -> ESBuildOnResolveResult?
+        callback: @escaping @Sendable (ESBuildOnResolveArgs) async -> ESBuildOnResolveResult?
     )
-    
+
     func onLoad(
         filter: String,
         namespace: String?,
-        callback: @escaping (ESBuildOnLoadArgs) -> ESBuildOnLoadResult?
+        callback: @escaping @Sendable (ESBuildOnLoadArgs) async -> ESBuildOnLoadResult?
     )
-    
-    func onStart(callback: @escaping () -> Void)
-    func onEnd(callback: @escaping () -> Void)
+
+    func onStart(callback: @escaping @Sendable () async -> Void)
+    func onEnd(callback: @escaping @Sendable () async -> Void)
     func onDispose(callback: @escaping () -> Void)
-    
+
     func resolve(path: String, options: ESBuildResolveOptions) -> ESBuildResolveResult
 }
 
 // MARK: - ResolveOptions
 
-public struct ESBuildResolveOptions {
+public struct ESBuildResolveOptions: Sendable {
     public let importer: String?
     public let namespace: String?
     public let resolveDir: String?
     public let kind: ESBuildPluginResolveKind?
-    public let pluginData: Any?
-    
+    public let pluginData: PluginData?
+
     public init(
         importer: String? = nil,
         kind: ESBuildPluginResolveKind? = nil,
         namespace: String? = nil,
-        pluginData: Any? = nil,
+        pluginData: PluginData? = nil,
         resolveDir: String? = nil
     ) {
         self.importer = importer
@@ -301,18 +303,18 @@ public struct ESBuildResolveOptions {
 
 // MARK: - Default Plugins
 
-extension ESBuildPlugin {
-    public static func reactGlobalTransform(globalName: String = "_FLICKCORE_$REACT") -> ESBuildPlugin {
-        return ESBuildPlugin(name: "react-global-transform") { build in
-            build.onResolve(filter: "^react$", namespace: nil) { args in
-                return ESBuildOnResolveResult(
+public extension ESBuildPlugin {
+    static func reactGlobalTransform(globalName: String = "_FLICKCORE_$REACT") -> ESBuildPlugin {
+        ESBuildPlugin(name: "react-global-transform") { build in
+            build.onResolve(filter: "^react$", namespace: nil) { _ in
+                ESBuildOnResolveResult(
                     namespace: "use-flick-react-global",
                     path: "react"
                 )
             }
-            
-            build.onLoad(filter: ".*", namespace: "use-flick-react-global") { args in
-                return ESBuildOnLoadResult(
+
+            build.onLoad(filter: ".*", namespace: "use-flick-react-global") { _ in
+                ESBuildOnLoadResult(
                     contents: "module.exports = \(globalName)",
                     loader: .js
                 )
@@ -323,22 +325,22 @@ extension ESBuildPlugin {
 
 // MARK: - ResolveResult
 
-public struct ESBuildResolveResult {
+public struct ESBuildResolveResult: Sendable {
     public let path: String
     public let namespace: String
     public let suffix: String
     public let external: Bool
     public let sideEffects: Bool
-    public let pluginData: Any?
+    public let pluginData: PluginData?
     public let errors: [ESBuildPluginMessage]
     public let warnings: [ESBuildPluginMessage]
-    
+
     public init(
         errors: [ESBuildPluginMessage] = [],
         external: Bool = false,
         namespace: String = "file",
         path: String,
-        pluginData: Any? = nil,
+        pluginData: PluginData? = nil,
         sideEffects: Bool = false,
         suffix: String = "",
         warnings: [ESBuildPluginMessage] = []
