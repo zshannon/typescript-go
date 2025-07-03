@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:pkg.go.dev)",
+      "WebFetch(domain:github.com)",
+      "Bash(go get:*)",
+      "Bash(find:*)",
+      "Bash(go mod:*)",
+      "WebFetch(domain:esbuild.github.io)",
+      "Bash(go run:*)",
+      "Bash(rm:*)",
+      "Bash(swift test:*)",
+      "Bash(go build:*)",
+      "Bash(grep:*)",
+      "Bash(cp:*)",
+      "Bash(make:*)",
+      "Bash(mkdir:*)",
+      "Bash(mv:*)",
+      "Bash(ls:*)",
+      "Bash(nm:*)",
+      "Bash(go tool cgo:*)",
+      "Bash(swift package:*)",
+      "Bash(rg:*)",
+      "Bash(go doc:*)",
+      "Bash(timeout 30s swift test:*)",
+      "Bash(ar:*)",
+      "Bash(swift run:*)",
+      "Bash(swift build)",
+      "Bash(swiftc:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(go list:*)"
+    ],
+    "deny": []
+  }
+}

@@ -5,19 +5,19 @@ import Testing
 
 @Suite(.serialized)
 struct BuildInMemoryTests {
-
     @Test func basicCompilationTest() async throws {
         let sources = [
             Source(
                 name: "hello.ts",
                 content: """
-                    function greet(name: string): string {
-                        return `Hello, ${name}!`;
-                    }
+                function greet(name: string): string {
+                    return `Hello, ${name}!`;
+                }
 
-                    const message = greet("World");
-                    console.log(message);
-                    """)
+                const message = greet("World");
+                console.log(message);
+                """
+            ),
         ]
 
         let result = try buildInMemory(sources)
@@ -41,7 +41,8 @@ struct BuildInMemoryTests {
                 }
                 """,
                 "/project/src/main.ts": "console.log('Hello, World!');",
-            ], directories: ["/project", "/project/src"])
+            ], directories: ["/project", "/project/src"]
+        )
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
@@ -53,13 +54,14 @@ struct BuildInMemoryTests {
             Source(
                 name: "error.ts",
                 content: """
-                    function addNumbers(a: number, b: number): number {
-                        return a + b;
-                    }
+                function addNumbers(a: number, b: number): number {
+                    return a + b;
+                }
 
-                    // This should cause a type error
-                    const result = addNumbers("hello", 42);
-                    """)
+                // This should cause a type error
+                const result = addNumbers("hello", 42);
+                """
+            ),
         ]
 
         let result = try buildInMemory(sources)
@@ -81,13 +83,14 @@ struct BuildInMemoryTests {
             Source(
                 name: "strict.ts",
                 content: """
-                    // This should fail in strict mode - function parameter without type
-                    function greet(name) {
-                        return "Hello, " + name;
-                    }
+                // This should fail in strict mode - function parameter without type
+                function greet(name) {
+                    return "Hello, " + name;
+                }
 
-                    console.log(greet("World"));
-                    """)
+                console.log(greet("World"));
+                """
+            ),
         ]
 
         // Test with strict mode
@@ -125,7 +128,8 @@ struct BuildInMemoryTests {
                 "/project/utils.ts":
                     "export function add(a: number, b: number): number { return a + b; }",
                 "/project/main.ts": "import { add } from './utils'; console.log(add(2, 3));",
-            ], directories: ["/project"])
+            ], directories: ["/project"]
+        )
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
@@ -145,7 +149,8 @@ struct BuildInMemoryTests {
                 }
                 """,
                 "/project/src/main.ts": "const x: number = 42; console.log(x);",
-            ], directories: ["/project", "/project/src"])
+            ], directories: ["/project", "/project/src"]
+        )
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
@@ -178,7 +183,8 @@ struct BuildInMemoryTests {
                     }
                 }
                 """,
-            ], directories: ["/project"])
+            ], directories: ["/project"]
+        )
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
@@ -212,16 +218,17 @@ struct BuildInMemoryTests {
             Source(
                 name: "component.tsx",
                 content: """
-                    import React from 'react';
+                import React from 'react';
 
-                    interface Props {
-                        message: string;
-                    }
+                interface Props {
+                    message: string;
+                }
 
-                    export const Greeting: React.FC<Props> = ({ message }) => {
-                        return <div>{message}</div>;
-                    };
-                    """)
+                export const Greeting: React.FC<Props> = ({ message }) => {
+                    return <div>{message}</div>;
+                };
+                """
+            ),
         ]
 
         var compilerOptions = CompilerOptions()
@@ -265,7 +272,8 @@ struct BuildInMemoryTests {
                 // Export to make this a module
                 export {};
                 """,
-            ], directories: ["/project"])
+            ], directories: ["/project"]
+        )
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
@@ -295,7 +303,8 @@ struct BuildInMemoryTests {
                 const message = formatMessage("Hello, World!");
                 console.log(message);
                 """,
-            ], directories: ["/project", "/project/src", "/project/src/utils"])
+            ], directories: ["/project", "/project/src", "/project/src/utils"]
+        )
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
@@ -326,12 +335,13 @@ struct BuildInMemoryTests {
 
                 const result = add(count, 10);
                 """,
-            ], directories: ["/project"])
+            ], directories: ["/project"]
+        )
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
-        #expect(result.compiledFiles.isEmpty)  // No output files with noEmit
-        #expect(result.writtenFiles.isEmpty)  // No written files with noEmit
+        #expect(result.compiledFiles.isEmpty) // No output files with noEmit
+        #expect(result.writtenFiles.isEmpty) // No written files with noEmit
     }
 
     @Test func validationOnlyTest() async throws {
@@ -366,10 +376,11 @@ struct BuildInMemoryTests {
                     console.log(user.name); // TypeScript knows this is safe
                 }
                 """,
-            ], directories: ["/project"])
+            ], directories: ["/project"]
+        )
 
         #expect(result.success == true)
         #expect(result.diagnostics.filter { $0.category == "error" }.isEmpty)
-        #expect(result.compiledFiles.isEmpty)  // No output files with noEmit
+        #expect(result.compiledFiles.isEmpty) // No output files with noEmit
     }
 }

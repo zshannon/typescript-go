@@ -6,7 +6,7 @@ import TSCBridge
 private func withMutableCString<T>(_ string: String, _ body: (UnsafeMutablePointer<CChar>) -> T)
     -> T
 {
-    return string.withCString { cString in
+    string.withCString { cString in
         let mutableCString = strdup(cString)!
         defer { free(mutableCString) }
         return body(mutableCString)
@@ -57,10 +57,10 @@ public enum FileResolver: Sendable {
 private func convertCDiagnostics(_ cDiagnostics: UnsafeMutablePointer<c_diagnostic>?, count: Int)
     -> [DiagnosticInfo]
 {
-    guard let cDiagnostics = cDiagnostics, count > 0 else { return [] }
+    guard let cDiagnostics, count > 0 else { return [] }
 
     var diagnostics: [DiagnosticInfo] = []
-    for i in 0..<count {
+    for i in 0 ..< count {
         let cDiag = cDiagnostics[i]
         let diagnostic = DiagnosticInfo(
             code: Int(cDiag.code),
@@ -81,10 +81,10 @@ private func convertCWrittenFiles(
     _ contents: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
     count: Int
 ) -> [String: String] {
-    guard let paths = paths, let contents = contents, count > 0 else { return [:] }
+    guard let paths, let contents, count > 0 else { return [:] }
 
     var writtenFiles: [String: String] = [:]
-    for i in 0..<count {
+    for i in 0 ..< count {
         if let pathPtr = paths[i], let contentPtr = contents[i] {
             let path = String(cString: pathPtr)
             let content = String(cString: contentPtr)
@@ -95,15 +95,14 @@ private func convertCWrittenFiles(
 }
 
 private func convertCCompiledFiles(from writtenFiles: [String: String]) -> [Source] {
-    return writtenFiles.map { (path, content) in
+    writtenFiles.map { path, content in
         let filename = (path as NSString).lastPathComponent
         return Source(name: filename, content: content)
     }
 }
 
-private func processResult(_ cResult: UnsafeMutablePointer<c_build_result>?) -> InMemoryBuildResult
-{
-    guard let cResult = cResult else {
+private func processResult(_ cResult: UnsafeMutablePointer<c_build_result>?) -> InMemoryBuildResult {
+    guard let cResult else {
         return InMemoryBuildResult(
             success: false,
             diagnostics: [
@@ -111,7 +110,7 @@ private func processResult(_ cResult: UnsafeMutablePointer<c_build_result>?) -> 
                     code: 0,
                     category: "error",
                     message: "Build failed with no result"
-                )
+                ),
             ]
         )
     }
@@ -122,11 +121,13 @@ private func processResult(_ cResult: UnsafeMutablePointer<c_build_result>?) -> 
     let configFile =
         cResult.pointee.config_file != nil ? String(cString: cResult.pointee.config_file) : ""
     let diagnostics = convertCDiagnostics(
-        cResult.pointee.diagnostics, count: Int(cResult.pointee.diagnostic_count))
+        cResult.pointee.diagnostics, count: Int(cResult.pointee.diagnostic_count)
+    )
     let writtenFiles = convertCWrittenFiles(
         cResult.pointee.written_file_paths,
         cResult.pointee.written_file_contents,
-        count: Int(cResult.pointee.written_file_count))
+        count: Int(cResult.pointee.written_file_count)
+    )
     let compiledFiles = convertCCompiledFiles(from: writtenFiles)
 
     return InMemoryBuildResult(
@@ -149,7 +150,7 @@ public func validateTypeScript(_ code: String) throws -> InMemoryBuildResult {
     }
     defer { tsc_free_string(cResult) }
 
-    guard let cResult = cResult else {
+    guard let cResult else {
         return InMemoryBuildResult(
             success: false,
             diagnostics: [
@@ -157,14 +158,14 @@ public func validateTypeScript(_ code: String) throws -> InMemoryBuildResult {
                     code: 0,
                     category: "error",
                     message: "Validation failed with no result"
-                )
+                ),
             ]
         )
     }
 
     let jsonString = String(cString: cResult)
     guard let jsonData = jsonString.data(using: String.Encoding.utf8),
-        let response = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any]
+          let response = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any]
     else {
         return InMemoryBuildResult(
             success: false,
@@ -173,7 +174,7 @@ public func validateTypeScript(_ code: String) throws -> InMemoryBuildResult {
                     code: 0,
                     category: "error",
                     message: "Failed to parse validation result"
-                )
+                ),
             ]
         )
     }
@@ -184,8 +185,8 @@ public func validateTypeScript(_ code: String) throws -> InMemoryBuildResult {
     if let diagnosticsArray = response["diagnostics"] as? [[String: Any]] {
         diagnostics = diagnosticsArray.compactMap { diagDict in
             guard let code = diagDict["code"] as? Int,
-                let category = diagDict["category"] as? String,
-                let message = diagDict["message"] as? String
+                  let category = diagDict["category"] as? String,
+                  let message = diagDict["message"] as? String
             else {
                 return nil as DiagnosticInfo?
             }
@@ -208,7 +209,8 @@ public func validateTypeScript(_ code: String) throws -> InMemoryBuildResult {
                 code: 0,
                 category: "error",
                 message: error
-            ))
+            )
+        )
     }
 
     return InMemoryBuildResult(
@@ -233,7 +235,7 @@ public func buildInMemory(
     let resolverData = tsc_create_resolver_data()
     defer { tsc_free_resolver_data(resolverData) }
 
-    guard let resolverData = resolverData else {
+    guard let resolverData else {
         return InMemoryBuildResult(
             success: false,
             diagnostics: [
@@ -241,7 +243,7 @@ public func buildInMemory(
                     code: 0,
                     category: "error",
                     message: "Failed to create file resolver"
-                )
+                ),
             ]
         )
     }
@@ -306,8 +308,8 @@ public func buildInMemory(
                     code: 0,
                     category: "error",
                     message:
-                        "Failed to encode TypeScript configuration: \(error.localizedDescription)"
-                )
+                    "Failed to encode TypeScript configuration: \(error.localizedDescription)"
+                ),
             ]
         )
     }
@@ -328,7 +330,7 @@ public func buildInMemory(
 /// - Returns: Build result with compilation status and diagnostics
 public func build(
     config: TSConfig? = nil,
-    resolver: @escaping @Sendable (String) async throws -> FileResolver?
+    resolver _: @escaping @Sendable (String) async throws -> FileResolver?
 ) async throws -> InMemoryBuildResult {
     let projectPath = "/project"
 
@@ -336,7 +338,7 @@ public func build(
     let resolverData = tsc_create_resolver_data()
     defer { tsc_free_resolver_data(resolverData) }
 
-    guard let resolverData = resolverData else {
+    guard let resolverData else {
         return InMemoryBuildResult(
             success: false,
             diagnostics: [
@@ -344,7 +346,7 @@ public func build(
                     code: 0,
                     category: "error",
                     message: "Failed to create file resolver"
-                )
+                ),
             ]
         )
     }
@@ -375,8 +377,8 @@ public func build(
                     code: 0,
                     category: "error",
                     message:
-                        "Failed to encode TypeScript configuration: \(error.localizedDescription)"
-                )
+                    "Failed to encode TypeScript configuration: \(error.localizedDescription)"
+                ),
             ]
         )
     }
@@ -391,8 +393,8 @@ public func build(
                 code: 0,
                 category: "error",
                 message:
-                    "Dynamic file resolution not supported with C bridge. Use buildInMemory() with predefined source files instead."
-            )
+                "Dynamic file resolution not supported with C bridge. Use buildInMemory() with predefined source files instead."
+            ),
         ]
     )
 }
@@ -410,7 +412,7 @@ public func buildWithSimpleResolver(
     let resolverData = tsc_create_resolver_data()
     defer { tsc_free_resolver_data(resolverData) }
 
-    guard let resolverData = resolverData else {
+    guard let resolverData else {
         return InMemoryBuildResult(
             success: false,
             diagnostics: [
@@ -418,7 +420,7 @@ public func buildWithSimpleResolver(
                     code: 0,
                     category: "error",
                     message: "Failed to create file resolver"
-                )
+                ),
             ]
         )
     }

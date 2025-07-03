@@ -5,7 +5,6 @@ import Testing
 
 @Suite(.serialized)
 struct BuildFileSystemTests {
-
     @Test func helloWorldTest() throws {
         // Get the path to the test project directory
         let testBundle = Bundle.module
@@ -24,7 +23,7 @@ struct BuildFileSystemTests {
         // Verify output file exists
         let outputFile = testProjectPath + "/dist/hello.js"
         #expect(FileManager.default.fileExists(atPath: outputFile))
-        let outputContents = try String(contentsOfFile: outputFile)
+        let outputContents = try String(contentsOfFile: outputFile, encoding: .utf8)
         #expect(outputContents.contains("console.log(message)"))
     }
 
@@ -95,7 +94,8 @@ struct BuildFileSystemTests {
 
         // Create a temporary directory for output
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(
-            UUID().uuidString)
+            UUID().uuidString
+        )
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
         defer {
@@ -108,7 +108,7 @@ struct BuildFileSystemTests {
 
         // Modify tsconfig to enable emission
         let tsconfigPath = tempProjectDir.appendingPathComponent("tsconfig.json")
-        let tsconfigContent = try String(contentsOf: tsconfigPath)
+        let tsconfigContent = try String(contentsOf: tsconfigPath, encoding: .utf8)
 
         // Simple JSON string replacement to add noEmit: false
         let modifiedContent = tsconfigContent.replacingOccurrences(
@@ -144,7 +144,8 @@ struct BuildFileSystemTests {
 
         // Create a temporary directory
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(
-            UUID().uuidString)
+            UUID().uuidString
+        )
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
         defer {
