@@ -50,12 +50,12 @@ struct ESBuildPluginTests {
     @Test("Location initializes with all properties")
     func testLocationInitialization() {
         let location = ESBuildPluginLocation(
-            file: "test.js",
-            namespace: "file",
-            line: 10,
             column: 5,
+            file: "test.js",
             length: 7,
-            lineText: "const x = 42;"
+            line: 10,
+            lineText: "const x = 42;",
+            namespace: "file"
         )
 
         #expect(location.file == "test.js")
@@ -80,18 +80,18 @@ struct ESBuildPluginTests {
     @Test("Message initializes with all properties")
     func testMessageFullInit() {
         let location = ESBuildPluginLocation(
-            file: "test.js",
-            namespace: "file",
-            line: 1,
             column: 0,
+            file: "test.js",
             length: 5,
-            lineText: "error"
+            line: 1,
+            lineText: "error",
+            namespace: "file"
         )
         let detail = ["key": "value"]
         let message = ESBuildPluginMessage(
-            text: "Error message",
+            detail: detail,
             location: location,
-            detail: detail
+            text: "Error message"
         )
 
         #expect(message.text == "Error message")
@@ -104,12 +104,12 @@ struct ESBuildPluginTests {
     @Test("OnResolveArgs initializes with all properties")
     func testOnResolveArgsInit() {
         let args = ESBuildOnResolveArgs(
-            path: "module",
             importer: "/src/index.js",
-            namespace: "file",
-            resolveDir: "/src",
             kind: .importStatement,
+            namespace: "file",
+            path: "module",
             pluginData: ["key": "value"],
+            resolveDir: "/src",
             with: ["type": "json"]
         )
 
@@ -127,10 +127,10 @@ struct ESBuildPluginTests {
     @Test("OnLoadArgs initializes with all properties")
     func testOnLoadArgsInit() {
         let args = ESBuildOnLoadArgs(
-            path: "/src/module.js",
             namespace: "file",
-            suffix: "?v=1.0",
+            path: "/src/module.js",
             pluginData: ["key": "value"],
+            suffix: "?v=1.0",
             with: ["type": "json"]
         )
 
@@ -166,17 +166,17 @@ struct ESBuildPluginTests {
         let warnings = [ESBuildPluginMessage(text: "Warning")]
 
         let result = ESBuildOnResolveResult(
-            path: "/resolved/path.js",
-            namespace: "custom",
+            errors: errors,
             external: true,
-            sideEffects: false,
-            suffix: "?v=1.0",
+            namespace: "custom",
+            path: "/resolved/path.js",
             pluginData: ["key": "value"],
             pluginName: "test-plugin",
-            errors: errors,
+            sideEffects: false,
+            suffix: "?v=1.0",
             warnings: warnings,
-            watchFiles: ["/watch/file.js"],
-            watchDirs: ["/watch/dir"]
+            watchDirs: ["/watch/dir"],
+            watchFiles: ["/watch/file.js"]
         )
 
         #expect(result.path == "/resolved/path.js")
@@ -228,14 +228,14 @@ struct ESBuildPluginTests {
 
         let result = ESBuildOnLoadResult(
             contents: "export default 42",
+            errors: errors,
             loader: .ts,
-            resolveDir: "/project",
             pluginData: ["transformed": true],
             pluginName: "test-plugin",
-            errors: errors,
+            resolveDir: "/project",
             warnings: warnings,
-            watchFiles: ["/config.json"],
-            watchDirs: ["/src"]
+            watchDirs: ["/src"],
+            watchFiles: ["/config.json"]
         )
 
         #expect(result.contents == "export default 42".data(using: .utf8))
@@ -272,10 +272,10 @@ struct ESBuildPluginTests {
     func testResolveOptionsInit() {
         let options = ESBuildResolveOptions(
             importer: "/src/index.js",
-            namespace: "file",
-            resolveDir: "/src",
             kind: .importStatement,
-            pluginData: ["key": "value"]
+            namespace: "file",
+            pluginData: ["key": "value"],
+            resolveDir: "/src"
         )
 
         #expect(options.importer == "/src/index.js")
@@ -307,13 +307,13 @@ struct ESBuildPluginTests {
         let warnings = [ESBuildPluginMessage(text: "Warning")]
 
         let result = ESBuildResolveResult(
-            path: "/resolved.js",
-            namespace: "virtual",
-            suffix: "#hash",
-            external: true,
-            sideEffects: true,
-            pluginData: ["resolved": true],
             errors: errors,
+            external: true,
+            namespace: "virtual",
+            path: "/resolved.js",
+            pluginData: ["resolved": true],
+            sideEffects: true,
+            suffix: "#hash",
             warnings: warnings
         )
 
@@ -362,8 +362,8 @@ extension ESBuildPluginTests {
 
                 if args.path == "virtual:test" {
                     return ESBuildOnResolveResult(
-                        path: args.path,
-                        namespace: "virtual"
+                        namespace: "virtual",
+                        path: args.path
                     )
                 }
                 return nil
@@ -387,8 +387,8 @@ extension ESBuildPluginTests {
         // Create build options with the plugin
         let buildOptions = ESBuildBuildOptions(
             bundle: true,
-            write: false,
-            plugins: [testPlugin]
+            plugins: [testPlugin],
+            write: false
         )
 
         // Create test input that imports the virtual module
@@ -400,16 +400,16 @@ extension ESBuildPluginTests {
         // Build with stdin input
         let stdinOptions = ESBuildStdinOptions(
             contents: testCode,
+            loader: .js,
             resolveDir: "/test",
-            sourcefile: "input.js",
-            loader: .js
+            sourcefile: "input.js"
         )
 
         let buildOptionsWithStdin = ESBuildBuildOptions(
             bundle: true,
-            write: false,
+            plugins: [testPlugin],
             stdin: stdinOptions,
-            plugins: [testPlugin]
+            write: false
         )
 
         // This should work once plugin callbacks are implemented
@@ -454,16 +454,16 @@ extension ESBuildPluginTests {
         let testCode = "import './error-module';"
         let stdinOptions = ESBuildStdinOptions(
             contents: testCode,
+            loader: .js,
             resolveDir: "/test",
-            sourcefile: "input.js",
-            loader: .js
+            sourcefile: "input.js"
         )
 
         let buildOptions = ESBuildBuildOptions(
             bundle: true,
-            write: false,
+            plugins: [errorPlugin],
             stdin: stdinOptions,
-            plugins: [errorPlugin]
+            write: false
         )
 
         // This should report plugin errors
@@ -493,8 +493,8 @@ extension ESBuildPluginTests {
             build.onResolve(filter: "^plugin1:", namespace: nil) { args in
                 plugin1Called = true
                 return ESBuildOnResolveResult(
-                    path: args.path,
-                    namespace: "plugin1"
+                    namespace: "plugin1",
+                    path: args.path
                 )
             }
 
@@ -510,8 +510,8 @@ extension ESBuildPluginTests {
             build.onResolve(filter: "^plugin2:", namespace: nil) { args in
                 plugin2Called = true
                 return ESBuildOnResolveResult(
-                    path: args.path,
-                    namespace: "plugin2"
+                    namespace: "plugin2",
+                    path: args.path
                 )
             }
 
@@ -531,16 +531,16 @@ extension ESBuildPluginTests {
 
         let stdinOptions = ESBuildStdinOptions(
             contents: testCode,
+            loader: .js,
             resolveDir: "/test",
-            sourcefile: "input.js",
-            loader: .js
+            sourcefile: "input.js"
         )
 
         let buildOptions = ESBuildBuildOptions(
             bundle: true,
-            write: false,
+            plugins: [plugin1, plugin2],
             stdin: stdinOptions,
-            plugins: [plugin1, plugin2]
+            write: false
         )
 
         let result = esbuildBuild(options: buildOptions)
@@ -581,20 +581,20 @@ extension ESBuildPluginTests {
 
         let stdinOptions = ESBuildStdinOptions(
             contents: jsx,
+            loader: .jsx,
             resolveDir: "/test",
-            sourcefile: "App.jsx",
-            loader: .jsx
+            sourcefile: "App.jsx"
         )
 
         let buildOptions = ESBuildBuildOptions(
-            target: .es2015,
-            platform: .neutral,
+            bundle: true,
             format: .commonjs,
             jsxFactory: "_FLICKCORE_$REACT.createElement",
             jsxFragment: "_FLICKCORE_$REACT.Fragment",
-            bundle: true,
+            platform: .neutral,
+            plugins: [plugin],
             stdin: stdinOptions,
-            plugins: [plugin]
+            target: .es2015
         )
 
         let result = esbuildBuild(options: buildOptions)
@@ -626,20 +626,18 @@ extension ESBuildPluginTests {
 
         let stdinOptions = ESBuildStdinOptions(
             contents: jsx,
+            loader: .jsx,
             resolveDir: "/test",
-            sourcefile: "Component.jsx",
-            loader: .jsx
+            sourcefile: "Component.jsx"
         )
 
         let buildOptions = ESBuildBuildOptions(
-            platform: .neutral,
-            format: .commonjs,
-            minifyWhitespace: true,
-            minifyIdentifiers: true,
-            minifySyntax: true,
             bundle: true,
-            stdin: stdinOptions,
-            plugins: [plugin]
+            format: .commonjs,
+            minify: true,
+            platform: .neutral,
+            plugins: [plugin],
+            stdin: stdinOptions
         )
 
         let result = esbuildBuild(options: buildOptions)
@@ -672,19 +670,19 @@ extension ESBuildPluginTests {
         
         let stdinOptions = ESBuildStdinOptions(
             contents: jsx,
+            loader: .jsx,
             resolveDir: "/test",
-            sourcefile: "Component.jsx",
-            loader: .jsx
+            sourcefile: "Component.jsx"
         )
         
         // Test with minify: true
         let buildOptionsMinified = ESBuildBuildOptions(
-            platform: .neutral,
+            bundle: true,
             format: .commonjs,
             minify: true,
-            bundle: true,
-            stdin: stdinOptions,
-            plugins: [plugin]
+            platform: .neutral,
+            plugins: [plugin],
+            stdin: stdinOptions
         )
         
         let minifiedResult = esbuildBuild(options: buildOptionsMinified)
@@ -692,12 +690,12 @@ extension ESBuildPluginTests {
         
         // Test with minify: false (default individual settings)
         let buildOptionsUnminified = ESBuildBuildOptions(
-            platform: .neutral,
+            bundle: true,
             format: .commonjs,
             minify: false,
-            bundle: true,
-            stdin: stdinOptions,
-            plugins: [plugin]
+            platform: .neutral,
+            plugins: [plugin],
+            stdin: stdinOptions
         )
         
         let unminifiedResult = esbuildBuild(options: buildOptionsUnminified)
@@ -734,18 +732,18 @@ extension ESBuildPluginTests {
         
         let stdinOptions = ESBuildStdinOptions(
             contents: jsx,
+            loader: .jsx,
             resolveDir: "/test",
-            sourcefile: "Test.jsx",
-            loader: .jsx
+            sourcefile: "Test.jsx"
         )
         
         // Enable minify but disable identifier minification specifically
         let buildOptions = ESBuildBuildOptions(
-            platform: .neutral,
+            bundle: true,
             format: .commonjs,
             minify: true,
             minifyIdentifiers: false,
-            bundle: true,
+            platform: .neutral,
             stdin: stdinOptions
         )
         

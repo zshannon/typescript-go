@@ -79,47 +79,47 @@ struct ESBuildTransformTests {
     @Test("Custom transform options configuration")
     func testCustomConfiguration() {
         let options = ESBuildTransformOptions(
+            banner: "/* Banner */",
+            charset: .ascii,
             color: .always,
-            logLevel: .debug,
-            logLimit: 100,
-            logOverride: ["ts": .warning],
-            sourcemap: .inline,
-            sourceRoot: "/src",
-            sourcesContent: .exclude,
-            target: .es2020,
-            engines: [(.chrome, "90"), (.firefox, "88")],
-            supported: ["bigint": true, "import-meta": false],
-            platform: .browser,
-            format: .esmodule,
-            globalName: "MyLibrary",
-            mangleProps: "^_",
-            reserveProps: "^keep_",
-            mangleQuoted: .true,
-            mangleCache: ["oldName": "newName"],
+            define: ["NODE_ENV": "production"],
             drop: [.console, .debugger],
             dropLabels: ["DEV", "TEST"],
-            minifyWhitespace: true,
-            minifyIdentifiers: true,
-            minifySyntax: true,
-            lineLimit: 80,
-            charset: .ascii,
-            treeShaking: .true,
+            engines: [(.chrome, "90"), (.firefox, "88")],
+            footer: "/* Footer */",
+            format: .esmodule,
+            globalName: "MyLibrary",
             ignoreAnnotations: true,
-            legalComments: .inline,
             jsx: .automatic,
+            jsxDev: true,
             jsxFactory: "React.createElement",
             jsxFragment: "React.Fragment",
             jsxImportSource: "react",
-            jsxDev: true,
             jsxSideEffects: true,
-            tsconfigRaw: "{\"compilerOptions\":{\"strict\":true}}",
-            banner: "/* Banner */",
-            footer: "/* Footer */",
-            define: ["NODE_ENV": "production"],
-            pure: ["console.log", "Math.random"],
             keepNames: true,
+            legalComments: .inline,
+            lineLimit: 80,
+            loader: .tsx,
+            logLevel: .debug,
+            logLimit: 100,
+            logOverride: ["ts": .warning],
+            mangleCache: ["oldName": "newName"],
+            mangleProps: "^_",
+            mangleQuoted: .true,
+            minifyIdentifiers: true,
+            minifySyntax: true,
+            minifyWhitespace: true,
+            platform: .browser,
+            pure: ["console.log", "Math.random"],
+            reserveProps: "^keep_",
             sourcefile: "input.ts",
-            loader: .tsx
+            sourcemap: .inline,
+            sourceRoot: "/src",
+            sourcesContent: .exclude,
+            supported: ["bigint": true, "import-meta": false],
+            target: .es2020,
+            treeShaking: .true,
+            tsconfigRaw: "{\"compilerOptions\":{\"strict\":true}}"
         )
 
         // Verify all custom values
@@ -488,39 +488,39 @@ struct ESBuildTransformTests {
     @Test("Custom options C bridge conversion")
     func testCustomOptionsCBridgeConversion() {
         let options = ESBuildTransformOptions(
+            banner: "/* Banner */",
+            charset: .ascii,
             color: .always,
+            footer: "/* Footer */",
+            format: .esmodule,
+            globalName: "MyLibrary",
+            ignoreAnnotations: true,
+            jsx: .automatic,
+            jsxDev: true,
+            jsxFactory: "React.createElement",
+            jsxFragment: "React.Fragment",
+            jsxImportSource: "react",
+            jsxSideEffects: true,
+            keepNames: true,
+            legalComments: .inline,
+            lineLimit: 80,
+            loader: .tsx,
             logLevel: .debug,
             logLimit: 100,
+            mangleProps: "^_",
+            mangleQuoted: .true,
+            minifyIdentifiers: true,
+            minifySyntax: true,
+            minifyWhitespace: true,
+            platform: .browser,
+            reserveProps: "^keep_",
+            sourcefile: "input.ts",
             sourcemap: .inline,
             sourceRoot: "/src",
             sourcesContent: .exclude,
             target: .es2020,
-            platform: .browser,
-            format: .esmodule,
-            globalName: "MyLibrary",
-            mangleProps: "^_",
-            reserveProps: "^keep_",
-            mangleQuoted: .true,
-            minifyWhitespace: true,
-            minifyIdentifiers: true,
-            minifySyntax: true,
-            lineLimit: 80,
-            charset: .ascii,
             treeShaking: .true,
-            ignoreAnnotations: true,
-            legalComments: .inline,
-            jsx: .automatic,
-            jsxFactory: "React.createElement",
-            jsxFragment: "React.Fragment",
-            jsxImportSource: "react",
-            jsxDev: true,
-            jsxSideEffects: true,
-            tsconfigRaw: "{\"compilerOptions\":{\"strict\":true}}",
-            banner: "/* Banner */",
-            footer: "/* Footer */",
-            keepNames: true,
-            sourcefile: "input.ts",
-            loader: .tsx
+            tsconfigRaw: "{\"compilerOptions\":{\"strict\":true}}"
         )
 
         let cOptions = options.cValue
@@ -572,13 +572,13 @@ struct ESBuildTransformTests {
     func testBooleanFlagCBridgeConversion() {
         // Test all boolean flags set to true
         let trueOptions = ESBuildTransformOptions(
-            minifyWhitespace: true,
-            minifyIdentifiers: true,
-            minifySyntax: true,
             ignoreAnnotations: true,
             jsxDev: true,
             jsxSideEffects: true,
-            keepNames: true
+            keepNames: true,
+            minifyIdentifiers: true,
+            minifySyntax: true,
+            minifyWhitespace: true
         )
 
         let trueCOptions = trueOptions.cValue
@@ -594,13 +594,13 @@ struct ESBuildTransformTests {
 
         // Test all boolean flags set to false
         let falseOptions = ESBuildTransformOptions(
-            minifyWhitespace: false,
-            minifyIdentifiers: false,
-            minifySyntax: false,
             ignoreAnnotations: false,
             jsxDev: false,
             jsxSideEffects: false,
-            keepNames: false
+            keepNames: false,
+            minifyIdentifiers: false,
+            minifySyntax: false,
+            minifyWhitespace: false
         )
 
         let falseCOptions = falseOptions.cValue
@@ -920,8 +920,8 @@ struct ESBuildTransformTests {
         """
         
         let options = ESBuildTransformOptions(
-            target: .es2020,
-            loader: .ts
+            loader: .ts,
+            target: .es2020
         )
         
         let result = esbuildTransform(code: tsCode, options: options)
@@ -982,9 +982,9 @@ struct ESBuildTransformTests {
         """
         
         let options = ESBuildTransformOptions(
-            minifyWhitespace: true,
             minifyIdentifiers: true,
-            minifySyntax: true
+            minifySyntax: true,
+            minifyWhitespace: true
         )
         
         let result = esbuildTransform(code: code, options: options)
@@ -1007,8 +1007,8 @@ struct ESBuildTransformTests {
         let code = "const greeting = 'Hello, World!'; console.log(greeting);"
         
         let options = ESBuildTransformOptions(
-            sourcemap: .inline,
-            sourcefile: "test.js"
+            sourcefile: "test.js",
+            sourcemap: .inline
         )
         
         let result = esbuildTransform(code: code, options: options)

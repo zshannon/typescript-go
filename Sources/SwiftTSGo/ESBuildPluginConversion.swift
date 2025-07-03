@@ -51,12 +51,12 @@ extension ESBuildPluginLocation {
         guard let cValue = cValue else { return nil }
         
         self.init(
-            file: String(cString: cValue.pointee.file),
-            namespace: String(cString: cValue.pointee.namespace),
-            line: Int(cValue.pointee.line),
             column: Int(cValue.pointee.column),
+            file: String(cString: cValue.pointee.file),
             length: Int(cValue.pointee.length),
-            lineText: String(cString: cValue.pointee.line_text)
+            line: Int(cValue.pointee.line),
+            lineText: String(cString: cValue.pointee.line_text),
+            namespace: String(cString: cValue.pointee.namespace)
         )
     }
 }
@@ -81,9 +81,9 @@ extension ESBuildPluginMessage {
         guard let cValue = cValue else { return nil }
         
         self.init(
-            text: String(cString: cValue.pointee.text),
+            detail: nil, // C bridge doesn't support detail field
             location: ESBuildPluginLocation(cValue: cValue.pointee.location),
-            detail: nil // C bridge doesn't support detail field
+            text: String(cString: cValue.pointee.text)
         )
     }
 }
@@ -103,14 +103,14 @@ extension ESBuildOnResolveArgs {
         }
         
         self.init(
-            path: String(cString: cValue.pointee.path),
             importer: String(cString: cValue.pointee.importer),
-            namespace: String(cString: cValue.pointee.namespace),
-            resolveDir: String(cString: cValue.pointee.resolve_dir),
             kind: ESBuildPluginResolveKind(cValue: cValue.pointee.kind) ?? .importStatement,
+            namespace: String(cString: cValue.pointee.namespace),
+            path: String(cString: cValue.pointee.path),
             pluginData: ESBuildPlugin.deserializePluginData(
                 cValue.pointee.plugin_data != nil ? String(cString: cValue.pointee.plugin_data) : nil
             ),
+            resolveDir: String(cString: cValue.pointee.resolve_dir),
             with: withDict
         )
     }
@@ -131,12 +131,12 @@ extension ESBuildOnLoadArgs {
         }
         
         self.init(
-            path: String(cString: cValue.pointee.path),
             namespace: String(cString: cValue.pointee.namespace),
-            suffix: cValue.pointee.suffix != nil ? String(cString: cValue.pointee.suffix) : "",
+            path: String(cString: cValue.pointee.path),
             pluginData: ESBuildPlugin.deserializePluginData(
                 cValue.pointee.plugin_data != nil ? String(cString: cValue.pointee.plugin_data) : nil
             ),
+            suffix: cValue.pointee.suffix != nil ? String(cString: cValue.pointee.suffix) : "",
             with: withDict
         )
     }

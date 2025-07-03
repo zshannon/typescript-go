@@ -607,145 +607,145 @@ public struct ESBuildBuildOptions {
     
     /// Creates build options with default values
     public init(
+        absWorkingDir: String? = nil,
+        alias: [String: String] = [:],
+        allowOverwrite: Bool = false,
+        assetNames: String? = nil,
+        banner: [String: String] = [:],
+        bundle: Bool = false,
+        charset: ESBuildCharset = .default,
+        chunkNames: String? = nil,
         color: ESBuildColor = .ifTerminal,
-        logLevel: ESBuildLogLevel = .info,
-        logLimit: Int32 = 0,
-        logOverride: [String: ESBuildLogLevel] = [:],
-        sourcemap: ESBuildSourceMap = .none,
-        sourceRoot: String? = nil,
-        sourcesContent: ESBuildSourcesContent = .include,
-        target: ESBuildTarget = .default,
-        engines: [(engine: ESBuildEngine, version: String)] = [],
-        supported: [String: Bool] = [:],
-        platform: ESBuildPlatform = .default,
-        format: ESBuildFormat = .default,
-        globalName: String? = nil,
-        mangleProps: String? = nil,
-        reserveProps: String? = nil,
-        mangleQuoted: ESBuildMangleQuoted = .false,
-        mangleCache: [String: String] = [:],
+        conditions: [String] = [],
+        define: [String: String] = [:],
         drop: Set<ESBuildDrop> = [],
         dropLabels: [String] = [],
-        minify: Bool = false,
-        minifyWhitespace: Bool? = nil,
-        minifyIdentifiers: Bool? = nil,
-        minifySyntax: Bool? = nil,
-        lineLimit: Int32 = 0,
-        charset: ESBuildCharset = .default,
-        treeShaking: ESBuildTreeShaking = .default,
+        engines: [(engine: ESBuildEngine, version: String)] = [],
+        entryNames: String? = nil,
+        entryPoints: [String] = [],
+        entryPointsAdvanced: [ESBuildEntryPoint] = [],
+        external: [String] = [],
+        footer: [String: String] = [:],
+        format: ESBuildFormat = .default,
+        globalName: String? = nil,
         ignoreAnnotations: Bool = false,
-        legalComments: ESBuildLegalComments = .default,
+        inject: [String] = [],
         jsx: ESBuildJSX = .transform,
+        jsxDev: Bool = false,
         jsxFactory: String? = nil,
         jsxFragment: String? = nil,
         jsxImportSource: String? = nil,
-        jsxDev: Bool = false,
         jsxSideEffects: Bool = false,
+        keepNames: Bool = false,
+        legalComments: ESBuildLegalComments = .default,
+        lineLimit: Int32 = 0,
+        loader: [String: ESBuildLoader] = [:],
+        logLevel: ESBuildLogLevel = .info,
+        logLimit: Int32 = 0,
+        logOverride: [String: ESBuildLogLevel] = [:],
+        mainFields: [String] = [],
+        mangleCache: [String: String] = [:],
+        mangleProps: String? = nil,
+        mangleQuoted: ESBuildMangleQuoted = .false,
+        metafile: Bool = false,
+        minify: Bool = false,
+        minifyIdentifiers: Bool? = nil,
+        minifySyntax: Bool? = nil,
+        minifyWhitespace: Bool? = nil,
+        nodePaths: [String] = [],
+        outbase: String? = nil,
+        outdir: String? = nil,
+        outExtension: [String: String] = [:],
+        outfile: String? = nil,
+        packages: ESBuildPackages = .default,
+        platform: ESBuildPlatform = .default,
+        plugins: [ESBuildPlugin] = [],
+        preserveSymlinks: Bool = false,
+        publicPath: String? = nil,
+        pure: [String] = [],
+        reserveProps: String? = nil,
+        resolveExtensions: [String] = [],
+        sourcemap: ESBuildSourceMap = .none,
+        sourceRoot: String? = nil,
+        sourcesContent: ESBuildSourcesContent = .include,
+        splitting: Bool = false,
+        stdin: ESBuildStdinOptions? = nil,
+        supported: [String: Bool] = [:],
+        target: ESBuildTarget = .default,
+        treeShaking: ESBuildTreeShaking = .default,
         tsconfig: String? = nil,
         tsconfigRaw: String? = nil,
-        banner: [String: String] = [:],
-        footer: [String: String] = [:],
-        define: [String: String] = [:],
-        pure: [String] = [],
-        keepNames: Bool = false,
-        bundle: Bool = false,
-        preserveSymlinks: Bool = false,
-        splitting: Bool = false,
-        outfile: String? = nil,
-        outdir: String? = nil,
-        outbase: String? = nil,
-        absWorkingDir: String? = nil,
-        metafile: Bool = false,
-        write: Bool = true,
-        allowOverwrite: Bool = false,
-        external: [String] = [],
-        packages: ESBuildPackages = .default,
-        alias: [String: String] = [:],
-        mainFields: [String] = [],
-        conditions: [String] = [],
-        loader: [String: ESBuildLoader] = [:],
-        resolveExtensions: [String] = [],
-        outExtension: [String: String] = [:],
-        publicPath: String? = nil,
-        inject: [String] = [],
-        nodePaths: [String] = [],
-        entryNames: String? = nil,
-        chunkNames: String? = nil,
-        assetNames: String? = nil,
-        entryPoints: [String] = [],
-        entryPointsAdvanced: [ESBuildEntryPoint] = [],
-        stdin: ESBuildStdinOptions? = nil,
-        plugins: [ESBuildPlugin] = []
+        write: Bool = true
     ) {
+        self.absWorkingDir = absWorkingDir
+        self.alias = alias
+        self.allowOverwrite = allowOverwrite
+        self.assetNames = assetNames
+        self.banner = banner
+        self.bundle = bundle
+        self.charset = charset
+        self.chunkNames = chunkNames
         self.color = color
-        self.logLevel = logLevel
-        self.logLimit = logLimit
-        self.logOverride = logOverride
-        self.sourcemap = sourcemap
-        self.sourceRoot = sourceRoot
-        self.sourcesContent = sourcesContent
-        self.target = target
-        self.engines = engines
-        self.supported = supported
-        self.platform = platform
-        self.format = format
-        self.globalName = globalName
-        self.mangleProps = mangleProps
-        self.reserveProps = reserveProps
-        self.mangleQuoted = mangleQuoted
-        self.mangleCache = mangleCache
+        self.conditions = conditions
+        self.define = define
         self.drop = drop
         self.dropLabels = dropLabels
-        self.minify = minify
-        self.minifyWhitespace = minifyWhitespace ?? minify
-        self.minifyIdentifiers = minifyIdentifiers ?? minify
-        self.minifySyntax = minifySyntax ?? minify
-        self.lineLimit = lineLimit
-        self.charset = charset
-        self.treeShaking = treeShaking
+        self.engines = engines
+        self.entryNames = entryNames
+        self.entryPoints = entryPoints
+        self.entryPointsAdvanced = entryPointsAdvanced
+        self.external = external
+        self.footer = footer
+        self.format = format
+        self.globalName = globalName
         self.ignoreAnnotations = ignoreAnnotations
-        self.legalComments = legalComments
+        self.inject = inject
         self.jsx = jsx
+        self.jsxDev = jsxDev
         self.jsxFactory = jsxFactory
         self.jsxFragment = jsxFragment
         self.jsxImportSource = jsxImportSource
-        self.jsxDev = jsxDev
         self.jsxSideEffects = jsxSideEffects
+        self.keepNames = keepNames
+        self.legalComments = legalComments
+        self.lineLimit = lineLimit
+        self.loader = loader
+        self.logLevel = logLevel
+        self.logLimit = logLimit
+        self.logOverride = logOverride
+        self.mainFields = mainFields
+        self.mangleCache = mangleCache
+        self.mangleProps = mangleProps
+        self.mangleQuoted = mangleQuoted
+        self.metafile = metafile
+        self.minify = minify
+        self.minifyIdentifiers = minifyIdentifiers ?? minify
+        self.minifySyntax = minifySyntax ?? minify
+        self.minifyWhitespace = minifyWhitespace ?? minify
+        self.nodePaths = nodePaths
+        self.outbase = outbase
+        self.outdir = outdir
+        self.outExtension = outExtension
+        self.outfile = outfile
+        self.packages = packages
+        self.platform = platform
+        self.plugins = plugins
+        self.preserveSymlinks = preserveSymlinks
+        self.publicPath = publicPath
+        self.pure = pure
+        self.reserveProps = reserveProps
+        self.resolveExtensions = resolveExtensions
+        self.sourcemap = sourcemap
+        self.sourceRoot = sourceRoot
+        self.sourcesContent = sourcesContent
+        self.splitting = splitting
+        self.stdin = stdin
+        self.supported = supported
+        self.target = target
+        self.treeShaking = treeShaking
         self.tsconfig = tsconfig
         self.tsconfigRaw = tsconfigRaw
-        self.banner = banner
-        self.footer = footer
-        self.define = define
-        self.pure = pure
-        self.keepNames = keepNames
-        self.bundle = bundle
-        self.preserveSymlinks = preserveSymlinks
-        self.splitting = splitting
-        self.outfile = outfile
-        self.outdir = outdir
-        self.outbase = outbase
-        self.absWorkingDir = absWorkingDir
-        self.metafile = metafile
         self.write = write
-        self.allowOverwrite = allowOverwrite
-        self.external = external
-        self.packages = packages
-        self.alias = alias
-        self.mainFields = mainFields
-        self.conditions = conditions
-        self.loader = loader
-        self.resolveExtensions = resolveExtensions
-        self.outExtension = outExtension
-        self.publicPath = publicPath
-        self.inject = inject
-        self.nodePaths = nodePaths
-        self.entryNames = entryNames
-        self.chunkNames = chunkNames
-        self.assetNames = assetNames
-        self.entryPoints = entryPoints
-        self.entryPointsAdvanced = entryPointsAdvanced
-        self.stdin = stdin
-        self.plugins = plugins
     }
 }
 
@@ -799,14 +799,14 @@ public struct ESBuildStdinOptions: Sendable {
     
     public init(
         contents: String,
+        loader: ESBuildLoader,
         resolveDir: String,
-        sourcefile: String,
-        loader: ESBuildLoader
+        sourcefile: String
     ) {
         self.contents = contents
+        self.loader = loader
         self.resolveDir = resolveDir
         self.sourcefile = sourcefile
-        self.loader = loader
     }
     
     /// Convert to C bridge representation
@@ -825,9 +825,9 @@ public struct ESBuildStdinOptions: Sendable {
     public static func from(cValue: UnsafePointer<esbuild_stdin_options>) -> ESBuildStdinOptions {
         return ESBuildStdinOptions(
             contents: String(cString: cValue.pointee.contents),
+            loader: ESBuildLoader(rawValue: cValue.pointee.loader) ?? .default,
             resolveDir: String(cString: cValue.pointee.resolve_dir),
-            sourcefile: String(cString: cValue.pointee.sourcefile),
-            loader: ESBuildLoader(rawValue: cValue.pointee.loader) ?? .default
+            sourcefile: String(cString: cValue.pointee.sourcefile)
         )
     }
 }
@@ -843,10 +843,10 @@ public struct ESBuildOutputFile: Sendable {
     /// Content hash
     public let hash: String
     
-    public init(path: String, contents: Data, hash: String) {
-        self.path = path
+    public init(contents: Data, hash: String, path: String) {
         self.contents = contents
         self.hash = hash
+        self.path = path
     }
     
     /// Convert to C bridge representation
@@ -868,9 +868,9 @@ public struct ESBuildOutputFile: Sendable {
         let contents = Data(contentsString.utf8)
         
         return ESBuildOutputFile(
-            path: String(cString: cValue.pointee.path),
             contents: contents,
-            hash: String(cString: cValue.pointee.hash)
+            hash: String(cString: cValue.pointee.hash),
+            path: String(cString: cValue.pointee.path)
         )
     }
 }
@@ -974,74 +974,75 @@ public struct ESBuildBuildResult: Sendable {
 public func esbuildBuild(options: ESBuildBuildOptions = ESBuildBuildOptions()) -> ESBuildBuildResult? {
     // Create options with silent logging to capture errors in result instead of printing to console
     let silentOptions = ESBuildBuildOptions(
+        absWorkingDir: options.absWorkingDir,
+        alias: options.alias,
+        allowOverwrite: options.allowOverwrite,
+        assetNames: options.assetNames,
+        banner: options.banner,
+        bundle: options.bundle,
+        charset: options.charset,
+        chunkNames: options.chunkNames,
         color: options.color,
-        logLevel: .silent, // Override to silent
-        logLimit: options.logLimit,
-        logOverride: options.logOverride,
-        sourcemap: options.sourcemap,
-        sourceRoot: options.sourceRoot,
-        sourcesContent: options.sourcesContent,
-        target: options.target,
-        engines: options.engines,
-        supported: options.supported,
-        platform: options.platform,
-        format: options.format,
-        globalName: options.globalName,
-        mangleProps: options.mangleProps,
-        reserveProps: options.reserveProps,
-        mangleQuoted: options.mangleQuoted,
-        mangleCache: options.mangleCache,
+        conditions: options.conditions,
+        define: options.define,
         drop: options.drop,
         dropLabels: options.dropLabels,
-        minifyWhitespace: options.minifyWhitespace,
-        minifyIdentifiers: options.minifyIdentifiers,
-        minifySyntax: options.minifySyntax,
-        lineLimit: options.lineLimit,
-        charset: options.charset,
-        treeShaking: options.treeShaking,
+        engines: options.engines,
+        entryNames: options.entryNames,
+        entryPoints: options.entryPoints,
+        entryPointsAdvanced: options.entryPointsAdvanced,
+        external: options.external,
+        footer: options.footer,
+        format: options.format,
+        globalName: options.globalName,
         ignoreAnnotations: options.ignoreAnnotations,
-        legalComments: options.legalComments,
+        inject: options.inject,
         jsx: options.jsx,
+        jsxDev: options.jsxDev,
         jsxFactory: options.jsxFactory,
         jsxFragment: options.jsxFragment,
         jsxImportSource: options.jsxImportSource,
-        jsxDev: options.jsxDev,
         jsxSideEffects: options.jsxSideEffects,
+        keepNames: options.keepNames,
+        legalComments: options.legalComments,
+        lineLimit: options.lineLimit,
+        loader: options.loader,
+        logLevel: .silent, // Override to silent
+        logLimit: options.logLimit,
+        logOverride: options.logOverride,
+        mainFields: options.mainFields,
+        mangleCache: options.mangleCache,
+        mangleProps: options.mangleProps,
+        mangleQuoted: options.mangleQuoted,
+        metafile: options.metafile,
+        minify: options.minify,
+        minifyIdentifiers: options.minifyIdentifiers,
+        minifySyntax: options.minifySyntax,
+        minifyWhitespace: options.minifyWhitespace,
+        nodePaths: options.nodePaths,
+        outbase: options.outbase,
+        outdir: options.outdir,
+        outExtension: options.outExtension,
+        outfile: options.outfile,
+        packages: options.packages,
+        platform: options.platform,
+        plugins: options.plugins,
+        preserveSymlinks: options.preserveSymlinks,
+        publicPath: options.publicPath,
+        pure: options.pure,
+        reserveProps: options.reserveProps,
+        resolveExtensions: options.resolveExtensions,
+        sourcemap: options.sourcemap,
+        sourceRoot: options.sourceRoot,
+        sourcesContent: options.sourcesContent,
+        splitting: options.splitting,
+        stdin: options.stdin,
+        supported: options.supported,
+        target: options.target,
+        treeShaking: options.treeShaking,
         tsconfig: options.tsconfig,
         tsconfigRaw: options.tsconfigRaw,
-        banner: options.banner,
-        footer: options.footer,
-        define: options.define,
-        pure: options.pure,
-        keepNames: options.keepNames,
-        bundle: options.bundle,
-        preserveSymlinks: options.preserveSymlinks,
-        splitting: options.splitting,
-        outfile: options.outfile,
-        outdir: options.outdir,
-        outbase: options.outbase,
-        absWorkingDir: options.absWorkingDir,
-        metafile: options.metafile,
-        write: options.write,
-        allowOverwrite: options.allowOverwrite,
-        external: options.external,
-        packages: options.packages,
-        alias: options.alias,
-        mainFields: options.mainFields,
-        conditions: options.conditions,
-        loader: options.loader,
-        resolveExtensions: options.resolveExtensions,
-        outExtension: options.outExtension,
-        publicPath: options.publicPath,
-        inject: options.inject,
-        nodePaths: options.nodePaths,
-        entryNames: options.entryNames,
-        chunkNames: options.chunkNames,
-        assetNames: options.assetNames,
-        entryPoints: options.entryPoints,
-        entryPointsAdvanced: options.entryPointsAdvanced,
-        stdin: options.stdin,
-        plugins: options.plugins
+        write: options.write
     )
     
     let cOptions = silentOptions.cValue

@@ -112,9 +112,9 @@ struct ESBuildBuildTests {
     func testCustomConfiguration() {
         let stdin = ESBuildStdinOptions(
             contents: "console.log('test');",
+            loader: .js,
             resolveDir: "/src",
-            sourcefile: "input.js",
-            loader: .js
+            sourcefile: "input.js"
         )
         
         let entryPoint = ESBuildEntryPoint(
@@ -123,73 +123,73 @@ struct ESBuildBuildTests {
         )
 
         let options = ESBuildBuildOptions(
+            absWorkingDir: "/project",
+            alias: ["@": "./src"],
+            allowOverwrite: true,
+            assetNames: "assets/[name]-[hash]",
+            banner: ["js": "/* Banner */", "css": "/* CSS Banner */"],
+            bundle: true,
+            charset: .ascii,
+            chunkNames: "chunks/[name]-[hash]",
             color: .always,
-            logLevel: .debug,
-            logLimit: 100,
-            logOverride: ["ts": .warning],
-            sourcemap: .inline,
-            sourceRoot: "/src",
-            sourcesContent: .exclude,
-            target: .es2020,
-            engines: [(.chrome, "90"), (.firefox, "88")],
-            supported: ["bigint": true, "import-meta": false],
-            platform: .browser,
-            format: .esmodule,
-            globalName: "MyLibrary",
-            mangleProps: "^_",
-            reserveProps: "^keep_",
-            mangleQuoted: .true,
-            mangleCache: ["oldName": "newName"],
+            conditions: ["development"],
+            define: ["NODE_ENV": "production"],
             drop: [.console, .debugger],
             dropLabels: ["DEV", "TEST"],
-            minifyWhitespace: true,
-            minifyIdentifiers: true,
-            minifySyntax: true,
-            lineLimit: 80,
-            charset: .ascii,
-            treeShaking: .true,
+            engines: [(.chrome, "90"), (.firefox, "88")],
+            entryNames: "[dir]/[name]-[hash]",
+            entryPoints: ["src/index.ts", "src/worker.ts"],
+            entryPointsAdvanced: [entryPoint],
+            external: ["react", "lodash"],
+            footer: ["js": "/* Footer */"],
+            format: .esmodule,
+            globalName: "MyLibrary",
             ignoreAnnotations: true,
-            legalComments: .inline,
+            inject: ["./polyfill.js"],
             jsx: .automatic,
+            jsxDev: true,
             jsxFactory: "React.createElement",
             jsxFragment: "React.Fragment",
             jsxImportSource: "react",
-            jsxDev: true,
             jsxSideEffects: true,
+            keepNames: true,
+            legalComments: .inline,
+            lineLimit: 80,
+            loader: [".svg": .dataurl, ".png": .file],
+            logLevel: .debug,
+            logLimit: 100,
+            logOverride: ["ts": .warning],
+            mainFields: ["browser", "module"],
+            mangleCache: ["oldName": "newName"],
+            mangleProps: "^_",
+            mangleQuoted: .true,
+            metafile: true,
+            minifyIdentifiers: true,
+            minifySyntax: true,
+            minifyWhitespace: true,
+            nodePaths: ["/usr/lib/node_modules"],
+            outbase: "src",
+            outdir: "dist",
+            outExtension: [".js": ".mjs"],
+            outfile: nil,
+            packages: .external,
+            platform: .browser,
+            preserveSymlinks: true,
+            publicPath: "/static/",
+            pure: ["console.log", "debug"],
+            reserveProps: "^keep_",
+            resolveExtensions: [".tsx", ".ts"],
+            sourcemap: .inline,
+            sourceRoot: "/src",
+            sourcesContent: .exclude,
+            splitting: true,
+            stdin: stdin,
+            supported: ["bigint": true, "import-meta": false],
+            target: .es2020,
+            treeShaking: .true,
             tsconfig: "tsconfig.json",
             tsconfigRaw: #"{"compilerOptions": {"strict": true}}"#,
-            banner: ["js": "/* Banner */", "css": "/* CSS Banner */"],
-            footer: ["js": "/* Footer */"],
-            define: ["NODE_ENV": "production"],
-            pure: ["console.log", "debug"],
-            keepNames: true,
-            bundle: true,
-            preserveSymlinks: true,
-            splitting: true,
-            outfile: nil,
-            outdir: "dist",
-            outbase: "src",
-            absWorkingDir: "/project",
-            metafile: true,
-            write: false,
-            allowOverwrite: true,
-            external: ["react", "lodash"],
-            packages: .external,
-            alias: ["@": "./src"],
-            mainFields: ["browser", "module"],
-            conditions: ["development"],
-            loader: [".svg": .dataurl, ".png": .file],
-            resolveExtensions: [".tsx", ".ts"],
-            outExtension: [".js": ".mjs"],
-            publicPath: "/static/",
-            inject: ["./polyfill.js"],
-            nodePaths: ["/usr/lib/node_modules"],
-            entryNames: "[dir]/[name]-[hash]",
-            chunkNames: "chunks/[name]-[hash]",
-            assetNames: "assets/[name]-[hash]",
-            entryPoints: ["src/index.ts", "src/worker.ts"],
-            entryPointsAdvanced: [entryPoint],
-            stdin: stdin
+            write: false
         )
 
         // Verify configuration
@@ -241,9 +241,9 @@ struct ESBuildBuildTests {
     func testStdinOptionsTypes() {
         let stdin = ESBuildStdinOptions(
             contents: "export const x = 42;",
+            loader: .ts,
             resolveDir: "/project/src",
-            sourcefile: "stdin.ts",
-            loader: .ts
+            sourcefile: "stdin.ts"
         )
 
         #expect(stdin.contents == "export const x = 42;")
@@ -266,9 +266,9 @@ struct ESBuildBuildTests {
     func testOutputFileTypes() {
         let jsCode = "console.log('Hello, world!');"
         let outputFile = ESBuildOutputFile(
-            path: "dist/index.js",
             contents: Data(jsCode.utf8),
-            hash: "abc123"
+            hash: "abc123",
+            path: "dist/index.js"
         )
 
         #expect(outputFile.path == "dist/index.js")
@@ -294,16 +294,16 @@ struct ESBuildBuildTests {
             const x: number = 42;
             console.log(x);
             """,
+            loader: .ts,
             resolveDir: "",
-            sourcefile: "input.ts",
-            loader: .ts
+            sourcefile: "input.ts"
         )
 
         let options = ESBuildBuildOptions(
-            target: .es2020,
             format: .esmodule,
-            write: false,
-            stdin: stdin
+            stdin: stdin,
+            target: .es2020,
+            write: false
         )
 
         let result = esbuildBuild(options: options)
@@ -336,12 +336,12 @@ struct ESBuildBuildTests {
             """.write(to: entryFile, atomically: true, encoding: .utf8)
 
             let options = ESBuildBuildOptions(
-                target: .es2020,
-                format: .esmodule,
-                bundle: true,
                 absWorkingDir: srcDir.path,
-                write: false,
-                entryPoints: ["index.ts"]
+                bundle: true,
+                entryPoints: ["index.ts"],
+                format: .esmodule,
+                target: .es2020,
+                write: false
             )
 
             let result = esbuildBuild(options: options)
@@ -383,8 +383,8 @@ struct ESBuildBuildTests {
     func testBuildWithInvalidEntryPoint() {
         let options = ESBuildBuildOptions(
             bundle: true,
-            write: false,
-            entryPoints: ["nonexistent-file.ts"]
+            entryPoints: ["nonexistent-file.ts"],
+            write: false
         )
 
         let result = esbuildBuild(options: options)
@@ -406,17 +406,17 @@ struct ESBuildBuildTests {
             }
             greet("World");
             """,
+            loader: .js,
             resolveDir: "",
-            sourcefile: "input.js",
-            loader: .js
+            sourcefile: "input.js"
         )
 
         let options = ESBuildBuildOptions(
-            minifyWhitespace: true,
             minifyIdentifiers: true,
             minifySyntax: true,
-            write: false,
-            stdin: stdin
+            minifyWhitespace: true,
+            stdin: stdin,
+            write: false
         )
 
         let result = esbuildBuild(options: options)
@@ -439,15 +439,15 @@ struct ESBuildBuildTests {
     func testBuildWithMetafile() {
         let stdin = ESBuildStdinOptions(
             contents: "export const value = 123;",
+            loader: .ts,
             resolveDir: "",
-            sourcefile: "input.ts",
-            loader: .ts
+            sourcefile: "input.ts"
         )
 
         let options = ESBuildBuildOptions(
             metafile: true,
-            write: false,
-            stdin: stdin
+            stdin: stdin,
+            write: false
         )
 
         let result = esbuildBuild(options: options)
@@ -479,17 +479,17 @@ struct ESBuildBuildTests {
     @Test("Build options with complex configuration")
     func testComplexBuildConfiguration() {
         let options = ESBuildBuildOptions(
-            target: .es2020,
-            platform: .node,
+            bundle: true,
+            define: ["process.env.NODE_ENV": "\"production\""],
+            external: ["fs", "path"],
             format: .commonjs,
-            minifyWhitespace: true,
             minifyIdentifiers: true,
             minifySyntax: true,
+            minifyWhitespace: true,
+            platform: .node,
+            target: .es2020,
             treeShaking: .true,
-            define: ["process.env.NODE_ENV": "\"production\""],
-            bundle: true,
-            write: false,
-            external: ["fs", "path"]
+            write: false
         )
 
         // Verify all options are set correctly

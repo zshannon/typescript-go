@@ -51,19 +51,19 @@ public struct ESBuildPluginLocation {
     public let lineText: String
     
     public init(
-        file: String,
-        namespace: String,
-        line: Int,
         column: Int,
+        file: String,
         length: Int,
-        lineText: String
+        line: Int,
+        lineText: String,
+        namespace: String
     ) {
-        self.file = file
-        self.namespace = namespace
-        self.line = line
         self.column = column
+        self.file = file
         self.length = length
+        self.line = line
         self.lineText = lineText
+        self.namespace = namespace
     }
 }
 
@@ -75,13 +75,13 @@ public struct ESBuildPluginMessage {
     public let detail: Any?
     
     public init(
-        text: String,
+        detail: Any? = nil,
         location: ESBuildPluginLocation? = nil,
-        detail: Any? = nil
+        text: String
     ) {
-        self.text = text
-        self.location = location
         self.detail = detail
+        self.location = location
+        self.text = text
     }
 }
 
@@ -97,20 +97,20 @@ public struct ESBuildOnResolveArgs {
     public let with: [String: String]
     
     public init(
-        path: String,
         importer: String,
-        namespace: String,
-        resolveDir: String,
         kind: ESBuildPluginResolveKind,
+        namespace: String,
+        path: String,
         pluginData: Any? = nil,
+        resolveDir: String,
         with: [String: String] = [:]
     ) {
-        self.path = path
         self.importer = importer
-        self.namespace = namespace
-        self.resolveDir = resolveDir
         self.kind = kind
+        self.namespace = namespace
+        self.path = path
         self.pluginData = pluginData
+        self.resolveDir = resolveDir
         self.with = with
     }
 }
@@ -125,16 +125,16 @@ public struct ESBuildOnLoadArgs {
     public let with: [String: String]
     
     public init(
-        path: String,
         namespace: String,
-        suffix: String = "",
+        path: String,
         pluginData: Any? = nil,
+        suffix: String = "",
         with: [String: String] = [:]
     ) {
-        self.path = path
         self.namespace = namespace
-        self.suffix = suffix
+        self.path = path
         self.pluginData = pluginData
+        self.suffix = suffix
         self.with = with
     }
 }
@@ -155,29 +155,29 @@ public struct ESBuildOnResolveResult {
     public let watchDirs: [String]
     
     public init(
-        path: String? = nil,
-        namespace: String? = nil,
+        errors: [ESBuildPluginMessage] = [],
         external: Bool? = nil,
-        sideEffects: Bool? = nil,
-        suffix: String? = nil,
+        namespace: String? = nil,
+        path: String? = nil,
         pluginData: Any? = nil,
         pluginName: String? = nil,
-        errors: [ESBuildPluginMessage] = [],
+        sideEffects: Bool? = nil,
+        suffix: String? = nil,
         warnings: [ESBuildPluginMessage] = [],
-        watchFiles: [String] = [],
-        watchDirs: [String] = []
+        watchDirs: [String] = [],
+        watchFiles: [String] = []
     ) {
-        self.path = path
-        self.namespace = namespace
+        self.errors = errors
         self.external = external
-        self.sideEffects = sideEffects
-        self.suffix = suffix
+        self.namespace = namespace
+        self.path = path
         self.pluginData = pluginData
         self.pluginName = pluginName
-        self.errors = errors
+        self.sideEffects = sideEffects
+        self.suffix = suffix
         self.warnings = warnings
-        self.watchFiles = watchFiles
         self.watchDirs = watchDirs
+        self.watchFiles = watchFiles
     }
 }
 
@@ -196,47 +196,47 @@ public struct ESBuildOnLoadResult {
     
     public init(
         contents: Data? = nil,
+        errors: [ESBuildPluginMessage] = [],
         loader: ESBuildLoader? = nil,
-        resolveDir: String? = nil,
         pluginData: Any? = nil,
         pluginName: String? = nil,
-        errors: [ESBuildPluginMessage] = [],
+        resolveDir: String? = nil,
         warnings: [ESBuildPluginMessage] = [],
-        watchFiles: [String] = [],
-        watchDirs: [String] = []
+        watchDirs: [String] = [],
+        watchFiles: [String] = []
     ) {
         self.contents = contents
+        self.errors = errors
         self.loader = loader
-        self.resolveDir = resolveDir
         self.pluginData = pluginData
         self.pluginName = pluginName
-        self.errors = errors
+        self.resolveDir = resolveDir
         self.warnings = warnings
-        self.watchFiles = watchFiles
         self.watchDirs = watchDirs
+        self.watchFiles = watchFiles
     }
     
     public init(
         contents: String,
+        errors: [ESBuildPluginMessage] = [],
         loader: ESBuildLoader? = nil,
-        resolveDir: String? = nil,
         pluginData: Any? = nil,
         pluginName: String? = nil,
-        errors: [ESBuildPluginMessage] = [],
+        resolveDir: String? = nil,
         warnings: [ESBuildPluginMessage] = [],
-        watchFiles: [String] = [],
-        watchDirs: [String] = []
+        watchDirs: [String] = [],
+        watchFiles: [String] = []
     ) {
         self.init(
             contents: contents.data(using: .utf8),
+            errors: errors,
             loader: loader,
-            resolveDir: resolveDir,
             pluginData: pluginData,
             pluginName: pluginName,
-            errors: errors,
+            resolveDir: resolveDir,
             warnings: warnings,
-            watchFiles: watchFiles,
-            watchDirs: watchDirs
+            watchDirs: watchDirs,
+            watchFiles: watchFiles
         )
     }
 }
@@ -286,16 +286,16 @@ public struct ESBuildResolveOptions {
     
     public init(
         importer: String? = nil,
-        namespace: String? = nil,
-        resolveDir: String? = nil,
         kind: ESBuildPluginResolveKind? = nil,
-        pluginData: Any? = nil
+        namespace: String? = nil,
+        pluginData: Any? = nil,
+        resolveDir: String? = nil
     ) {
         self.importer = importer
-        self.namespace = namespace
-        self.resolveDir = resolveDir
         self.kind = kind
+        self.namespace = namespace
         self.pluginData = pluginData
+        self.resolveDir = resolveDir
     }
 }
 
@@ -306,8 +306,8 @@ extension ESBuildPlugin {
         return ESBuildPlugin(name: "react-global-transform") { build in
             build.onResolve(filter: "^react$", namespace: nil) { args in
                 return ESBuildOnResolveResult(
-                    path: "react",
-                    namespace: "use-flick-react-global"
+                    namespace: "use-flick-react-global",
+                    path: "react"
                 )
             }
             
@@ -334,22 +334,22 @@ public struct ESBuildResolveResult {
     public let warnings: [ESBuildPluginMessage]
     
     public init(
-        path: String,
-        namespace: String = "file",
-        suffix: String = "",
-        external: Bool = false,
-        sideEffects: Bool = false,
-        pluginData: Any? = nil,
         errors: [ESBuildPluginMessage] = [],
+        external: Bool = false,
+        namespace: String = "file",
+        path: String,
+        pluginData: Any? = nil,
+        sideEffects: Bool = false,
+        suffix: String = "",
         warnings: [ESBuildPluginMessage] = []
     ) {
-        self.path = path
-        self.namespace = namespace
-        self.suffix = suffix
-        self.external = external
-        self.sideEffects = sideEffects
-        self.pluginData = pluginData
         self.errors = errors
+        self.external = external
+        self.namespace = namespace
+        self.path = path
+        self.pluginData = pluginData
+        self.sideEffects = sideEffects
+        self.suffix = suffix
         self.warnings = warnings
     }
 }

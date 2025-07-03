@@ -325,91 +325,91 @@ public struct ESBuildTransformOptions {
 
     /// Creates transform options with default values
     public init(
+        banner: String? = nil,
+        charset: ESBuildCharset = .default,
         color: ESBuildColor = .ifTerminal,
-        logLevel: ESBuildLogLevel = .info,
-        logLimit: Int32 = 0,
-        logOverride: [String: ESBuildLogLevel] = [:],
-        sourcemap: ESBuildSourceMap = .none,
-        sourceRoot: String? = nil,
-        sourcesContent: ESBuildSourcesContent = .include,
-        target: ESBuildTarget = .default,
-        engines: [(engine: ESBuildEngine, version: String)] = [],
-        supported: [String: Bool] = [:],
-        platform: ESBuildPlatform = .default,
-        format: ESBuildFormat = .default,
-        globalName: String? = nil,
-        mangleProps: String? = nil,
-        reserveProps: String? = nil,
-        mangleQuoted: ESBuildMangleQuoted = .false,
-        mangleCache: [String: String] = [:],
+        define: [String: String] = [:],
         drop: Set<ESBuildDrop> = [],
         dropLabels: [String] = [],
-        minify: Bool = false,
-        minifyWhitespace: Bool? = nil,
-        minifyIdentifiers: Bool? = nil,
-        minifySyntax: Bool? = nil,
-        lineLimit: Int32 = 0,
-        charset: ESBuildCharset = .default,
-        treeShaking: ESBuildTreeShaking = .default,
+        engines: [(engine: ESBuildEngine, version: String)] = [],
+        footer: String? = nil,
+        format: ESBuildFormat = .default,
+        globalName: String? = nil,
         ignoreAnnotations: Bool = false,
-        legalComments: ESBuildLegalComments = .default,
         jsx: ESBuildJSX = .transform,
+        jsxDev: Bool = false,
         jsxFactory: String? = nil,
         jsxFragment: String? = nil,
         jsxImportSource: String? = nil,
-        jsxDev: Bool = false,
         jsxSideEffects: Bool = false,
-        tsconfigRaw: String? = nil,
-        banner: String? = nil,
-        footer: String? = nil,
-        define: [String: String] = [:],
-        pure: [String] = [],
         keepNames: Bool = false,
+        legalComments: ESBuildLegalComments = .default,
+        lineLimit: Int32 = 0,
+        loader: ESBuildLoader = .default,
+        logLevel: ESBuildLogLevel = .info,
+        logLimit: Int32 = 0,
+        logOverride: [String: ESBuildLogLevel] = [:],
+        mangleCache: [String: String] = [:],
+        mangleProps: String? = nil,
+        mangleQuoted: ESBuildMangleQuoted = .false,
+        minify: Bool = false,
+        minifyIdentifiers: Bool? = nil,
+        minifySyntax: Bool? = nil,
+        minifyWhitespace: Bool? = nil,
+        platform: ESBuildPlatform = .default,
+        pure: [String] = [],
+        reserveProps: String? = nil,
         sourcefile: String? = nil,
-        loader: ESBuildLoader = .default
+        sourcemap: ESBuildSourceMap = .none,
+        sourceRoot: String? = nil,
+        sourcesContent: ESBuildSourcesContent = .include,
+        supported: [String: Bool] = [:],
+        target: ESBuildTarget = .default,
+        treeShaking: ESBuildTreeShaking = .default,
+        tsconfigRaw: String? = nil
     ) {
+        self.banner = banner
+        self.charset = charset
         self.color = color
-        self.logLevel = logLevel
-        self.logLimit = logLimit
-        self.logOverride = logOverride
-        self.sourcemap = sourcemap
-        self.sourceRoot = sourceRoot
-        self.sourcesContent = sourcesContent
-        self.target = target
-        self.engines = engines
-        self.supported = supported
-        self.platform = platform
-        self.format = format
-        self.globalName = globalName
-        self.mangleProps = mangleProps
-        self.reserveProps = reserveProps
-        self.mangleQuoted = mangleQuoted
-        self.mangleCache = mangleCache
+        self.define = define
         self.drop = drop
         self.dropLabels = dropLabels
-        self.minify = minify
-        self.minifyWhitespace = minifyWhitespace ?? minify
-        self.minifyIdentifiers = minifyIdentifiers ?? minify
-        self.minifySyntax = minifySyntax ?? minify
-        self.lineLimit = lineLimit
-        self.charset = charset
-        self.treeShaking = treeShaking
+        self.engines = engines
+        self.footer = footer
+        self.format = format
+        self.globalName = globalName
         self.ignoreAnnotations = ignoreAnnotations
-        self.legalComments = legalComments
         self.jsx = jsx
+        self.jsxDev = jsxDev
         self.jsxFactory = jsxFactory
         self.jsxFragment = jsxFragment
         self.jsxImportSource = jsxImportSource
-        self.jsxDev = jsxDev
         self.jsxSideEffects = jsxSideEffects
-        self.tsconfigRaw = tsconfigRaw
-        self.banner = banner
-        self.footer = footer
-        self.define = define
-        self.pure = pure
         self.keepNames = keepNames
-        self.sourcefile = sourcefile
+        self.legalComments = legalComments
+        self.lineLimit = lineLimit
         self.loader = loader
+        self.logLevel = logLevel
+        self.logLimit = logLimit
+        self.logOverride = logOverride
+        self.mangleCache = mangleCache
+        self.mangleProps = mangleProps
+        self.mangleQuoted = mangleQuoted
+        self.minify = minify
+        self.minifyIdentifiers = minifyIdentifiers ?? minify
+        self.minifySyntax = minifySyntax ?? minify
+        self.minifyWhitespace = minifyWhitespace ?? minify
+        self.platform = platform
+        self.pure = pure
+        self.reserveProps = reserveProps
+        self.sourcefile = sourcefile
+        self.sourcemap = sourcemap
+        self.sourceRoot = sourceRoot
+        self.sourcesContent = sourcesContent
+        self.supported = supported
+        self.target = target
+        self.treeShaking = treeShaking
+        self.tsconfigRaw = tsconfigRaw
     }
 }
 
@@ -422,11 +422,9 @@ public extension ESBuildTransformOptions {
         format: ESBuildFormat = .esmodule
     ) -> ESBuildTransformOptions {
         ESBuildTransformOptions(
-            target: target,
             format: format,
-            minifyWhitespace: true,
-            minifyIdentifiers: true,
-            minifySyntax: true,
+            minify: true,
+            target: target,
             treeShaking: .true
         )
     }
@@ -437,9 +435,9 @@ public extension ESBuildTransformOptions {
         jsx: ESBuildJSX = .transform
     ) -> ESBuildTransformOptions {
         ESBuildTransformOptions(
-            target: target,
             jsx: jsx,
-            loader: .ts
+            loader: .ts,
+            target: target
         )
     }
 
@@ -819,47 +817,48 @@ public struct ESBuildTransformResult: Sendable {
 public func esbuildTransform(code: String, options: ESBuildTransformOptions = ESBuildTransformOptions()) -> ESBuildTransformResult? {
     // Create options with silent logging to capture errors in result instead of printing to console
     let silentOptions = ESBuildTransformOptions(
+        banner: options.banner,
+        charset: options.charset,
         color: options.color,
-        logLevel: .silent, // Override to silent
-        logLimit: options.logLimit,
-        logOverride: options.logOverride,
-        sourcemap: options.sourcemap,
-        sourceRoot: options.sourceRoot,
-        sourcesContent: options.sourcesContent,
-        target: options.target,
-        engines: options.engines,
-        supported: options.supported,
-        platform: options.platform,
-        format: options.format,
-        globalName: options.globalName,
-        mangleProps: options.mangleProps,
-        reserveProps: options.reserveProps,
-        mangleQuoted: options.mangleQuoted,
-        mangleCache: options.mangleCache,
+        define: options.define,
         drop: options.drop,
         dropLabels: options.dropLabels,
-        minifyWhitespace: options.minifyWhitespace,
-        minifyIdentifiers: options.minifyIdentifiers,
-        minifySyntax: options.minifySyntax,
-        lineLimit: options.lineLimit,
-        charset: options.charset,
-        treeShaking: options.treeShaking,
+        engines: options.engines,
+        footer: options.footer,
+        format: options.format,
+        globalName: options.globalName,
         ignoreAnnotations: options.ignoreAnnotations,
-        legalComments: options.legalComments,
         jsx: options.jsx,
+        jsxDev: options.jsxDev,
         jsxFactory: options.jsxFactory,
         jsxFragment: options.jsxFragment,
         jsxImportSource: options.jsxImportSource,
-        jsxDev: options.jsxDev,
         jsxSideEffects: options.jsxSideEffects,
-        tsconfigRaw: options.tsconfigRaw,
-        banner: options.banner,
-        footer: options.footer,
-        define: options.define,
-        pure: options.pure,
         keepNames: options.keepNames,
+        legalComments: options.legalComments,
+        lineLimit: options.lineLimit,
+        loader: options.loader,
+        logLevel: .silent, // Override to silent
+        logLimit: options.logLimit,
+        logOverride: options.logOverride,
+        mangleCache: options.mangleCache,
+        mangleProps: options.mangleProps,
+        mangleQuoted: options.mangleQuoted,
+        minify: options.minify,
+        minifyIdentifiers: options.minifyIdentifiers,
+        minifySyntax: options.minifySyntax,
+        minifyWhitespace: options.minifyWhitespace,
+        platform: options.platform,
+        pure: options.pure,
+        reserveProps: options.reserveProps,
         sourcefile: options.sourcefile,
-        loader: options.loader
+        sourcemap: options.sourcemap,
+        sourceRoot: options.sourceRoot,
+        sourcesContent: options.sourcesContent,
+        supported: options.supported,
+        target: options.target,
+        treeShaking: options.treeShaking,
+        tsconfigRaw: options.tsconfigRaw
     )
     
     let cOptions = silentOptions.cValue

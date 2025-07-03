@@ -65,12 +65,12 @@ struct ESBuildPluginConversionTests {
     @Test("Location converts to C representation")
     func testLocationToCConversion() {
         let location = ESBuildPluginLocation(
-            file: "/src/test.js",
-            namespace: "file",
-            line: 10,
             column: 5,
+            file: "/src/test.js",
             length: 7,
-            lineText: "const x = 42;"
+            line: 10,
+            lineText: "const x = 42;",
+            namespace: "file"
         )
         
         let cValue = location.cValue
@@ -121,16 +121,16 @@ struct ESBuildPluginConversionTests {
     @Test("Message converts to C representation")
     func testMessageToCConversion() {
         let location = ESBuildPluginLocation(
-            file: "test.js",
-            namespace: "file",
-            line: 1,
             column: 0,
+            file: "test.js",
             length: 5,
-            lineText: "error"
+            line: 1,
+            lineText: "error",
+            namespace: "file"
         )
         let message = ESBuildPluginMessage(
-            text: "Test error",
-            location: location
+            location: location,
+            text: "Test error"
         )
         
         let cValue = message.cValue
@@ -267,17 +267,17 @@ struct ESBuildPluginConversionTests {
         let warnings = [ESBuildPluginMessage(text: "Warning 1")]
         
         let result = ESBuildOnResolveResult(
-            path: "/resolved/path.js",
-            namespace: "custom",
+            errors: errors,
             external: true,
-            sideEffects: false,
-            suffix: "?v=1.0",
+            namespace: "custom",
+            path: "/resolved/path.js",
             pluginData: ["resolved": true],
             pluginName: "test-plugin",
-            errors: errors,
+            sideEffects: false,
+            suffix: "?v=1.0",
             warnings: warnings,
-            watchFiles: ["/watch/file.js"],
-            watchDirs: ["/watch/dir"]
+            watchDirs: ["/watch/dir"],
+            watchFiles: ["/watch/file.js"]
         )
         
         let cValue = result.cValue
@@ -306,14 +306,14 @@ struct ESBuildPluginConversionTests {
         
         let result = ESBuildOnLoadResult(
             contents: "console.log('test')",
+            errors: errors,
             loader: .js,
-            resolveDir: "/src",
             pluginData: ["loaded": true],
             pluginName: "test-plugin",
-            errors: errors,
+            resolveDir: "/src",
             warnings: warnings,
-            watchFiles: ["/config.json"],
-            watchDirs: ["/src"]
+            watchDirs: ["/src"],
+            watchFiles: ["/config.json"]
         )
         
         let cValue = result.cValue
