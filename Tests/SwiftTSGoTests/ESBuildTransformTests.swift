@@ -1099,4 +1099,403 @@ struct ESBuildTransformTests {
             #expect(result.warnings.count == 0)
         }
     }
+
+    // MARK: - Missing Parameter Implementation Tests
+
+    @Test("LogOverride parameter C bridge conversion")
+    func testLogOverrideParameterConversion() {
+        // Test with logOverride configuration
+        let options = ESBuildTransformOptions(
+            logOverride: [
+                "ts": .warning,
+                "js": .error,
+                "css": .silent
+            ]
+        )
+        
+        let cOptions = options.cValue
+        defer { esbuild_free_transform_options(cOptions) }
+        
+        // Verify log override conversion
+        #expect(cOptions.pointee.log_override_count == 3)
+        #expect(cOptions.pointee.log_override_keys != nil)
+        #expect(cOptions.pointee.log_override_values != nil)
+        
+        // Check that all keys and values are properly converted
+        var foundKeys: Set<String> = []
+        var foundValues: [Int32] = []
+        
+        for i in 0..<Int(cOptions.pointee.log_override_count) {
+            if let keyPtr = cOptions.pointee.log_override_keys[i] {
+                let key = String(cString: keyPtr)
+                foundKeys.insert(key)
+            }
+            foundValues.append(cOptions.pointee.log_override_values[i])
+        }
+        
+        // Verify all expected keys are present
+        #expect(foundKeys.contains("ts"))
+        #expect(foundKeys.contains("js"))
+        #expect(foundKeys.contains("css"))
+        #expect(foundKeys.count == 3)
+        
+        // Verify values are correct enum values
+        #expect(foundValues.contains(ESBuildLogLevel.warning.cValue))
+        #expect(foundValues.contains(ESBuildLogLevel.error.cValue))
+        #expect(foundValues.contains(ESBuildLogLevel.silent.cValue))
+        
+        // Test empty logOverride
+        let emptyOptions = ESBuildTransformOptions(logOverride: [:])
+        let cEmptyOptions = emptyOptions.cValue
+        defer { esbuild_free_transform_options(cEmptyOptions) }
+        
+        #expect(cEmptyOptions.pointee.log_override_count == 0)
+    }
+
+    @Test("Engines parameter C bridge conversion")
+    func testEnginesParameterConversion() {
+        // Test with multiple engines configuration
+        let options = ESBuildTransformOptions(
+            engines: [
+                (engine: .chrome, version: "90"),
+                (engine: .firefox, version: "88"),
+                (engine: .node, version: "16.0.0")
+            ]
+        )
+        
+        let cOptions = options.cValue
+        defer { esbuild_free_transform_options(cOptions) }
+        
+        // Verify engines conversion
+        #expect(cOptions.pointee.engines_count == 3)
+        #expect(cOptions.pointee.engine_names != nil)
+        #expect(cOptions.pointee.engine_versions != nil)
+        
+        // Check that all engines and versions are properly converted
+        var foundEngines: [Int32] = []
+        var foundVersions: [String] = []
+        
+        for i in 0..<Int(cOptions.pointee.engines_count) {
+            foundEngines.append(cOptions.pointee.engine_names[i])
+            if let versionPtr = cOptions.pointee.engine_versions[i] {
+                foundVersions.append(String(cString: versionPtr))
+            }
+        }
+        
+        // Verify all expected engines are present
+        #expect(foundEngines.contains(ESBuildEngine.chrome.cValue))
+        #expect(foundEngines.contains(ESBuildEngine.firefox.cValue))
+        #expect(foundEngines.contains(ESBuildEngine.node.cValue))
+        #expect(foundEngines.count == 3)
+        
+        // Verify versions are correct
+        #expect(foundVersions.contains("90"))
+        #expect(foundVersions.contains("88"))
+        #expect(foundVersions.contains("16.0.0"))
+        #expect(foundVersions.count == 3)
+        
+        // Test empty engines
+        let emptyOptions = ESBuildTransformOptions(engines: [])
+        let cEmptyOptions = emptyOptions.cValue
+        defer { esbuild_free_transform_options(cEmptyOptions) }
+        
+        #expect(cEmptyOptions.pointee.engines_count == 0)
+    }
+
+    @Test("Supported parameter C bridge conversion")
+    func testSupportedParameterConversion() {
+        // Test with feature support overrides
+        let options = ESBuildTransformOptions(
+            supported: [
+                "bigint": true,
+                "import-meta": false,
+                "dynamic-import": true,
+                "async-await": false
+            ]
+        )
+        
+        let cOptions = options.cValue
+        defer { esbuild_free_transform_options(cOptions) }
+        
+        // Verify supported conversion
+        #expect(cOptions.pointee.supported_count == 4)
+        #expect(cOptions.pointee.supported_keys != nil)
+        #expect(cOptions.pointee.supported_values != nil)
+        
+        // Check that all features and values are properly converted
+        var foundFeatures: Set<String> = []
+        var foundValues: [Int32] = []
+        
+        for i in 0..<Int(cOptions.pointee.supported_count) {
+            if let keyPtr = cOptions.pointee.supported_keys[i] {
+                let key = String(cString: keyPtr)
+                foundFeatures.insert(key)
+            }
+            foundValues.append(cOptions.pointee.supported_values[i])
+        }
+        
+        // Verify all expected features are present
+        #expect(foundFeatures.contains("bigint"))
+        #expect(foundFeatures.contains("import-meta"))
+        #expect(foundFeatures.contains("dynamic-import"))
+        #expect(foundFeatures.contains("async-await"))
+        #expect(foundFeatures.count == 4)
+        
+        // Verify values are correct (1 for true, 0 for false)
+        #expect(foundValues.contains(1)) // for true values
+        #expect(foundValues.contains(0)) // for false values
+        
+        // Count of true and false values should match what we set
+        let trueCount = foundValues.filter { $0 == 1 }.count
+        let falseCount = foundValues.filter { $0 == 0 }.count
+        #expect(trueCount == 2) // bigint and dynamic-import
+        #expect(falseCount == 2) // import-meta and async-await
+        
+        // Test empty supported
+        let emptyOptions = ESBuildTransformOptions(supported: [:])
+        let cEmptyOptions = emptyOptions.cValue
+        defer { esbuild_free_transform_options(cEmptyOptions) }
+        
+        #expect(cEmptyOptions.pointee.supported_count == 0)
+    }
+
+    @Test("MangleCache parameter C bridge conversion")
+    func testMangleCacheParameterConversion() {
+        // Test with mangle cache mappings
+        let options = ESBuildTransformOptions(
+            mangleCache: [
+                "originalName1": "a",
+                "originalName2": "b", 
+                "veryLongPropertyName": "c",
+                "anotherProperty": "d"
+            ]
+        )
+        
+        let cOptions = options.cValue
+        defer { esbuild_free_transform_options(cOptions) }
+        
+        // Verify mangle cache conversion
+        #expect(cOptions.pointee.mangle_cache_count == 4)
+        #expect(cOptions.pointee.mangle_cache_keys != nil)
+        #expect(cOptions.pointee.mangle_cache_values != nil)
+        
+        // Check that all keys and values are properly converted
+        var foundMappings: [String: String] = [:]
+        
+        for i in 0..<Int(cOptions.pointee.mangle_cache_count) {
+            if let keyPtr = cOptions.pointee.mangle_cache_keys[i],
+               let valuePtr = cOptions.pointee.mangle_cache_values[i] {
+                let key = String(cString: keyPtr)
+                let value = String(cString: valuePtr)
+                foundMappings[key] = value
+            }
+        }
+        
+        // Verify all expected mappings are present
+        #expect(foundMappings["originalName1"] == "a")
+        #expect(foundMappings["originalName2"] == "b")
+        #expect(foundMappings["veryLongPropertyName"] == "c")
+        #expect(foundMappings["anotherProperty"] == "d")
+        #expect(foundMappings.count == 4)
+        
+        // Test empty mangle cache
+        let emptyOptions = ESBuildTransformOptions(mangleCache: [:])
+        let cEmptyOptions = emptyOptions.cValue
+        defer { esbuild_free_transform_options(cEmptyOptions) }
+        
+        #expect(cEmptyOptions.pointee.mangle_cache_count == 0)
+    }
+
+    @Test("Drop parameter C bridge conversion")
+    func testDropParameterConversion() {
+        // Test with both drop options (bitfield)
+        let options = ESBuildTransformOptions(
+            drop: [.console, .debugger]
+        )
+        
+        let cOptions = options.cValue
+        defer { esbuild_free_transform_options(cOptions) }
+        
+        // Verify drop conversion (should be bitwise OR of both values)
+        let expectedValue = ESBuildDrop.console.cValue | ESBuildDrop.debugger.cValue
+        #expect(cOptions.pointee.drop == expectedValue)
+        
+        // Test with single drop option
+        let singleOptions = ESBuildTransformOptions(drop: [.console])
+        let cSingleOptions = singleOptions.cValue
+        defer { esbuild_free_transform_options(cSingleOptions) }
+        
+        #expect(cSingleOptions.pointee.drop == ESBuildDrop.console.cValue)
+        
+        // Test with other single drop option
+        let debuggerOptions = ESBuildTransformOptions(drop: [.debugger])
+        let cDebuggerOptions = debuggerOptions.cValue
+        defer { esbuild_free_transform_options(cDebuggerOptions) }
+        
+        #expect(cDebuggerOptions.pointee.drop == ESBuildDrop.debugger.cValue)
+        
+        // Test empty drop (no constructs to drop)
+        let emptyOptions = ESBuildTransformOptions(drop: [])
+        let cEmptyOptions = emptyOptions.cValue
+        defer { esbuild_free_transform_options(cEmptyOptions) }
+        
+        #expect(cEmptyOptions.pointee.drop == 0)
+    }
+
+    @Test("DropLabels parameter C bridge conversion")
+    func testDropLabelsParameterConversion() {
+        // Test with multiple drop labels
+        let options = ESBuildTransformOptions(
+            dropLabels: ["DEV", "TEST", "DEBUG", "PRODUCTION"]
+        )
+        
+        let cOptions = options.cValue
+        defer { esbuild_free_transform_options(cOptions) }
+        
+        // Verify drop labels conversion
+        #expect(cOptions.pointee.drop_labels_count == 4)
+        #expect(cOptions.pointee.drop_labels != nil)
+        
+        // Check that all labels are properly converted
+        var foundLabels: [String] = []
+        
+        for i in 0..<Int(cOptions.pointee.drop_labels_count) {
+            if let labelPtr = cOptions.pointee.drop_labels[i] {
+                let label = String(cString: labelPtr)
+                foundLabels.append(label)
+            }
+        }
+        
+        // Verify all expected labels are present
+        #expect(foundLabels.contains("DEV"))
+        #expect(foundLabels.contains("TEST"))
+        #expect(foundLabels.contains("DEBUG"))
+        #expect(foundLabels.contains("PRODUCTION"))
+        #expect(foundLabels.count == 4)
+        
+        // Test with single label
+        let singleOptions = ESBuildTransformOptions(dropLabels: ["SINGLE"])
+        let cSingleOptions = singleOptions.cValue
+        defer { esbuild_free_transform_options(cSingleOptions) }
+        
+        #expect(cSingleOptions.pointee.drop_labels_count == 1)
+        if let firstLabelPtr = cSingleOptions.pointee.drop_labels[0] {
+            #expect(String(cString: firstLabelPtr) == "SINGLE")
+        }
+        
+        // Test empty drop labels
+        let emptyOptions = ESBuildTransformOptions(dropLabels: [])
+        let cEmptyOptions = emptyOptions.cValue
+        defer { esbuild_free_transform_options(cEmptyOptions) }
+        
+        #expect(cEmptyOptions.pointee.drop_labels_count == 0)
+    }
+
+    @Test("Define parameter C bridge conversion")
+    func testDefineParameterConversion() {
+        // Test with multiple define mappings
+        let options = ESBuildTransformOptions(
+            define: [
+                "NODE_ENV": "\"production\"",
+                "VERSION": "\"1.2.3\"",
+                "DEBUG": "false",
+                "API_URL": "\"https://api.example.com\""
+            ]
+        )
+        
+        let cOptions = options.cValue
+        defer { esbuild_free_transform_options(cOptions) }
+        
+        // Verify define conversion
+        #expect(cOptions.pointee.define_count == 4)
+        #expect(cOptions.pointee.define_keys != nil)
+        #expect(cOptions.pointee.define_values != nil)
+        
+        // Check that all keys and values are properly converted
+        var foundMappings: [String: String] = [:]
+        
+        for i in 0..<Int(cOptions.pointee.define_count) {
+            if let keyPtr = cOptions.pointee.define_keys[i],
+               let valuePtr = cOptions.pointee.define_values[i] {
+                let key = String(cString: keyPtr)
+                let value = String(cString: valuePtr)
+                foundMappings[key] = value
+            }
+        }
+        
+        // Verify all expected mappings are present
+        #expect(foundMappings["NODE_ENV"] == "\"production\"")
+        #expect(foundMappings["VERSION"] == "\"1.2.3\"")
+        #expect(foundMappings["DEBUG"] == "false")
+        #expect(foundMappings["API_URL"] == "\"https://api.example.com\"")
+        #expect(foundMappings.count == 4)
+        
+        // Test with single define
+        let singleOptions = ESBuildTransformOptions(define: ["SINGLE": "\"value\""])
+        let cSingleOptions = singleOptions.cValue
+        defer { esbuild_free_transform_options(cSingleOptions) }
+        
+        #expect(cSingleOptions.pointee.define_count == 1)
+        if let keyPtr = cSingleOptions.pointee.define_keys[0],
+           let valuePtr = cSingleOptions.pointee.define_values[0] {
+            #expect(String(cString: keyPtr) == "SINGLE")
+            #expect(String(cString: valuePtr) == "\"value\"")
+        }
+        
+        // Test empty define
+        let emptyOptions = ESBuildTransformOptions(define: [:])
+        let cEmptyOptions = emptyOptions.cValue
+        defer { esbuild_free_transform_options(cEmptyOptions) }
+        
+        #expect(cEmptyOptions.pointee.define_count == 0)
+    }
+
+    @Test("Pure parameter C bridge conversion")
+    func testPureParameterConversion() {
+        // Test with multiple pure functions
+        let options = ESBuildTransformOptions(
+            pure: ["console.log", "console.warn", "debug", "Math.random"]
+        )
+        
+        let cOptions = options.cValue
+        defer { esbuild_free_transform_options(cOptions) }
+        
+        // Verify pure conversion
+        #expect(cOptions.pointee.pure_count == 4)
+        #expect(cOptions.pointee.pure != nil)
+        
+        // Check that all pure functions are properly converted
+        var foundFunctions: [String] = []
+        
+        for i in 0..<Int(cOptions.pointee.pure_count) {
+            if let functionPtr = cOptions.pointee.pure[i] {
+                let function = String(cString: functionPtr)
+                foundFunctions.append(function)
+            }
+        }
+        
+        // Verify all expected functions are present
+        #expect(foundFunctions.contains("console.log"))
+        #expect(foundFunctions.contains("console.warn"))
+        #expect(foundFunctions.contains("debug"))
+        #expect(foundFunctions.contains("Math.random"))
+        #expect(foundFunctions.count == 4)
+        
+        // Test with single pure function
+        let singleOptions = ESBuildTransformOptions(pure: ["singleFunction"])
+        let cSingleOptions = singleOptions.cValue
+        defer { esbuild_free_transform_options(cSingleOptions) }
+        
+        #expect(cSingleOptions.pointee.pure_count == 1)
+        if let firstFunctionPtr = cSingleOptions.pointee.pure[0] {
+            #expect(String(cString: firstFunctionPtr) == "singleFunction")
+        }
+        
+        // Test empty pure functions
+        let emptyOptions = ESBuildTransformOptions(pure: [])
+        let cEmptyOptions = emptyOptions.cValue
+        defer { esbuild_free_transform_options(cEmptyOptions) }
+        
+        #expect(cEmptyOptions.pointee.pure_count == 0)
+    }
 }

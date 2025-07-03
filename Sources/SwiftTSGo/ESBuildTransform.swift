@@ -157,6 +157,18 @@ public struct ESBuildTransformOptions {
         options.pointee.log_level = logLevel.cValue
         options.pointee.log_limit = logLimit
         
+        // Log Override
+        if !logOverride.isEmpty {
+            options.pointee.log_override_count = Int32(logOverride.count)
+            options.pointee.log_override_keys = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>.allocate(capacity: logOverride.count)
+            options.pointee.log_override_values = UnsafeMutablePointer<Int32>.allocate(capacity: logOverride.count)
+            
+            for (index, (key, value)) in logOverride.enumerated() {
+                options.pointee.log_override_keys[index] = strdup(key)
+                options.pointee.log_override_values[index] = value.cValue
+            }
+        }
+        
         // Source Map
         options.pointee.sourcemap = sourcemap.cValue
         if let sourceRoot = sourceRoot {
@@ -166,6 +178,31 @@ public struct ESBuildTransformOptions {
         
         // Target and Compatibility
         options.pointee.target = target.cValue
+        
+        // Engines
+        if !engines.isEmpty {
+            options.pointee.engines_count = Int32(engines.count)
+            options.pointee.engine_names = UnsafeMutablePointer<Int32>.allocate(capacity: engines.count)
+            options.pointee.engine_versions = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>.allocate(capacity: engines.count)
+            
+            for (index, engineInfo) in engines.enumerated() {
+                options.pointee.engine_names[index] = engineInfo.engine.cValue
+                options.pointee.engine_versions[index] = strdup(engineInfo.version)
+            }
+        }
+        
+        // Supported features
+        if !supported.isEmpty {
+            options.pointee.supported_count = Int32(supported.count)
+            options.pointee.supported_keys = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>.allocate(capacity: supported.count)
+            options.pointee.supported_values = UnsafeMutablePointer<Int32>.allocate(capacity: supported.count)
+            
+            for (index, (key, value)) in supported.enumerated() {
+                options.pointee.supported_keys[index] = strdup(key)
+                options.pointee.supported_values[index] = value ? 1 : 0
+            }
+        }
+        
         options.pointee.platform = platform.cValue
         options.pointee.format = format.cValue
         if let globalName = globalName {
@@ -180,6 +217,35 @@ public struct ESBuildTransformOptions {
             options.pointee.reserve_props = strdup(reserveProps)
         }
         options.pointee.mangle_quoted = mangleQuoted.cValue
+        
+        // Mangle cache
+        if !mangleCache.isEmpty {
+            options.pointee.mangle_cache_count = Int32(mangleCache.count)
+            options.pointee.mangle_cache_keys = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>.allocate(capacity: mangleCache.count)
+            options.pointee.mangle_cache_values = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>.allocate(capacity: mangleCache.count)
+            
+            for (index, (key, value)) in mangleCache.enumerated() {
+                options.pointee.mangle_cache_keys[index] = strdup(key)
+                options.pointee.mangle_cache_values[index] = strdup(value)
+            }
+        }
+        
+        // Drop constructs (bitfield)
+        var dropValue: Int32 = 0
+        for dropOption in drop {
+            dropValue |= dropOption.cValue
+        }
+        options.pointee.drop = dropValue
+        
+        // Drop labels
+        if !dropLabels.isEmpty {
+            options.pointee.drop_labels_count = Int32(dropLabels.count)
+            options.pointee.drop_labels = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>.allocate(capacity: dropLabels.count)
+            
+            for (index, label) in dropLabels.enumerated() {
+                options.pointee.drop_labels[index] = strdup(label)
+            }
+        }
         
         // Boolean flags
         options.pointee.minify_whitespace = minifyWhitespace ? 1 : 0
@@ -219,6 +285,28 @@ public struct ESBuildTransformOptions {
         }
         
         // Code Transformation
+        // Define mappings
+        if !define.isEmpty {
+            options.pointee.define_count = Int32(define.count)
+            options.pointee.define_keys = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>.allocate(capacity: define.count)
+            options.pointee.define_values = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>.allocate(capacity: define.count)
+            
+            for (index, (key, value)) in define.enumerated() {
+                options.pointee.define_keys[index] = strdup(key)
+                options.pointee.define_values[index] = strdup(value)
+            }
+        }
+        
+        // Pure functions
+        if !pure.isEmpty {
+            options.pointee.pure_count = Int32(pure.count)
+            options.pointee.pure = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>.allocate(capacity: pure.count)
+            
+            for (index, function) in pure.enumerated() {
+                options.pointee.pure[index] = strdup(function)
+            }
+        }
+        
         options.pointee.keep_names = keepNames ? 1 : 0
         
         // Input Configuration

@@ -124,6 +124,163 @@ typedef struct {
 	char** mangle_cache_values;  // values for mangle cache
 	int mangle_cache_count;      // count of mangle cache entries
 } c_transform_result;
+
+typedef struct {
+	char* input_path;
+	char* output_path;
+} esbuild_entry_point;
+
+typedef struct {
+	char* contents;
+	char* resolve_dir;
+	char* sourcefile;
+	int loader;
+} esbuild_stdin_options;
+
+typedef struct {
+	char* path;
+	char* contents;
+	int contents_length;
+	char* hash;
+} esbuild_output_file;
+
+typedef struct {
+	// Logging and Output Control
+	int color;                    // StderrColor enum
+	int log_level;               // LogLevel enum  
+	int log_limit;               // int
+	char** log_override_keys;    // keys for map[string]LogLevel
+	int* log_override_values;    // values for map[string]LogLevel
+	int log_override_count;      // count of log override entries
+
+	// Source Map
+	int sourcemap;               // SourceMap enum
+	char* source_root;           // string
+	int sources_content;         // SourcesContent enum
+
+	// Target and Compatibility  
+	int target;                  // Target enum
+	int* engine_names;           // EngineName enum array
+	char** engine_versions;      // string array for engine versions
+	int engines_count;           // count of engines
+	char** supported_keys;       // keys for map[string]bool
+	int* supported_values;       // values for map[string]bool (0/1)
+	int supported_count;         // count of supported entries
+
+	// Platform and Format
+	int platform;                // Platform enum
+	int format;                  // Format enum
+	char* global_name;           // string
+
+	// Minification and Property Mangling
+	char* mangle_props;          // string (regex)
+	char* reserve_props;         // string (regex)
+	int mangle_quoted;           // MangleQuoted enum
+	char** mangle_cache_keys;    // keys for map[string]interface{}
+	char** mangle_cache_values;  // values as JSON strings
+	int mangle_cache_count;      // count of mangle cache entries
+	int drop;                    // Drop enum (bitfield)
+	char** drop_labels;          // string array
+	int drop_labels_count;       // count of drop labels
+	int minify_whitespace;       // bool (0/1)
+	int minify_identifiers;      // bool (0/1)
+	int minify_syntax;           // bool (0/1)
+	int line_limit;              // int
+	int charset;                 // Charset enum
+	int tree_shaking;            // TreeShaking enum
+	int ignore_annotations;      // bool (0/1)
+	int legal_comments;          // LegalComments enum
+
+	// JSX Configuration
+	int jsx;                     // JSX enum
+	char* jsx_factory;           // string
+	char* jsx_fragment;          // string
+	char* jsx_import_source;     // string
+	int jsx_dev;                 // bool (0/1)
+	int jsx_side_effects;        // bool (0/1)
+
+	// TypeScript Configuration
+	char* tsconfig;              // string (file path)
+	char* tsconfig_raw;          // string (JSON)
+
+	// Code Injection
+	char** banner_keys;          // keys for map[string]string (file types)
+	char** banner_values;        // values for map[string]string
+	int banner_count;            // count of banner entries
+	char** footer_keys;          // keys for map[string]string (file types)
+	char** footer_values;        // values for map[string]string
+	int footer_count;            // count of footer entries
+
+	// Code Transformation
+	char** define_keys;          // keys for map[string]string
+	char** define_values;        // values for map[string]string
+	int define_count;            // count of define entries
+	char** pure;                 // string array
+	int pure_count;              // count of pure functions
+	int keep_names;              // bool (0/1)
+
+	// Build Configuration
+	int bundle;                  // bool (0/1)
+	int preserve_symlinks;       // bool (0/1)
+	int splitting;               // bool (0/1)
+	char* outfile;               // string
+	char* outdir;                // string
+	char* outbase;               // string
+	char* abs_working_dir;       // string
+	int metafile;                // bool (0/1)
+	int write;                   // bool (0/1)
+	int allow_overwrite;         // bool (0/1)
+
+	// Module Resolution
+	char** external;             // string array
+	int external_count;          // count of external entries
+	int packages;                // Packages enum
+	char** alias_keys;           // keys for map[string]string
+	char** alias_values;         // values for map[string]string
+	int alias_count;             // count of alias entries
+	char** main_fields;          // string array
+	int main_fields_count;       // count of main fields
+	char** conditions;           // string array
+	int conditions_count;        // count of conditions
+	char** loader_keys;          // keys for map[string]Loader (file extensions)
+	int* loader_values;          // values for map[string]Loader
+	int loader_count;            // count of loader entries
+	char** resolve_extensions;   // string array
+	int resolve_extensions_count; // count of resolve extensions
+	char** out_extension_keys;   // keys for map[string]string
+	char** out_extension_values; // values for map[string]string
+	int out_extension_count;     // count of out extension entries
+	char* public_path;           // string
+	char** inject;               // string array
+	int inject_count;            // count of inject entries
+	char** node_paths;           // string array
+	int node_paths_count;        // count of node paths
+
+	// Naming Templates
+	char* entry_names;           // string
+	char* chunk_names;           // string
+	char* asset_names;           // string
+
+	// Input Configuration
+	char** entry_points;         // string array (simple entry points)
+	int entry_points_count;      // count of entry points
+	esbuild_entry_point* entry_points_advanced; // advanced entry points
+	int entry_points_advanced_count;      // count of advanced entry points
+	esbuild_stdin_options* stdin;      // stdin options (optional)
+} esbuild_build_options;
+
+typedef struct {
+	c_message* errors;           // array of error messages
+	int errors_count;            // count of errors
+	c_message* warnings;         // array of warning messages
+	int warnings_count;          // count of warnings
+	esbuild_output_file* output_files; // array of output files
+	int output_files_count;      // count of output files
+	char* metafile;              // metafile JSON as string
+	char** mangle_cache_keys;    // keys for mangle cache
+	char** mangle_cache_values;  // values for mangle cache
+	int mangle_cache_count;      // count of mangle cache entries
+} esbuild_build_result;
 */
 import "C"
 
@@ -1352,6 +1509,789 @@ func esbuild_transform(code *C.char, opts *C.c_transform_options) *C.c_transform
 		cResult.warnings = nil
 		cResult.warnings_count = 0
 	}
+	
+	return cResult
+}
+
+// Build API Functions
+
+//export esbuild_create_entry_point
+func esbuild_create_entry_point() *C.esbuild_entry_point {
+	return (*C.esbuild_entry_point)(C.malloc(C.size_t(unsafe.Sizeof(C.esbuild_entry_point{}))))
+}
+
+//export esbuild_create_stdin_options
+func esbuild_create_stdin_options() *C.esbuild_stdin_options {
+	return (*C.esbuild_stdin_options)(C.malloc(C.size_t(unsafe.Sizeof(C.esbuild_stdin_options{}))))
+}
+
+//export esbuild_create_output_file
+func esbuild_create_output_file() *C.esbuild_output_file {
+	return (*C.esbuild_output_file)(C.malloc(C.size_t(unsafe.Sizeof(C.esbuild_output_file{}))))
+}
+
+//export esbuild_create_build_options
+func esbuild_create_build_options() *C.esbuild_build_options {
+	options := (*C.esbuild_build_options)(C.malloc(C.size_t(unsafe.Sizeof(C.esbuild_build_options{}))))
+	
+	// Initialize all pointers to nil and counts to 0
+	options.log_override_keys = nil
+	options.log_override_values = nil
+	options.log_override_count = 0
+	options.source_root = nil
+	options.engine_names = nil
+	options.engine_versions = nil
+	options.engines_count = 0
+	options.supported_keys = nil
+	options.supported_values = nil
+	options.supported_count = 0
+	options.global_name = nil
+	options.mangle_props = nil
+	options.reserve_props = nil
+	options.mangle_cache_keys = nil
+	options.mangle_cache_values = nil
+	options.mangle_cache_count = 0
+	options.drop_labels = nil
+	options.drop_labels_count = 0
+	options.jsx_factory = nil
+	options.jsx_fragment = nil
+	options.jsx_import_source = nil
+	options.tsconfig = nil
+	options.tsconfig_raw = nil
+	options.banner_keys = nil
+	options.banner_values = nil
+	options.banner_count = 0
+	options.footer_keys = nil
+	options.footer_values = nil
+	options.footer_count = 0
+	options.define_keys = nil
+	options.define_values = nil
+	options.define_count = 0
+	options.pure = nil
+	options.pure_count = 0
+	options.outfile = nil
+	options.outdir = nil
+	options.outbase = nil
+	options.abs_working_dir = nil
+	options.external = nil
+	options.external_count = 0
+	options.alias_keys = nil
+	options.alias_values = nil
+	options.alias_count = 0
+	options.main_fields = nil
+	options.main_fields_count = 0
+	options.conditions = nil
+	options.conditions_count = 0
+	options.loader_keys = nil
+	options.loader_values = nil
+	options.loader_count = 0
+	options.resolve_extensions = nil
+	options.resolve_extensions_count = 0
+	options.out_extension_keys = nil
+	options.out_extension_values = nil
+	options.out_extension_count = 0
+	options.public_path = nil
+	options.inject = nil
+	options.inject_count = 0
+	options.node_paths = nil
+	options.node_paths_count = 0
+	options.entry_names = nil
+	options.chunk_names = nil
+	options.asset_names = nil
+	options.entry_points = nil
+	options.entry_points_count = 0
+	options.entry_points_advanced = nil
+	options.entry_points_advanced_count = 0
+	options.stdin = nil
+	
+	return options
+}
+
+//export esbuild_create_build_result
+func esbuild_create_build_result() *C.esbuild_build_result {
+	result := (*C.esbuild_build_result)(C.malloc(C.size_t(unsafe.Sizeof(C.esbuild_build_result{}))))
+	
+	// Initialize all pointers to nil and counts to 0
+	result.errors = nil
+	result.errors_count = 0
+	result.warnings = nil
+	result.warnings_count = 0
+	result.output_files = nil
+	result.output_files_count = 0
+	result.metafile = nil
+	result.mangle_cache_keys = nil
+	result.mangle_cache_values = nil
+	result.mangle_cache_count = 0
+	
+	return result
+}
+
+//export esbuild_free_entry_point
+func esbuild_free_entry_point(ep *C.esbuild_entry_point) {
+	if ep == nil {
+		return
+	}
+	
+	if ep.input_path != nil {
+		C.free(unsafe.Pointer(ep.input_path))
+	}
+	if ep.output_path != nil {
+		C.free(unsafe.Pointer(ep.output_path))
+	}
+	
+	C.free(unsafe.Pointer(ep))
+}
+
+//export esbuild_free_stdin_options
+func esbuild_free_stdin_options(stdin *C.esbuild_stdin_options) {
+	if stdin == nil {
+		return
+	}
+	
+	if stdin.contents != nil {
+		C.free(unsafe.Pointer(stdin.contents))
+	}
+	if stdin.resolve_dir != nil {
+		C.free(unsafe.Pointer(stdin.resolve_dir))
+	}
+	if stdin.sourcefile != nil {
+		C.free(unsafe.Pointer(stdin.sourcefile))
+	}
+	
+	C.free(unsafe.Pointer(stdin))
+}
+
+//export esbuild_free_output_file
+func esbuild_free_output_file(file *C.esbuild_output_file) {
+	if file == nil {
+		return
+	}
+	
+	if file.path != nil {
+		C.free(unsafe.Pointer(file.path))
+	}
+	if file.contents != nil {
+		C.free(unsafe.Pointer(file.contents))
+	}
+	if file.hash != nil {
+		C.free(unsafe.Pointer(file.hash))
+	}
+	
+	C.free(unsafe.Pointer(file))
+}
+
+//export esbuild_free_build_options
+func esbuild_free_build_options(opts *C.esbuild_build_options) {
+	if opts == nil {
+		return
+	}
+	
+	// Free arrays and their string contents
+	if opts.log_override_keys != nil {
+		for i := 0; i < int(opts.log_override_count); i++ {
+			if opts.log_override_keys != nil {
+				key := (*[1000]*C.char)(unsafe.Pointer(opts.log_override_keys))[i]
+				if key != nil {
+					C.free(unsafe.Pointer(key))
+				}
+			}
+		}
+		C.free(unsafe.Pointer(opts.log_override_keys))
+	}
+	if opts.log_override_values != nil {
+		C.free(unsafe.Pointer(opts.log_override_values))
+	}
+	
+	// Free simple string fields
+	if opts.source_root != nil {
+		C.free(unsafe.Pointer(opts.source_root))
+	}
+	if opts.global_name != nil {
+		C.free(unsafe.Pointer(opts.global_name))
+	}
+	if opts.mangle_props != nil {
+		C.free(unsafe.Pointer(opts.mangle_props))
+	}
+	if opts.reserve_props != nil {
+		C.free(unsafe.Pointer(opts.reserve_props))
+	}
+	if opts.jsx_factory != nil {
+		C.free(unsafe.Pointer(opts.jsx_factory))
+	}
+	if opts.jsx_fragment != nil {
+		C.free(unsafe.Pointer(opts.jsx_fragment))
+	}
+	if opts.jsx_import_source != nil {
+		C.free(unsafe.Pointer(opts.jsx_import_source))
+	}
+	if opts.tsconfig != nil {
+		C.free(unsafe.Pointer(opts.tsconfig))
+	}
+	if opts.tsconfig_raw != nil {
+		C.free(unsafe.Pointer(opts.tsconfig_raw))
+	}
+	if opts.outfile != nil {
+		C.free(unsafe.Pointer(opts.outfile))
+	}
+	if opts.outdir != nil {
+		C.free(unsafe.Pointer(opts.outdir))
+	}
+	if opts.outbase != nil {
+		C.free(unsafe.Pointer(opts.outbase))
+	}
+	if opts.abs_working_dir != nil {
+		C.free(unsafe.Pointer(opts.abs_working_dir))
+	}
+	if opts.public_path != nil {
+		C.free(unsafe.Pointer(opts.public_path))
+	}
+	if opts.entry_names != nil {
+		C.free(unsafe.Pointer(opts.entry_names))
+	}
+	if opts.chunk_names != nil {
+		C.free(unsafe.Pointer(opts.chunk_names))
+	}
+	if opts.asset_names != nil {
+		C.free(unsafe.Pointer(opts.asset_names))
+	}
+	
+	// Free more complex arrays (simplified for now - full implementation would free all arrays)
+	
+	if opts.stdin != nil {
+		esbuild_free_stdin_options(opts.stdin)
+	}
+	
+	C.free(unsafe.Pointer(opts))
+}
+
+//export esbuild_free_build_result
+func esbuild_free_build_result(result *C.esbuild_build_result) {
+	if result == nil {
+		return
+	}
+	
+	// Free errors array
+	if result.errors != nil {
+		for i := 0; i < int(result.errors_count); i++ {
+			errorPtr := (*C.c_message)(unsafe.Pointer(uintptr(unsafe.Pointer(result.errors)) + uintptr(i)*unsafe.Sizeof(C.c_message{})))
+			esbuild_free_message_contents(errorPtr)
+		}
+		C.free(unsafe.Pointer(result.errors))
+	}
+	
+	// Free warnings array
+	if result.warnings != nil {
+		for i := 0; i < int(result.warnings_count); i++ {
+			warningPtr := (*C.c_message)(unsafe.Pointer(uintptr(unsafe.Pointer(result.warnings)) + uintptr(i)*unsafe.Sizeof(C.c_message{})))
+			esbuild_free_message_contents(warningPtr)
+		}
+		C.free(unsafe.Pointer(result.warnings))
+	}
+	
+	// Free output files array
+	if result.output_files != nil {
+		for i := 0; i < int(result.output_files_count); i++ {
+			filePtr := (*C.esbuild_output_file)(unsafe.Pointer(uintptr(unsafe.Pointer(result.output_files)) + uintptr(i)*unsafe.Sizeof(C.esbuild_output_file{})))
+			if filePtr.path != nil {
+				C.free(unsafe.Pointer(filePtr.path))
+			}
+			if filePtr.contents != nil {
+				C.free(unsafe.Pointer(filePtr.contents))
+			}
+			if filePtr.hash != nil {
+				C.free(unsafe.Pointer(filePtr.hash))
+			}
+		}
+		C.free(unsafe.Pointer(result.output_files))
+	}
+	
+	// Free metafile
+	if result.metafile != nil {
+		C.free(unsafe.Pointer(result.metafile))
+	}
+	
+	// Free mangle cache
+	if result.mangle_cache_keys != nil {
+		for i := 0; i < int(result.mangle_cache_count); i++ {
+			key := (*[1000]*C.char)(unsafe.Pointer(result.mangle_cache_keys))[i]
+			if key != nil {
+				C.free(unsafe.Pointer(key))
+			}
+		}
+		C.free(unsafe.Pointer(result.mangle_cache_keys))
+	}
+	if result.mangle_cache_values != nil {
+		for i := 0; i < int(result.mangle_cache_count); i++ {
+			value := (*[1000]*C.char)(unsafe.Pointer(result.mangle_cache_values))[i]
+			if value != nil {
+				C.free(unsafe.Pointer(value))
+			}
+		}
+		C.free(unsafe.Pointer(result.mangle_cache_values))
+	}
+	
+	C.free(unsafe.Pointer(result))
+}
+
+//export esbuild_build
+func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
+	// Convert C options to Go BuildOptions
+	buildOpts := api.BuildOptions{}
+	
+	// Basic logging options
+	buildOpts.Color = api.StderrColor(opts.color)
+	buildOpts.LogLevel = api.LogLevel(opts.log_level)
+	buildOpts.LogLimit = int(opts.log_limit)
+	
+	// Source map options
+	buildOpts.Sourcemap = api.SourceMap(opts.sourcemap)
+	if opts.source_root != nil {
+		buildOpts.SourceRoot = C.GoString(opts.source_root)
+	}
+	buildOpts.SourcesContent = api.SourcesContent(opts.sources_content)
+	
+	// Target and compatibility
+	buildOpts.Target = api.Target(opts.target)
+	buildOpts.Platform = api.Platform(opts.platform)
+	buildOpts.Format = api.Format(opts.format)
+	if opts.global_name != nil {
+		buildOpts.GlobalName = C.GoString(opts.global_name)
+	}
+	
+	// Build configuration
+	buildOpts.Bundle = opts.bundle != 0
+	buildOpts.PreserveSymlinks = opts.preserve_symlinks != 0
+	buildOpts.Splitting = opts.splitting != 0
+	if opts.outfile != nil {
+		buildOpts.Outfile = C.GoString(opts.outfile)
+	}
+	if opts.outdir != nil {
+		buildOpts.Outdir = C.GoString(opts.outdir)
+	}
+	if opts.outbase != nil {
+		buildOpts.Outbase = C.GoString(opts.outbase)
+	}
+	buildOpts.Metafile = opts.metafile != 0
+	buildOpts.Write = opts.write != 0
+	buildOpts.AllowOverwrite = opts.allow_overwrite != 0
+	
+	// Entry points
+	if opts.entry_points_count > 0 && opts.entry_points != nil {
+		entryPointsSlice := (*[1000]*C.char)(unsafe.Pointer(opts.entry_points))[:opts.entry_points_count:opts.entry_points_count]
+		for _, ep := range entryPointsSlice {
+			if ep != nil {
+				buildOpts.EntryPoints = append(buildOpts.EntryPoints, C.GoString(ep))
+			}
+		}
+	}
+	
+	// Stdin configuration
+	if opts.stdin != nil {
+		stdinOpts := &api.StdinOptions{
+			Contents:   C.GoString(opts.stdin.contents),
+			ResolveDir: C.GoString(opts.stdin.resolve_dir),
+			Sourcefile: C.GoString(opts.stdin.sourcefile),
+			Loader:     api.Loader(opts.stdin.loader),
+		}
+		buildOpts.Stdin = stdinOpts
+	}
+	
+	// Minification and Property Mangling
+	if opts.mangle_props != nil {
+		buildOpts.MangleProps = C.GoString(opts.mangle_props)
+	}
+	if opts.reserve_props != nil {
+		buildOpts.ReserveProps = C.GoString(opts.reserve_props)
+	}
+	buildOpts.MangleQuoted = api.MangleQuoted(opts.mangle_quoted)
+	
+	// Convert mangle cache
+	if opts.mangle_cache_count > 0 && opts.mangle_cache_keys != nil && opts.mangle_cache_values != nil {
+		buildOpts.MangleCache = make(map[string]interface{})
+		keysSlice := (*[1000]*C.char)(unsafe.Pointer(opts.mangle_cache_keys))[:opts.mangle_cache_count:opts.mangle_cache_count]
+		valuesSlice := (*[1000]*C.char)(unsafe.Pointer(opts.mangle_cache_values))[:opts.mangle_cache_count:opts.mangle_cache_count]
+		for i := 0; i < int(opts.mangle_cache_count); i++ {
+			if keysSlice[i] != nil && valuesSlice[i] != nil {
+				key := C.GoString(keysSlice[i])
+				value := C.GoString(valuesSlice[i])
+				buildOpts.MangleCache[key] = value
+			}
+		}
+	}
+	
+	buildOpts.Drop = api.Drop(opts.drop)
+	
+	// Convert drop labels
+	if opts.drop_labels_count > 0 && opts.drop_labels != nil {
+		labelsSlice := (*[1000]*C.char)(unsafe.Pointer(opts.drop_labels))[:opts.drop_labels_count:opts.drop_labels_count]
+		for _, label := range labelsSlice {
+			if label != nil {
+				buildOpts.DropLabels = append(buildOpts.DropLabels, C.GoString(label))
+			}
+		}
+	}
+	
+	buildOpts.MinifyWhitespace = opts.minify_whitespace != 0
+	buildOpts.MinifyIdentifiers = opts.minify_identifiers != 0
+	buildOpts.MinifySyntax = opts.minify_syntax != 0
+	buildOpts.LineLimit = int(opts.line_limit)
+	buildOpts.Charset = api.Charset(opts.charset)
+	buildOpts.TreeShaking = api.TreeShaking(opts.tree_shaking)
+	buildOpts.IgnoreAnnotations = opts.ignore_annotations != 0
+	buildOpts.LegalComments = api.LegalComments(opts.legal_comments)
+	
+	// JSX Configuration
+	buildOpts.JSX = api.JSX(opts.jsx)
+	if opts.jsx_factory != nil {
+		buildOpts.JSXFactory = C.GoString(opts.jsx_factory)
+	}
+	if opts.jsx_fragment != nil {
+		buildOpts.JSXFragment = C.GoString(opts.jsx_fragment)
+	}
+	if opts.jsx_import_source != nil {
+		buildOpts.JSXImportSource = C.GoString(opts.jsx_import_source)
+	}
+	buildOpts.JSXDev = opts.jsx_dev != 0
+	buildOpts.JSXSideEffects = opts.jsx_side_effects != 0
+	
+	// TypeScript Configuration
+	if opts.tsconfig != nil {
+		buildOpts.Tsconfig = C.GoString(opts.tsconfig)
+	}
+	if opts.tsconfig_raw != nil {
+		buildOpts.TsconfigRaw = C.GoString(opts.tsconfig_raw)
+	}
+	
+	// Code Injection - Banner
+	if opts.banner_count > 0 && opts.banner_keys != nil && opts.banner_values != nil {
+		buildOpts.Banner = make(map[string]string)
+		keysSlice := (*[1000]*C.char)(unsafe.Pointer(opts.banner_keys))[:opts.banner_count:opts.banner_count]
+		valuesSlice := (*[1000]*C.char)(unsafe.Pointer(opts.banner_values))[:opts.banner_count:opts.banner_count]
+		for i := 0; i < int(opts.banner_count); i++ {
+			if keysSlice[i] != nil && valuesSlice[i] != nil {
+				key := C.GoString(keysSlice[i])
+				value := C.GoString(valuesSlice[i])
+				buildOpts.Banner[key] = value
+			}
+		}
+	}
+	
+	// Code Injection - Footer
+	if opts.footer_count > 0 && opts.footer_keys != nil && opts.footer_values != nil {
+		buildOpts.Footer = make(map[string]string)
+		keysSlice := (*[1000]*C.char)(unsafe.Pointer(opts.footer_keys))[:opts.footer_count:opts.footer_count]
+		valuesSlice := (*[1000]*C.char)(unsafe.Pointer(opts.footer_values))[:opts.footer_count:opts.footer_count]
+		for i := 0; i < int(opts.footer_count); i++ {
+			if keysSlice[i] != nil && valuesSlice[i] != nil {
+				key := C.GoString(keysSlice[i])
+				value := C.GoString(valuesSlice[i])
+				buildOpts.Footer[key] = value
+			}
+		}
+	}
+	
+	// Code Transformation - Define
+	if opts.define_count > 0 && opts.define_keys != nil && opts.define_values != nil {
+		buildOpts.Define = make(map[string]string)
+		keysSlice := (*[1000]*C.char)(unsafe.Pointer(opts.define_keys))[:opts.define_count:opts.define_count]
+		valuesSlice := (*[1000]*C.char)(unsafe.Pointer(opts.define_values))[:opts.define_count:opts.define_count]
+		for i := 0; i < int(opts.define_count); i++ {
+			if keysSlice[i] != nil && valuesSlice[i] != nil {
+				key := C.GoString(keysSlice[i])
+				value := C.GoString(valuesSlice[i])
+				buildOpts.Define[key] = value
+			}
+		}
+	}
+	
+	// Code Transformation - Pure
+	if opts.pure_count > 0 && opts.pure != nil {
+		pureSlice := (*[1000]*C.char)(unsafe.Pointer(opts.pure))[:opts.pure_count:opts.pure_count]
+		for _, pure := range pureSlice {
+			if pure != nil {
+				buildOpts.Pure = append(buildOpts.Pure, C.GoString(pure))
+			}
+		}
+	}
+	
+	buildOpts.KeepNames = opts.keep_names != 0
+	
+	// Additional Build Configuration
+	if opts.abs_working_dir != nil {
+		buildOpts.AbsWorkingDir = C.GoString(opts.abs_working_dir)
+	}
+	
+	// Module Resolution - External
+	if opts.external_count > 0 && opts.external != nil {
+		externalSlice := (*[1000]*C.char)(unsafe.Pointer(opts.external))[:opts.external_count:opts.external_count]
+		for _, ext := range externalSlice {
+			if ext != nil {
+				buildOpts.External = append(buildOpts.External, C.GoString(ext))
+			}
+		}
+	}
+	
+	buildOpts.Packages = api.Packages(opts.packages)
+	
+	// Module Resolution - Alias
+	if opts.alias_count > 0 && opts.alias_keys != nil && opts.alias_values != nil {
+		buildOpts.Alias = make(map[string]string)
+		keysSlice := (*[1000]*C.char)(unsafe.Pointer(opts.alias_keys))[:opts.alias_count:opts.alias_count]
+		valuesSlice := (*[1000]*C.char)(unsafe.Pointer(opts.alias_values))[:opts.alias_count:opts.alias_count]
+		for i := 0; i < int(opts.alias_count); i++ {
+			if keysSlice[i] != nil && valuesSlice[i] != nil {
+				key := C.GoString(keysSlice[i])
+				value := C.GoString(valuesSlice[i])
+				buildOpts.Alias[key] = value
+			}
+		}
+	}
+	
+	// Module Resolution - MainFields
+	if opts.main_fields_count > 0 && opts.main_fields != nil {
+		fieldsSlice := (*[1000]*C.char)(unsafe.Pointer(opts.main_fields))[:opts.main_fields_count:opts.main_fields_count]
+		for _, field := range fieldsSlice {
+			if field != nil {
+				buildOpts.MainFields = append(buildOpts.MainFields, C.GoString(field))
+			}
+		}
+	}
+	
+	// Module Resolution - Conditions
+	if opts.conditions_count > 0 && opts.conditions != nil {
+		conditionsSlice := (*[1000]*C.char)(unsafe.Pointer(opts.conditions))[:opts.conditions_count:opts.conditions_count]
+		for _, condition := range conditionsSlice {
+			if condition != nil {
+				buildOpts.Conditions = append(buildOpts.Conditions, C.GoString(condition))
+			}
+		}
+	}
+	
+	// Module Resolution - Loader (by extension)
+	if opts.loader_count > 0 && opts.loader_keys != nil && opts.loader_values != nil {
+		buildOpts.Loader = make(map[string]api.Loader)
+		keysSlice := (*[1000]*C.char)(unsafe.Pointer(opts.loader_keys))[:opts.loader_count:opts.loader_count]
+		valuesSlice := (*[1000]C.int)(unsafe.Pointer(opts.loader_values))[:opts.loader_count:opts.loader_count]
+		for i := 0; i < int(opts.loader_count); i++ {
+			if keysSlice[i] != nil {
+				key := C.GoString(keysSlice[i])
+				value := api.Loader(valuesSlice[i])
+				buildOpts.Loader[key] = value
+			}
+		}
+	}
+	
+	// Module Resolution - ResolveExtensions
+	if opts.resolve_extensions_count > 0 && opts.resolve_extensions != nil {
+		extensionsSlice := (*[1000]*C.char)(unsafe.Pointer(opts.resolve_extensions))[:opts.resolve_extensions_count:opts.resolve_extensions_count]
+		for _, ext := range extensionsSlice {
+			if ext != nil {
+				buildOpts.ResolveExtensions = append(buildOpts.ResolveExtensions, C.GoString(ext))
+			}
+		}
+	}
+	
+	// Module Resolution - OutExtension
+	if opts.out_extension_count > 0 && opts.out_extension_keys != nil && opts.out_extension_values != nil {
+		buildOpts.OutExtension = make(map[string]string)
+		keysSlice := (*[1000]*C.char)(unsafe.Pointer(opts.out_extension_keys))[:opts.out_extension_count:opts.out_extension_count]
+		valuesSlice := (*[1000]*C.char)(unsafe.Pointer(opts.out_extension_values))[:opts.out_extension_count:opts.out_extension_count]
+		for i := 0; i < int(opts.out_extension_count); i++ {
+			if keysSlice[i] != nil && valuesSlice[i] != nil {
+				key := C.GoString(keysSlice[i])
+				value := C.GoString(valuesSlice[i])
+				buildOpts.OutExtension[key] = value
+			}
+		}
+	}
+	
+	// Module Resolution - PublicPath
+	if opts.public_path != nil {
+		buildOpts.PublicPath = C.GoString(opts.public_path)
+	}
+	
+	// Module Resolution - Inject
+	if opts.inject_count > 0 && opts.inject != nil {
+		injectSlice := (*[1000]*C.char)(unsafe.Pointer(opts.inject))[:opts.inject_count:opts.inject_count]
+		for _, inject := range injectSlice {
+			if inject != nil {
+				buildOpts.Inject = append(buildOpts.Inject, C.GoString(inject))
+			}
+		}
+	}
+	
+	// Module Resolution - NodePaths
+	if opts.node_paths_count > 0 && opts.node_paths != nil {
+		pathsSlice := (*[1000]*C.char)(unsafe.Pointer(opts.node_paths))[:opts.node_paths_count:opts.node_paths_count]
+		for _, path := range pathsSlice {
+			if path != nil {
+				buildOpts.NodePaths = append(buildOpts.NodePaths, C.GoString(path))
+			}
+		}
+	}
+	
+	// Naming Templates
+	if opts.entry_names != nil {
+		buildOpts.EntryNames = C.GoString(opts.entry_names)
+	}
+	if opts.chunk_names != nil {
+		buildOpts.ChunkNames = C.GoString(opts.chunk_names)
+	}
+	if opts.asset_names != nil {
+		buildOpts.AssetNames = C.GoString(opts.asset_names)
+	}
+	
+	// Advanced Entry Points
+	if opts.entry_points_advanced_count > 0 && opts.entry_points_advanced != nil {
+		entryPointsSlice := (*[1000]C.esbuild_entry_point)(unsafe.Pointer(opts.entry_points_advanced))[:opts.entry_points_advanced_count:opts.entry_points_advanced_count]
+		for _, ep := range entryPointsSlice {
+			advancedEP := api.EntryPoint{
+				InputPath:  C.GoString(ep.input_path),
+				OutputPath: C.GoString(ep.output_path),
+			}
+			buildOpts.EntryPointsAdvanced = append(buildOpts.EntryPointsAdvanced, advancedEP)
+		}
+	}
+	
+	// Log Override
+	if opts.log_override_count > 0 && opts.log_override_keys != nil && opts.log_override_values != nil {
+		buildOpts.LogOverride = make(map[string]api.LogLevel)
+		keysSlice := (*[1000]*C.char)(unsafe.Pointer(opts.log_override_keys))[:opts.log_override_count:opts.log_override_count]
+		valuesSlice := (*[1000]C.int)(unsafe.Pointer(opts.log_override_values))[:opts.log_override_count:opts.log_override_count]
+		for i := 0; i < int(opts.log_override_count); i++ {
+			if keysSlice[i] != nil {
+				key := C.GoString(keysSlice[i])
+				value := api.LogLevel(valuesSlice[i])
+				buildOpts.LogOverride[key] = value
+			}
+		}
+	}
+	
+	// Engine/Compatibility - Engines
+	if opts.engines_count > 0 && opts.engine_names != nil && opts.engine_versions != nil {
+		engineNamesSlice := (*[1000]C.int)(unsafe.Pointer(opts.engine_names))[:opts.engines_count:opts.engines_count]
+		engineVersionsSlice := (*[1000]*C.char)(unsafe.Pointer(opts.engine_versions))[:opts.engines_count:opts.engines_count]
+		for i := 0; i < int(opts.engines_count); i++ {
+			if engineVersionsSlice[i] != nil {
+				engine := api.Engine{
+					Name:    api.EngineName(engineNamesSlice[i]),
+					Version: C.GoString(engineVersionsSlice[i]),
+				}
+				buildOpts.Engines = append(buildOpts.Engines, engine)
+			}
+		}
+	}
+	
+	// Engine/Compatibility - Supported
+	if opts.supported_count > 0 && opts.supported_keys != nil && opts.supported_values != nil {
+		buildOpts.Supported = make(map[string]bool)
+		keysSlice := (*[1000]*C.char)(unsafe.Pointer(opts.supported_keys))[:opts.supported_count:opts.supported_count]
+		valuesSlice := (*[1000]C.int)(unsafe.Pointer(opts.supported_values))[:opts.supported_count:opts.supported_count]
+		for i := 0; i < int(opts.supported_count); i++ {
+			if keysSlice[i] != nil {
+				key := C.GoString(keysSlice[i])
+				value := valuesSlice[i] != 0
+				buildOpts.Supported[key] = value
+			}
+		}
+	}
+	
+	// Perform the build
+	result := api.Build(buildOpts)
+	
+	// Convert result to C structure
+	cResult := esbuild_create_build_result()
+	
+	// Convert errors
+	if len(result.Errors) > 0 {
+		cResult.errors_count = C.int(len(result.Errors))
+		cResult.errors = (*C.c_message)(C.malloc(C.size_t(uintptr(len(result.Errors)) * unsafe.Sizeof(C.c_message{}))))
+		errorsSlice := (*[1000]C.c_message)(unsafe.Pointer(cResult.errors))[:len(result.Errors):len(result.Errors)]
+		
+		for i, err := range result.Errors {
+			errorsSlice[i].id = C.CString(err.ID)
+			errorsSlice[i].plugin_name = C.CString(err.PluginName)
+			errorsSlice[i].text = C.CString(err.Text)
+			errorsSlice[i].location = nil
+			errorsSlice[i].notes = nil
+			errorsSlice[i].notes_count = 0
+			
+			if err.Location != nil {
+				loc := esbuild_create_location()
+				loc.file = C.CString(err.Location.File)
+				loc.namespace = C.CString(err.Location.Namespace)
+				loc.line = C.int(err.Location.Line)
+				loc.column = C.int(err.Location.Column)
+				loc.length = C.int(err.Location.Length)
+				loc.line_text = C.CString(err.Location.LineText)
+				loc.suggestion = C.CString(err.Location.Suggestion)
+				errorsSlice[i].location = loc
+			}
+		}
+	} else {
+		cResult.errors = nil
+		cResult.errors_count = 0
+	}
+	
+	// Convert warnings (similar to errors)
+	if len(result.Warnings) > 0 {
+		cResult.warnings_count = C.int(len(result.Warnings))
+		cResult.warnings = (*C.c_message)(C.malloc(C.size_t(uintptr(len(result.Warnings)) * unsafe.Sizeof(C.c_message{}))))
+		warningsSlice := (*[1000]C.c_message)(unsafe.Pointer(cResult.warnings))[:len(result.Warnings):len(result.Warnings)]
+		
+		for i, warn := range result.Warnings {
+			warningsSlice[i].id = C.CString(warn.ID)
+			warningsSlice[i].plugin_name = C.CString(warn.PluginName)
+			warningsSlice[i].text = C.CString(warn.Text)
+			warningsSlice[i].location = nil
+			warningsSlice[i].notes = nil
+			warningsSlice[i].notes_count = 0
+			
+			if warn.Location != nil {
+				loc := esbuild_create_location()
+				loc.file = C.CString(warn.Location.File)
+				loc.namespace = C.CString(warn.Location.Namespace)
+				loc.line = C.int(warn.Location.Line)
+				loc.column = C.int(warn.Location.Column)
+				loc.length = C.int(warn.Location.Length)
+				loc.line_text = C.CString(warn.Location.LineText)
+				loc.suggestion = C.CString(warn.Location.Suggestion)
+				warningsSlice[i].location = loc
+			}
+		}
+	} else {
+		cResult.warnings = nil
+		cResult.warnings_count = 0
+	}
+	
+	// Convert output files
+	if len(result.OutputFiles) > 0 {
+		cResult.output_files_count = C.int(len(result.OutputFiles))
+		cResult.output_files = (*C.esbuild_output_file)(C.malloc(C.size_t(uintptr(len(result.OutputFiles)) * unsafe.Sizeof(C.esbuild_output_file{}))))
+		filesSlice := (*[1000]C.esbuild_output_file)(unsafe.Pointer(cResult.output_files))[:len(result.OutputFiles):len(result.OutputFiles)]
+		
+		for i, file := range result.OutputFiles {
+			filesSlice[i].path = C.CString(file.Path)
+			filesSlice[i].contents = C.CString(string(file.Contents))
+			filesSlice[i].contents_length = C.int(len(file.Contents))
+			filesSlice[i].hash = C.CString(file.Hash)
+		}
+	} else {
+		cResult.output_files = nil
+		cResult.output_files_count = 0
+	}
+	
+	// Convert metafile
+	if result.Metafile != "" {
+		cResult.metafile = C.CString(result.Metafile)
+	} else {
+		cResult.metafile = nil
+	}
+	
+	// Convert mangle cache (simplified)
+	cResult.mangle_cache_keys = nil
+	cResult.mangle_cache_values = nil
+	cResult.mangle_cache_count = 0
 	
 	return cResult
 }

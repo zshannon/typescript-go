@@ -186,6 +186,163 @@ typedef struct {
 	int mangle_cache_count;      // count of mangle cache entries
 } c_transform_result;
 
+typedef struct {
+	char* input_path;
+	char* output_path;
+} esbuild_entry_point;
+
+typedef struct {
+	char* contents;
+	char* resolve_dir;
+	char* sourcefile;
+	int loader;
+} esbuild_stdin_options;
+
+typedef struct {
+	char* path;
+	char* contents;
+	int contents_length;
+	char* hash;
+} esbuild_output_file;
+
+typedef struct {
+	// Logging and Output Control
+	int color;                    // StderrColor enum
+	int log_level;               // LogLevel enum  
+	int log_limit;               // int
+	char** log_override_keys;    // keys for map[string]LogLevel
+	int* log_override_values;    // values for map[string]LogLevel
+	int log_override_count;      // count of log override entries
+
+	// Source Map
+	int sourcemap;               // SourceMap enum
+	char* source_root;           // string
+	int sources_content;         // SourcesContent enum
+
+	// Target and Compatibility  
+	int target;                  // Target enum
+	int* engine_names;           // EngineName enum array
+	char** engine_versions;      // string array for engine versions
+	int engines_count;           // count of engines
+	char** supported_keys;       // keys for map[string]bool
+	int* supported_values;       // values for map[string]bool (0/1)
+	int supported_count;         // count of supported entries
+
+	// Platform and Format
+	int platform;                // Platform enum
+	int format;                  // Format enum
+	char* global_name;           // string
+
+	// Minification and Property Mangling
+	char* mangle_props;          // string (regex)
+	char* reserve_props;         // string (regex)
+	int mangle_quoted;           // MangleQuoted enum
+	char** mangle_cache_keys;    // keys for map[string]interface{}
+	char** mangle_cache_values;  // values as JSON strings
+	int mangle_cache_count;      // count of mangle cache entries
+	int drop;                    // Drop enum (bitfield)
+	char** drop_labels;          // string array
+	int drop_labels_count;       // count of drop labels
+	int minify_whitespace;       // bool (0/1)
+	int minify_identifiers;      // bool (0/1)
+	int minify_syntax;           // bool (0/1)
+	int line_limit;              // int
+	int charset;                 // Charset enum
+	int tree_shaking;            // TreeShaking enum
+	int ignore_annotations;      // bool (0/1)
+	int legal_comments;          // LegalComments enum
+
+	// JSX Configuration
+	int jsx;                     // JSX enum
+	char* jsx_factory;           // string
+	char* jsx_fragment;          // string
+	char* jsx_import_source;     // string
+	int jsx_dev;                 // bool (0/1)
+	int jsx_side_effects;        // bool (0/1)
+
+	// TypeScript Configuration
+	char* tsconfig;              // string (file path)
+	char* tsconfig_raw;          // string (JSON)
+
+	// Code Injection
+	char** banner_keys;          // keys for map[string]string (file types)
+	char** banner_values;        // values for map[string]string
+	int banner_count;            // count of banner entries
+	char** footer_keys;          // keys for map[string]string (file types)
+	char** footer_values;        // values for map[string]string
+	int footer_count;            // count of footer entries
+
+	// Code Transformation
+	char** define_keys;          // keys for map[string]string
+	char** define_values;        // values for map[string]string
+	int define_count;            // count of define entries
+	char** pure;                 // string array
+	int pure_count;              // count of pure functions
+	int keep_names;              // bool (0/1)
+
+	// Build Configuration
+	int bundle;                  // bool (0/1)
+	int preserve_symlinks;       // bool (0/1)
+	int splitting;               // bool (0/1)
+	char* outfile;               // string
+	char* outdir;                // string
+	char* outbase;               // string
+	char* abs_working_dir;       // string
+	int metafile;                // bool (0/1)
+	int write;                   // bool (0/1)
+	int allow_overwrite;         // bool (0/1)
+
+	// Module Resolution
+	char** external;             // string array
+	int external_count;          // count of external entries
+	int packages;                // Packages enum
+	char** alias_keys;           // keys for map[string]string
+	char** alias_values;         // values for map[string]string
+	int alias_count;             // count of alias entries
+	char** main_fields;          // string array
+	int main_fields_count;       // count of main fields
+	char** conditions;           // string array
+	int conditions_count;        // count of conditions
+	char** loader_keys;          // keys for map[string]Loader (file extensions)
+	int* loader_values;          // values for map[string]Loader
+	int loader_count;            // count of loader entries
+	char** resolve_extensions;   // string array
+	int resolve_extensions_count; // count of resolve extensions
+	char** out_extension_keys;   // keys for map[string]string
+	char** out_extension_values; // values for map[string]string
+	int out_extension_count;     // count of out extension entries
+	char* public_path;           // string
+	char** inject;               // string array
+	int inject_count;            // count of inject entries
+	char** node_paths;           // string array
+	int node_paths_count;        // count of node paths
+
+	// Naming Templates
+	char* entry_names;           // string
+	char* chunk_names;           // string
+	char* asset_names;           // string
+
+	// Input Configuration
+	char** entry_points;         // string array (simple entry points)
+	int entry_points_count;      // count of entry points
+	esbuild_entry_point* entry_points_advanced; // advanced entry points
+	int entry_points_advanced_count;      // count of advanced entry points
+	esbuild_stdin_options* stdin;      // stdin options (optional)
+} esbuild_build_options;
+
+typedef struct {
+	c_message* errors;           // array of error messages
+	int errors_count;            // count of errors
+	c_message* warnings;         // array of warning messages
+	int warnings_count;          // count of warnings
+	esbuild_output_file* output_files; // array of output files
+	int output_files_count;      // count of output files
+	char* metafile;              // metafile JSON as string
+	char** mangle_cache_keys;    // keys for mangle cache
+	char** mangle_cache_values;  // values for mangle cache
+	int mangle_cache_count;      // count of mangle cache entries
+} esbuild_build_result;
+
 #line 1 "cgo-generated-wrapper"
 
 
@@ -427,6 +584,17 @@ extern void esbuild_free_note(c_note* note);
 extern void esbuild_free_message(c_message* msg);
 extern void esbuild_free_transform_result(c_transform_result* result);
 extern c_transform_result* esbuild_transform(char* code, c_transform_options* opts);
+extern esbuild_entry_point* esbuild_create_entry_point();
+extern esbuild_stdin_options* esbuild_create_stdin_options();
+extern esbuild_output_file* esbuild_create_output_file();
+extern esbuild_build_options* esbuild_create_build_options();
+extern esbuild_build_result* esbuild_create_build_result();
+extern void esbuild_free_entry_point(esbuild_entry_point* ep);
+extern void esbuild_free_stdin_options(esbuild_stdin_options* stdin);
+extern void esbuild_free_output_file(esbuild_output_file* file);
+extern void esbuild_free_build_options(esbuild_build_options* opts);
+extern void esbuild_free_build_result(esbuild_build_result* result);
+extern esbuild_build_result* esbuild_build(esbuild_build_options* opts);
 
 #ifdef __cplusplus
 }

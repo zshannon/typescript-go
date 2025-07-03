@@ -123,7 +123,7 @@ public enum ESBuildTarget: Int32, CaseIterable {
 // MARK: - Loader Enum
 
 /// ESBuild file loader options
-public enum ESBuildLoader: Int32, CaseIterable {
+public enum ESBuildLoader: Int32, CaseIterable, Sendable {
     case none, base64, binary, copy, css, dataurl, `default`, empty, file, globalcss, js, json, jsx, localcss, text, ts,
          tsx
 
