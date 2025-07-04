@@ -1029,7 +1029,6 @@ public func esbuildBuild(
         // Handle all file loading
         build.onLoad(filter: ".*", namespace: namespace) { args in
             do {
-                print("resolver.onLoad", args.path)
                 if let fileResolver = try await resolver(args.path) {
                     if case let .file(content) = fileResolver {
                         return ESBuildOnLoadResult(
