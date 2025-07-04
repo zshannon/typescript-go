@@ -51,7 +51,7 @@ public func build(
             return .directory(["src"])
         }
         if path == "/project/src" {
-            return .directory(sourceFiles.map { $0.name })
+            return .directory(sourceFiles.map(\.name))
         }
         if let source = sourceFiles.first(where: { ("/project/src/" + $0.name) == path }) {
             return .file(source.content)
@@ -73,14 +73,14 @@ public func build(
 
     // Create a wrapper resolver that handles tsconfig.json generation and delegation
     let wrapperResolver: @Sendable (String) async throws -> FileResolver? = { path in
-        
+
         // 1) Exact match for tsconfig.json - try resolver first, then fallback to config param
         if path == "/project/tsconfig.json" {
             // First try the provided resolver
             if let resolverResult = try await resolver(path) {
                 return resolverResult
             }
-            
+
             // Fallback: generate from config param
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -88,24 +88,24 @@ public func build(
             let configString = String(data: configData, encoding: .utf8) ?? "{}"
             return .file(configString)
         }
-        
+
         // 2) Root directory - call resolver and ensure tsconfig.json is included
         if path == "/project" {
             var files: [String] = []
-            
+
             if let resolved = try await resolver(path) {
-                if case .directory(let upstreamFiles) = resolved {
+                if case let .directory(upstreamFiles) = resolved {
                     files = upstreamFiles
                 }
             }
-            
+
             if !files.contains("tsconfig.json") {
                 files.append("tsconfig.json")
             }
-            
+
             return .directory(files)
         }
-        
+
         // 3) Everything else - delegate to the resolver param
         return try await resolver(path)
     }
@@ -117,7 +117,7 @@ public func build(
         configFile: "",
         resolver: wrapperResolver
     )
-    
+
     guard let cResult else {
         return InMemoryBuildResult(
             success: false,
@@ -130,6 +130,6 @@ public func build(
             ]
         )
     }
-    
+
     return processResult(cResult)
 }
