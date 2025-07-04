@@ -26,7 +26,7 @@ private func buildWithSimpleResolver(
                     }
                     return nil
                 }
-            
+
             // Find all subdirectories that are children of this directory
             let childDirs = directories
                 .filter { $0.hasPrefix(path + "/") }
@@ -38,7 +38,7 @@ private func buildWithSimpleResolver(
                     }
                     return nil
                 }
-            
+
             let allChildren = childFiles + childDirs
             return .directory(allChildren)
         }
@@ -80,7 +80,7 @@ struct BuildInMemoryTests {
         compilerOptions.module = .commonjs
         compilerOptions.noEmit = true
         compilerOptions.strict = true
-        
+
         let config = TSConfig(compilerOptions: compilerOptions, include: ["src/**/*"])
         let result = try await build(config: config, sources)
 

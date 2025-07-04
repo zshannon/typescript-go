@@ -601,7 +601,7 @@ public struct ESBuildBuildOptions {
 
         // Plugins configuration
         if !plugins.isEmpty {
-            print("Build has \(plugins.count) plugins configured")
+            // print("Build has \(plugins.count) plugins configured")
 
             // Create C plugins array
             options.pointee.plugins_count = Int32(plugins.count)
@@ -1004,31 +1004,34 @@ public func esbuildBuild(
     options: ESBuildBuildOptions = ESBuildBuildOptions(),
     resolver: @escaping @Sendable (String) async throws -> FileResolver?
 ) async throws -> ESBuildBuildResult? {
-    
     // Create a resolver plugin that uses the provided callback
     let resolverPlugin = ESBuildPlugin(name: "dynamic-resolver") { build in
-        
+        let namespace = "swifttsgo"
+
         // Handle all file resolution
         build.onResolve(filter: ".*", namespace: nil) { args in
             do {
                 // Try to resolve the import path
                 let resolvedPath = try await resolveImportPath(args.path, from: args.importer, resolver: resolver)
                 if let path = resolvedPath {
-                    return ESBuildOnResolveResult(path: path)
+                    return ESBuildOnResolveResult(namespace: namespace, path: path)
                 }
             } catch {
                 return ESBuildOnResolveResult(
-                    errors: [ESBuildPluginMessage(text: "Failed to resolve '\(args.path)': \(error.localizedDescription)")]
+                    errors: [
+                        ESBuildPluginMessage(text: "Failed to resolve '\(args.path)': \(error.localizedDescription)"),
+                    ]
                 )
             }
             return nil
         }
-        
+
         // Handle all file loading
-        build.onLoad(filter: ".*", namespace: nil) { args in
+        build.onLoad(filter: ".*", namespace: namespace) { args in
             do {
+                print("resolver.onLoad", args.path)
                 if let fileResolver = try await resolver(args.path) {
-                    if case .file(let content) = fileResolver {
+                    if case let .file(content) = fileResolver {
                         return ESBuildOnLoadResult(
                             contents: content,
                             loader: detectLoader(for: args.path)
@@ -1043,11 +1046,11 @@ public func esbuildBuild(
             return nil
         }
     }
-    
+
     // Add the resolver plugin to the build options
     var buildOptions = options
     buildOptions.plugins = buildOptions.plugins + [resolverPlugin]
-    
+
     return esbuildBuild(options: buildOptions)
 }
 
@@ -1057,23 +1060,22 @@ private func resolveImportPath(
     from importer: String?,
     resolver: @Sendable (String) async throws -> FileResolver?
 ) async throws -> String? {
-    
     // Handle absolute paths
     if importPath.hasPrefix("/") {
         return try await resolver(importPath) != nil ? importPath : nil
     }
-    
+
     // Handle relative paths
     if importPath.hasPrefix("./") || importPath.hasPrefix("../") {
-        guard let importer = importer else { return nil }
-        
+        guard let importer else { return nil }
+
         let importerDir = (importer as NSString).deletingLastPathComponent
         let resolvedPath = (importerDir as NSString).appendingPathComponent(importPath)
         let normalizedPath = (resolvedPath as NSString).standardizingPath
-        
+
         return try await resolver(normalizedPath) != nil ? normalizedPath : nil
     }
-    
+
     // Handle node_modules style imports (simplified)
     // For now, just check if the path exists as-is
     return try await resolver(importPath) != nil ? importPath : nil
@@ -1082,7 +1084,7 @@ private func resolveImportPath(
 /// Detect the appropriate loader based on file extension
 private func detectLoader(for path: String) -> ESBuildLoader {
     let ext = (path as NSString).pathExtension.lowercased()
-    
+
     switch ext {
     case "js": return .js
     case "jsx": return .jsx
@@ -1091,7 +1093,7 @@ private func detectLoader(for path: String) -> ESBuildLoader {
     case "json": return .json
     case "css": return .css
     case "txt": return .text
-    default: return .js  // Default to JS
+    default: return .js // Default to JS
     }
 }
 
@@ -1104,12 +1106,11 @@ public func esbuildBuild(
     files: [String: String],
     options: ESBuildBuildOptions = ESBuildBuildOptions()
 ) async throws -> ESBuildBuildResult? {
-    
     try await esbuildBuild(options: options) { path in
         if let content = files[path] {
             return .file(content)
         }
-        
+
         // Check if it's a directory by looking for child files
         let childFiles = files.keys
             .filter { $0.hasPrefix(path + "/") }
@@ -1121,11 +1122,11 @@ public func esbuildBuild(
                 }
                 return nil
             }
-        
+
         if !childFiles.isEmpty {
             return .directory(childFiles)
         }
-        
+
         return nil
     }
 }
