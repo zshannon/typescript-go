@@ -30,13 +30,23 @@ build-bridge:
 	@cd $(BRIDGE_DIR) && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -buildmode=c-archive -o libtsc_darwin_amd64.a .
 	@echo "$(YELLOW)Building for macOS arm64...$(NC)"
 	@cd $(BRIDGE_DIR) && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -buildmode=c-archive -o libtsc_darwin_arm64.a .
-	@echo "$(YELLOW)Creating universal binary...$(NC)"
-	@cd $(BRIDGE_DIR) && lipo -create libtsc_darwin_amd64.a libtsc_darwin_arm64.a -output libtsc_universal.a
+	@echo "$(YELLOW)Creating macOS universal binary...$(NC)"
+	@cd $(BRIDGE_DIR) && lipo -create libtsc_darwin_amd64.a libtsc_darwin_arm64.a -output libtsc_macos_universal.a
+	@echo "$(YELLOW)Building for iOS arm64 (device)...$(NC)"
+	@cd $(BRIDGE_DIR) && CGO_ENABLED=1 GOOS=ios GOARCH=arm64 CC=$(shell xcrun --sdk iphoneos -f clang) CXX=$(shell xcrun --sdk iphoneos -f clang++) CGO_CFLAGS="-isysroot $(shell xcrun --sdk iphoneos --show-sdk-path) -arch arm64 -miphoneos-version-min=13.0" CGO_LDFLAGS="-isysroot $(shell xcrun --sdk iphoneos --show-sdk-path) -arch arm64" go build -buildmode=c-archive -o libtsc_ios_arm64.a .
+	@echo "$(YELLOW)Building for iOS Simulator x86_64...$(NC)"
+	@cd $(BRIDGE_DIR) && CGO_ENABLED=1 GOOS=ios GOARCH=amd64 CC=$(shell xcrun --sdk iphonesimulator -f clang) CXX=$(shell xcrun --sdk iphonesimulator -f clang++) CGO_CFLAGS="-isysroot $(shell xcrun --sdk iphonesimulator --show-sdk-path) -arch x86_64 -mios-simulator-version-min=13.0" CGO_LDFLAGS="-isysroot $(shell xcrun --sdk iphonesimulator --show-sdk-path) -arch x86_64" go build -buildmode=c-archive -o libtsc_ios_sim_amd64.a .
+	@echo "$(YELLOW)Building for iOS Simulator arm64...$(NC)"
+	@cd $(BRIDGE_DIR) && CGO_ENABLED=1 GOOS=ios GOARCH=arm64 CC=$(shell xcrun --sdk iphonesimulator -f clang) CXX=$(shell xcrun --sdk iphonesimulator -f clang++) CGO_CFLAGS="-isysroot $(shell xcrun --sdk iphonesimulator --show-sdk-path) -arch arm64 -mios-simulator-version-min=13.0 -target arm64-apple-ios13.0-simulator" CGO_LDFLAGS="-isysroot $(shell xcrun --sdk iphonesimulator --show-sdk-path) -arch arm64" go build -buildmode=c-archive -o libtsc_ios_sim_arm64.a .
+	@echo "$(YELLOW)Creating iOS Simulator universal binary...$(NC)"
+	@cd $(BRIDGE_DIR) && lipo -create libtsc_ios_sim_amd64.a libtsc_ios_sim_arm64.a -output libtsc_ios_sim_universal.a
 	@echo "$(YELLOW)Creating XCFramework...$(NC)"
 	@cd $(BRIDGE_DIR) && rm -rf TSCBridge.xcframework
 	@cd $(BRIDGE_DIR) && mkdir -p headers && cp libtsc_darwin_amd64.h headers/tsc_bridge.h
 	@cd $(BRIDGE_DIR) && xcodebuild -create-xcframework \
-		-library libtsc_universal.a -headers headers \
+		-library libtsc_macos_universal.a -headers headers \
+		-library libtsc_ios_arm64.a -headers headers \
+		-library libtsc_ios_sim_universal.a -headers headers \
 		-output TSCBridge.xcframework
 	@echo "$(YELLOW)Copying files to output directory...$(NC)"
 	@cp -r $(BRIDGE_DIR)/TSCBridge.xcframework $(OUTPUT_DIR)/

@@ -28,7 +28,8 @@
       "Bash(swift build)",
       "Bash(swiftc:*)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(go list:*)"
+      "Bash(go list:*)",
+      "Bash(cat:*)"
     ],
     "deny": []
   }
