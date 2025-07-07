@@ -30,6 +30,7 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(go list:*)",
       "Bash(cat:*)"
+      "Bash(codesign:*)"
     ],
     "deny": []
   }
