@@ -12,7 +12,7 @@ YELLOW = \033[1;33m
 BLUE = \033[0;34m
 NC = \033[0m # No Color
 
-.PHONY: all build build-bridge setup test clean clean-bridge help
+.PHONY: all build build-bridge sign-bridge setup test clean clean-bridge help
 
 # Default target
 all: build
@@ -57,10 +57,17 @@ build-bridge:
 	@cd $(BRIDGE_DIR) && rm -f libtsc_*.a *.h
 	@cd $(BRIDGE_DIR) && rm -rf TSCBridge.xcframework headers
 	@echo "$(GREEN)C Bridge build completed successfully!$(NC)"
+	@$(MAKE) sign-bridge
 	@$(MAKE) verify-bridge
 
 
 
+
+# Sign the XCFramework
+sign-bridge:
+	@echo "$(BLUE)Signing XCFramework...$(NC)"
+	@codesign --sign "9C96C2F5997CCF243699DB73D5A365C135BEE961" --timestamp --force $(OUTPUT_DIR)/TSCBridge.xcframework
+	@echo "$(GREEN)XCFramework signed successfully!$(NC)"
 
 # Verify bridge builds
 verify-bridge:
@@ -68,6 +75,8 @@ verify-bridge:
 	@if [ -d $(OUTPUT_DIR)/TSCBridge.xcframework ]; then \
 		echo "Checking TSCBridge.xcframework:"; \
 		find $(OUTPUT_DIR)/TSCBridge.xcframework -name "*.a" -exec file {} \; || true; \
+		echo "Verifying code signature:"; \
+		codesign --verify --verbose $(OUTPUT_DIR)/TSCBridge.xcframework || true; \
 		echo ""; \
 	fi
 
@@ -120,6 +129,7 @@ help:
 	@echo "$(BLUE)Main targets:$(NC)"
 	@echo "  build              Build C bridge XCFramework (default)"
 	@echo "  build-bridge       Build C bridge XCFramework"
+	@echo "  sign-bridge        Sign the XCFramework"
 	@echo ""
 	@echo "$(BLUE)Development:$(NC)"
 	@echo "  setup              Setup development environment"
