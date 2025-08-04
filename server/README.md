@@ -84,6 +84,14 @@ hyperfine --warmup 2 --runs 5 \
    -d "{\"code\": \"export const hello: number = \\\"hello!!!\\\"\"}"
 ```
 
+**Fly.io (deployed):**
+```bash
+hyperfine --warmup 3 --runs 10 \
+  'curl -X POST https://server-wild-sea-9370.fly.dev/compile \
+   -H "Content-Type: application/json" \
+   -d "{\"code\": \"export const hello: string = \\\"hello!!!\\\"\"}"
+```
+
 **Local development:**
 ```bash
 # Start server: go run server.go
@@ -104,6 +112,15 @@ Benchmark 1: curl -X POST https://restless-mountain-fa2gk4yu.dal0.kraft.host/com
   Range (min … max):   179.6 ms … 369.0 ms    5 runs
 ```
 
+**Fly.io:**
+```
+Benchmark 1: curl -X POST https://server-wild-sea-9370.fly.dev/compile \
+   -H "Content-Type: application/json" \
+   -d "{\"code\": \"export const hello: string = \\\"hello!!!\\\"\"}"
+  Time (mean ± σ):      64.4 ms ±   6.2 ms    [User: 7.8 ms, System: 4.1 ms]
+  Range (min … max):    57.4 ms …  78.7 ms    10 runs
+```
+
 **Local:**
 ```
 Benchmark 1: curl -X POST http://localhost:8080/compile \
@@ -115,9 +132,9 @@ Benchmark 1: curl -X POST http://localhost:8080/compile \
 
 ### Performance Summary
 
-- **Unikraft Cloud**: 218ms ± 84ms (including network latency to dal0)
 - **Local development**: 11.6ms ± 2.1ms (localhost, no network latency)
-- **Network overhead**: ~206ms (94% of total time for remote deployment)
+- **Fly.io**: 64.4ms ± 6.2ms (including network latency to sjc)
+- **Unikraft Cloud**: 218ms ± 84ms (including network latency to dal0)
 - **Boot time**: 37ms on Unikraft Cloud
 - **Memory usage**: 128 MiB
 - **Compilation**: Full TypeScript parsing, type checking, and JavaScript emission
