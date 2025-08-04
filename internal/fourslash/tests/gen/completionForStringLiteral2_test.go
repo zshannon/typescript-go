@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/lsp/lsproto"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
@@ -26,31 +27,49 @@ p["[|/*3*/|]"];`
 	f.VerifyCompletions(t, "1", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{&lsproto.CompletionItem{Label: "bar"}, &lsproto.CompletionItem{Label: "foo"}, &lsproto.CompletionItem{Label: "some other name"}},
+			Exact: []fourslash.CompletionsExpectedItem{
+				&lsproto.CompletionItem{
+					Label: "bar",
+				},
+				&lsproto.CompletionItem{
+					Label: "foo",
+				},
+				&lsproto.CompletionItem{
+					Label: "some other name",
+				},
+			},
 		},
 	})
 	f.VerifyCompletions(t, "2", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"bar", "foo", "some other name"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"bar",
+				"foo",
+				"some other name",
+			},
 		},
 	})
 	f.VerifyCompletions(t, "3", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{&lsproto.CompletionItem{Label: "a"}},
+			Exact: []fourslash.CompletionsExpectedItem{
+				&lsproto.CompletionItem{
+					Label: "a",
+				},
+			},
 		},
 	})
 }

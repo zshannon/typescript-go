@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/lsp/lsproto"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
@@ -37,10 +38,23 @@ import { } from "/**/";`
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{&lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFile), Label: "#component-blah"}, &lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFile), Label: "#component-index"}, &lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFolder), Label: "#component-subfolder"}},
+			Exact: []fourslash.CompletionsExpectedItem{
+				&lsproto.CompletionItem{
+					Label: "#component-blah",
+					Kind:  PtrTo(lsproto.CompletionItemKindFile),
+				},
+				&lsproto.CompletionItem{
+					Label: "#component-index",
+					Kind:  PtrTo(lsproto.CompletionItemKindFile),
+				},
+				&lsproto.CompletionItem{
+					Label: "#component-subfolder",
+					Kind:  PtrTo(lsproto.CompletionItemKindFolder),
+				},
+			},
 		},
 	})
 	f.Insert(t, "#component-subfolder/")
@@ -48,10 +62,15 @@ import { } from "/**/";`
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{&lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFile), Label: "one"}},
+			Exact: []fourslash.CompletionsExpectedItem{
+				&lsproto.CompletionItem{
+					Label: "one",
+					Kind:  PtrTo(lsproto.CompletionItemKindFile),
+				},
+			},
 		},
 	})
 }

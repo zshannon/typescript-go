@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/lsp/lsproto"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
@@ -36,11 +37,60 @@ f('[|login./**/|]')`
 	f.VerifyCompletions(t, "", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{&lsproto.CompletionItem{Label: "login.title"}, &lsproto.CompletionItem{Label: "login.description"}, &lsproto.CompletionItem{Label: "login.sendEmailAgree"}, &lsproto.CompletionItem{Label: "login.termsOfUse"}, &lsproto.CompletionItem{Label: "login.privacyPolicy"}, &lsproto.CompletionItem{Label: "login.sendEmailButton"}, &lsproto.CompletionItem{Label: "login.emailInputPlaceholder"}, &lsproto.CompletionItem{Label: "login.errorWrongEmailTitle"}, &lsproto.CompletionItem{Label: "login.errorWrongEmailDescription"}, &lsproto.CompletionItem{Label: "login.errorGeneralEmailTitle"}, &lsproto.CompletionItem{Label: "login.errorGeneralEmailDescription"}, &lsproto.CompletionItem{Label: "login.loginErrorTitle"}, &lsproto.CompletionItem{Label: "login.loginErrorDescription"}, &lsproto.CompletionItem{Label: "login.openEmailAppErrorTitle"}, &lsproto.CompletionItem{Label: "login.openEmailAppErrorDescription"}, &lsproto.CompletionItem{Label: "login.openEmailAppErrorConfirm"}},
+			Exact: []fourslash.CompletionsExpectedItem{
+				&lsproto.CompletionItem{
+					Label: "login.title",
+				},
+				&lsproto.CompletionItem{
+					Label: "login.description",
+				},
+				&lsproto.CompletionItem{
+					Label: "login.sendEmailAgree",
+				},
+				&lsproto.CompletionItem{
+					Label: "login.termsOfUse",
+				},
+				&lsproto.CompletionItem{
+					Label: "login.privacyPolicy",
+				},
+				&lsproto.CompletionItem{
+					Label: "login.sendEmailButton",
+				},
+				&lsproto.CompletionItem{
+					Label: "login.emailInputPlaceholder",
+				},
+				&lsproto.CompletionItem{
+					Label: "login.errorWrongEmailTitle",
+				},
+				&lsproto.CompletionItem{
+					Label: "login.errorWrongEmailDescription",
+				},
+				&lsproto.CompletionItem{
+					Label: "login.errorGeneralEmailTitle",
+				},
+				&lsproto.CompletionItem{
+					Label: "login.errorGeneralEmailDescription",
+				},
+				&lsproto.CompletionItem{
+					Label: "login.loginErrorTitle",
+				},
+				&lsproto.CompletionItem{
+					Label: "login.loginErrorDescription",
+				},
+				&lsproto.CompletionItem{
+					Label: "login.openEmailAppErrorTitle",
+				},
+				&lsproto.CompletionItem{
+					Label: "login.openEmailAppErrorDescription",
+				},
+				&lsproto.CompletionItem{
+					Label: "login.openEmailAppErrorConfirm",
+				},
+			},
 		},
 	})
 }

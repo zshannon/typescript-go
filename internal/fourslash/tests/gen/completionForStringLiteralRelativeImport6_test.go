@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
 
@@ -29,20 +30,26 @@ var foo3 = require("./dir//*require2*/
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"f1", "f2"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"f1",
+				"f2",
+			},
 		},
 	})
 	f.VerifyCompletions(t, []string{"import_as2", "import_equals2", "require2"}, &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"f1", "f2"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"f1",
+				"f2",
+			},
 		},
 	})
 }

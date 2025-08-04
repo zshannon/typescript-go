@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/ls"
 	"github.com/microsoft/typescript-go/internal/lsp/lsproto"
 	"github.com/microsoft/typescript-go/internal/testutil"
@@ -11,7 +12,7 @@ import (
 
 func TestCompletionListCladule(t *testing.T) {
 	t.Parallel()
-	t.Skip()
+
 	defer testutil.RecoverAndFail(t, "Panic on fourslash test")
 	const content = `class Foo {
     doStuff(): number { return 0; }
@@ -30,11 +31,24 @@ f/*c3*/;`
 	f.VerifyCompletions(t, nil, &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Includes: []fourslash.CompletionsExpectedItem{&lsproto.CompletionItem{SortText: ptrTo(string(ls.SortTextLocationPriority)), Label: "x"}, &lsproto.CompletionItem{SortText: ptrTo(string(ls.SortTextLocationPriority)), Label: "prototype"}, &lsproto.CompletionItem{SortText: ptrTo(string(ls.SortTextLocalDeclarationPriority)), Label: "staticMethod"}},
+			Includes: []fourslash.CompletionsExpectedItem{
+				&lsproto.CompletionItem{
+					Label:    "x",
+					SortText: PtrTo(string(ls.SortTextLocationPriority)),
+				},
+				&lsproto.CompletionItem{
+					Label:    "prototype",
+					SortText: PtrTo(string(ls.SortTextLocationPriority)),
+				},
+				&lsproto.CompletionItem{
+					Label:    "staticMethod",
+					SortText: PtrTo(string(ls.SortTextLocalDeclarationPriority)),
+				},
+			},
 		},
 	})
 	f.GoToMarker(t, "c2")
@@ -45,11 +59,13 @@ f/*c3*/;`
 	f.VerifyCompletions(t, nil, &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"doStuff"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"doStuff",
+			},
 		},
 	})
 }

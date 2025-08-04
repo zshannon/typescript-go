@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/lsp/lsproto"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
@@ -40,44 +41,67 @@ const divide = 1 //*divide*/`
 	f.VerifyCompletions(t, "tag", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Includes: []fourslash.CompletionsExpectedItem{"param"},
+			Includes: []fourslash.CompletionsExpectedItem{
+				"param",
+			},
 		},
 	})
 	f.VerifyCompletions(t, "comment", nil)
 	f.VerifyCompletions(t, "openQuote", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{&lsproto.CompletionItem{Label: "a"}, &lsproto.CompletionItem{Label: "b"}},
+			Exact: []fourslash.CompletionsExpectedItem{
+				&lsproto.CompletionItem{
+					Label: "a",
+				},
+				&lsproto.CompletionItem{
+					Label: "b",
+				},
+			},
 		},
 	})
 	f.VerifyCompletions(t, "closeQuote", nil)
 	f.VerifyCompletions(t, "openSingleQuote", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{&lsproto.CompletionItem{Label: "a"}, &lsproto.CompletionItem{Label: "b"}},
+			Exact: []fourslash.CompletionsExpectedItem{
+				&lsproto.CompletionItem{
+					Label: "a",
+				},
+				&lsproto.CompletionItem{
+					Label: "b",
+				},
+			},
 		},
 	})
 	f.VerifyCompletions(t, "closeSingleQuote", nil)
 	f.VerifyCompletions(t, "openTemplate", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{&lsproto.CompletionItem{Label: "a"}, &lsproto.CompletionItem{Label: "b"}},
+			Exact: []fourslash.CompletionsExpectedItem{
+				&lsproto.CompletionItem{
+					Label: "a",
+				},
+				&lsproto.CompletionItem{
+					Label: "b",
+				},
+			},
 		},
 	})
 	f.VerifyCompletions(t, "closeTemplate", nil)
@@ -86,32 +110,38 @@ const divide = 1 //*divide*/`
 	f.VerifyCompletions(t, "openTag", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Includes: []fourslash.CompletionsExpectedItem{"div"},
+			Includes: []fourslash.CompletionsExpectedItem{
+				"div",
+			},
 		},
 	})
 	f.VerifyCompletions(t, "lessThan", nil)
 	f.VerifyCompletions(t, "closeTag", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"div>"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"div>",
+			},
 		},
 	})
 	f.VerifyCompletions(t, "path", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"importMe"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"importMe",
+			},
 		},
 	})
 	f.VerifyCompletions(t, "divide", nil)

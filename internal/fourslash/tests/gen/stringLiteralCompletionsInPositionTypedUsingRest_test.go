@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
 
@@ -26,21 +27,28 @@ new Q<{ id: string; name: string }>().select("name", "/*ts3*/");`
 	f.VerifyCompletions(t, []string{"ts1", "ts2"}, &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"aaa", "bbb", "ccc"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"aaa",
+				"bbb",
+				"ccc",
+			},
 		},
 	})
 	f.VerifyCompletions(t, []string{"ts3"}, &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"name", "id"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"name",
+				"id",
+			},
 		},
 	})
 }

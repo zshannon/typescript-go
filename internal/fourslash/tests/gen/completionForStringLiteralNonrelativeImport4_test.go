@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
 
@@ -32,10 +33,14 @@ var foo7 = require("f/*require0*/
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"fake-module3", "fake-module2", "fake-module"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"fake-module3",
+				"fake-module2",
+				"fake-module",
+			},
 		},
 	})
 }

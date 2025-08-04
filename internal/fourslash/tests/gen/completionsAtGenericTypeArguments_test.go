@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
 
@@ -20,41 +21,53 @@ const f = foo</*3*/, /*4*/,`
 	f.VerifyCompletions(t, "1", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: completionGlobalTypesPlus([]fourslash.CompletionsExpectedItem{"Foo"}),
+			Exact: CompletionGlobalTypesPlus(
+				[]fourslash.CompletionsExpectedItem{
+					"Foo",
+				}),
 		},
 	})
 	f.VerifyCompletions(t, "2", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: completionGlobalTypesPlus([]fourslash.CompletionsExpectedItem{"Foo"}),
+			Exact: CompletionGlobalTypesPlus(
+				[]fourslash.CompletionsExpectedItem{
+					"Foo",
+				}),
 		},
 	})
 	f.VerifyCompletions(t, "3", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: completionGlobalTypesPlus([]fourslash.CompletionsExpectedItem{"Foo"}),
+			Exact: CompletionGlobalTypesPlus(
+				[]fourslash.CompletionsExpectedItem{
+					"Foo",
+				}),
 		},
 	})
 	f.VerifyCompletions(t, "4", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: completionGlobalTypesPlus([]fourslash.CompletionsExpectedItem{"Foo"}),
+			Exact: CompletionGlobalTypesPlus(
+				[]fourslash.CompletionsExpectedItem{
+					"Foo",
+				}),
 		},
 	})
 }

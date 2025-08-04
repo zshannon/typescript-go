@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/lsp/lsproto"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
@@ -28,20 +29,50 @@ type B = import(".//*2*/");
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{&lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFolder), Label: "package"}},
+			Exact: []fourslash.CompletionsExpectedItem{
+				&lsproto.CompletionItem{
+					Label: "package",
+					Kind:  PtrTo(lsproto.CompletionItemKindFolder),
+				},
+			},
 		},
 	})
 	f.VerifyCompletions(t, "2", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{&lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFile), Label: "lib"}, &lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFile), Label: "lib.decorators"}, &lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFile), Label: "lib.decorators.legacy"}, &lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFile), Label: "ns"}, &lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFile), Label: "user"}, &lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFolder), Label: "node_modules"}},
+			Exact: []fourslash.CompletionsExpectedItem{
+				&lsproto.CompletionItem{
+					Label: "lib",
+					Kind:  PtrTo(lsproto.CompletionItemKindFile),
+				},
+				&lsproto.CompletionItem{
+					Label: "lib.decorators",
+					Kind:  PtrTo(lsproto.CompletionItemKindFile),
+				},
+				&lsproto.CompletionItem{
+					Label: "lib.decorators.legacy",
+					Kind:  PtrTo(lsproto.CompletionItemKindFile),
+				},
+				&lsproto.CompletionItem{
+					Label: "ns",
+					Kind:  PtrTo(lsproto.CompletionItemKindFile),
+				},
+				&lsproto.CompletionItem{
+					Label: "user",
+					Kind:  PtrTo(lsproto.CompletionItemKindFile),
+				},
+				&lsproto.CompletionItem{
+					Label: "node_modules",
+					Kind:  PtrTo(lsproto.CompletionItemKindFolder),
+				},
+			},
 		},
 	})
 }

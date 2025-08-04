@@ -4,13 +4,14 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/lsp/lsproto"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
 
 func TestGetJavaScriptCompletions11(t *testing.T) {
 	t.Parallel()
-	t.Skip()
+
 	defer testutil.RecoverAndFail(t, "Panic on fourslash test")
 	const content = `// @allowNonTsExtensions: true
 // @Filename: Foo.js
@@ -21,11 +22,20 @@ v./**/`
 	f.VerifyCompletions(t, "", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Includes: []fourslash.CompletionsExpectedItem{&lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindMethod), Label: "toExponential"}, &lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindMethod), Label: "charCodeAt"}},
+			Includes: []fourslash.CompletionsExpectedItem{
+				&lsproto.CompletionItem{
+					Label: "toExponential",
+					Kind:  PtrTo(lsproto.CompletionItemKindMethod),
+				},
+				&lsproto.CompletionItem{
+					Label: "charCodeAt",
+					Kind:  PtrTo(lsproto.CompletionItemKindMethod),
+				},
+			},
 		},
 	})
 }

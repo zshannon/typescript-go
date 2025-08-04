@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/ls"
 	"github.com/microsoft/typescript-go/internal/lsp/lsproto"
 	"github.com/microsoft/typescript-go/internal/testutil"
@@ -11,7 +12,7 @@ import (
 
 func TestJsxAriaLikeCompletions(t *testing.T) {
 	t.Parallel()
-	t.Skip()
+
 	defer testutil.RecoverAndFail(t, "Panic on fourslash test")
 	const content = `//@Filename: file.tsx
 declare var React: any;
@@ -27,11 +28,18 @@ const a = <div {...{}} /*1*/></div>;`
 	f.VerifyCompletions(t, "1", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{&lsproto.CompletionItem{SortText: ptrTo(string(ls.SortTextOptionalMember)), Label: "aria-whatever?", InsertText: ptrTo("aria-whatever"), FilterText: ptrTo("aria-whatever")}},
+			Exact: []fourslash.CompletionsExpectedItem{
+				&lsproto.CompletionItem{
+					Label:      "aria-whatever?",
+					InsertText: PtrTo("aria-whatever"),
+					FilterText: PtrTo("aria-whatever"),
+					SortText:   PtrTo(string(ls.SortTextOptionalMember)),
+				},
+			},
 		},
 	})
 }

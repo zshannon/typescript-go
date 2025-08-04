@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
 
@@ -34,44 +35,61 @@ const obj = {
 	f.VerifyCompletions(t, []string{"1"}, &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Includes: []fourslash.CompletionsExpectedItem{"o"},
-			Excludes: []string{"obj"},
+			Includes: []fourslash.CompletionsExpectedItem{
+				"o",
+			},
+			Excludes: []string{
+				"obj",
+			},
 		},
 	})
 	f.VerifyCompletions(t, []string{"2"}, &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Includes: []fourslash.CompletionsExpectedItem{"o", "obj"},
-			Excludes: []string{"obj1"},
+			Includes: []fourslash.CompletionsExpectedItem{
+				"o",
+				"obj",
+			},
+			Excludes: []string{
+				"obj1",
+			},
 		},
 	})
 	f.VerifyCompletions(t, []string{"3"}, &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Includes: []fourslash.CompletionsExpectedItem{"o", "obj", "obj1"},
+			Includes: []fourslash.CompletionsExpectedItem{
+				"o",
+				"obj",
+				"obj1",
+			},
 		},
 	})
 	f.VerifyCompletions(t, []string{"4"}, &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Includes: []fourslash.CompletionsExpectedItem{"o"},
-			Excludes: []string{"obj"},
+			Includes: []fourslash.CompletionsExpectedItem{
+				"o",
+			},
+			Excludes: []string{
+				"obj",
+			},
 		},
 	})
 }

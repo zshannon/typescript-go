@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/lsp/lsproto"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
@@ -40,10 +41,35 @@ import { } from "/**/";`
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{&lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFile), Label: "#blah.js"}, &lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFile), Label: "#index.js"}, &lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFolder), Label: "#foo"}, &lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFolder), Label: "#subfolder"}, &lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFolder), Label: "#bar"}, &lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFile), Label: "#exact-match"}},
+			Exact: []fourslash.CompletionsExpectedItem{
+				&lsproto.CompletionItem{
+					Label: "#blah.js",
+					Kind:  PtrTo(lsproto.CompletionItemKindFile),
+				},
+				&lsproto.CompletionItem{
+					Label: "#index.js",
+					Kind:  PtrTo(lsproto.CompletionItemKindFile),
+				},
+				&lsproto.CompletionItem{
+					Label: "#foo",
+					Kind:  PtrTo(lsproto.CompletionItemKindFolder),
+				},
+				&lsproto.CompletionItem{
+					Label: "#subfolder",
+					Kind:  PtrTo(lsproto.CompletionItemKindFolder),
+				},
+				&lsproto.CompletionItem{
+					Label: "#bar",
+					Kind:  PtrTo(lsproto.CompletionItemKindFolder),
+				},
+				&lsproto.CompletionItem{
+					Label: "#exact-match",
+					Kind:  PtrTo(lsproto.CompletionItemKindFile),
+				},
+			},
 		},
 	})
 	f.Insert(t, "#foo/")
@@ -51,10 +77,27 @@ import { } from "/**/";`
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{&lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFile), Label: "blah.js"}, &lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFile), Label: "index.js"}, &lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFolder), Label: "foo"}, &lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFolder), Label: "subfolder"}},
+			Exact: []fourslash.CompletionsExpectedItem{
+				&lsproto.CompletionItem{
+					Label: "blah.js",
+					Kind:  PtrTo(lsproto.CompletionItemKindFile),
+				},
+				&lsproto.CompletionItem{
+					Label: "index.js",
+					Kind:  PtrTo(lsproto.CompletionItemKindFile),
+				},
+				&lsproto.CompletionItem{
+					Label: "foo",
+					Kind:  PtrTo(lsproto.CompletionItemKindFolder),
+				},
+				&lsproto.CompletionItem{
+					Label: "subfolder",
+					Kind:  PtrTo(lsproto.CompletionItemKindFolder),
+				},
+			},
 		},
 	})
 	f.Insert(t, "foo/")
@@ -62,10 +105,15 @@ import { } from "/**/";`
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{&lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindFile), Label: "onlyInFooFolder.js"}},
+			Exact: []fourslash.CompletionsExpectedItem{
+				&lsproto.CompletionItem{
+					Label: "onlyInFooFolder.js",
+					Kind:  PtrTo(lsproto.CompletionItemKindFile),
+				},
+			},
 		},
 	})
 }

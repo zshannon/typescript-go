@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
 
@@ -30,22 +31,30 @@ addListener("/*js*/");`
 	f.VerifyCompletions(t, []string{"ts", "tsx", "js"}, &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"", "drag", "dragenter"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"",
+				"drag",
+				"dragenter",
+			},
 		},
 	})
 	f.Insert(t, "drag")
 	f.VerifyCompletions(t, []string{"ts", "tsx", "js"}, &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"", "drag", "dragenter"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"",
+				"drag",
+				"dragenter",
+			},
 		},
 	})
 }

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
 
@@ -21,11 +22,22 @@ function foo(x: string, y: number, z: boolean) {
 	f.VerifyCompletions(t, "1", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Includes: []fourslash.CompletionsExpectedItem{"foo", "x", "y", "z", "bar", "a", "b", "c", "v", "p"},
+			Includes: []fourslash.CompletionsExpectedItem{
+				"foo",
+				"x",
+				"y",
+				"z",
+				"bar",
+				"a",
+				"b",
+				"c",
+				"v",
+				"p",
+			},
 		},
 	})
 }

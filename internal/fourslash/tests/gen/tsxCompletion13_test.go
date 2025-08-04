@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/ls"
 	"github.com/microsoft/typescript-go/internal/lsp/lsproto"
 	"github.com/microsoft/typescript-go/internal/testutil"
@@ -45,31 +46,73 @@ func TestTsxCompletion13(t *testing.T) {
 	f.VerifyCompletions(t, []string{"1", "6"}, &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"goTo", "onClick", &lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindField), SortText: ptrTo(string(ls.SortTextOptionalMember)), Label: "children?", InsertText: ptrTo("children"), FilterText: ptrTo("children")}, &lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindField), SortText: ptrTo(string(ls.SortTextOptionalMember)), Label: "className?", InsertText: ptrTo("className"), FilterText: ptrTo("className")}},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"goTo",
+				"onClick",
+				&lsproto.CompletionItem{
+					Label:      "children?",
+					InsertText: PtrTo("children"),
+					FilterText: PtrTo("children"),
+					Kind:       PtrTo(lsproto.CompletionItemKindField),
+					SortText:   PtrTo(string(ls.SortTextOptionalMember)),
+				},
+				&lsproto.CompletionItem{
+					Label:      "className?",
+					InsertText: PtrTo("className"),
+					FilterText: PtrTo("className"),
+					Kind:       PtrTo(lsproto.CompletionItemKindField),
+					SortText:   PtrTo(string(ls.SortTextOptionalMember)),
+				},
+			},
 		},
 	})
 	f.VerifyCompletions(t, "2", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"goTo", "onClick", &lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindField), SortText: ptrTo(string(ls.SortTextOptionalMember)), Label: "className?", InsertText: ptrTo("className"), FilterText: ptrTo("className")}},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"goTo",
+				"onClick",
+				&lsproto.CompletionItem{
+					Label:      "className?",
+					InsertText: PtrTo("className"),
+					FilterText: PtrTo("className"),
+					Kind:       PtrTo(lsproto.CompletionItemKindField),
+					SortText:   PtrTo(string(ls.SortTextOptionalMember)),
+				},
+			},
 		},
 	})
 	f.VerifyCompletions(t, []string{"3", "4", "5"}, &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{&lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindField), SortText: ptrTo(string(ls.SortTextOptionalMember)), Label: "children?", InsertText: ptrTo("children"), FilterText: ptrTo("children")}, &lsproto.CompletionItem{Kind: ptrTo(lsproto.CompletionItemKindField), SortText: ptrTo(string(ls.SortTextOptionalMember)), Label: "className?", InsertText: ptrTo("className"), FilterText: ptrTo("className")}},
+			Exact: []fourslash.CompletionsExpectedItem{
+				&lsproto.CompletionItem{
+					Label:      "children?",
+					InsertText: PtrTo("children"),
+					FilterText: PtrTo("children"),
+					Kind:       PtrTo(lsproto.CompletionItemKindField),
+					SortText:   PtrTo(string(ls.SortTextOptionalMember)),
+				},
+				&lsproto.CompletionItem{
+					Label:      "className?",
+					InsertText: PtrTo("className"),
+					FilterText: PtrTo("className"),
+					Kind:       PtrTo(lsproto.CompletionItemKindField),
+					SortText:   PtrTo(string(ls.SortTextOptionalMember)),
+				},
+			},
 		},
 	})
 }

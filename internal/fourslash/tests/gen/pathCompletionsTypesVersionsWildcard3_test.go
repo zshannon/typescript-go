@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
 
@@ -36,10 +37,14 @@ import { } from "foo//**/";`
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"browser", "nope", "dist"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"browser",
+				"nope",
+				"dist",
+			},
 		},
 	})
 	f.Insert(t, "browser/")
@@ -47,10 +52,14 @@ import { } from "foo//**/";`
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"blah", "index", "subfolder"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"blah",
+				"index",
+				"subfolder",
+			},
 		},
 	})
 	f.Insert(t, "subfolder/")
@@ -58,10 +67,12 @@ import { } from "foo//**/";`
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"one"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"one",
+			},
 		},
 	})
 }

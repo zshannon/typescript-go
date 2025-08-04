@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
 
@@ -45,10 +46,16 @@ export var z = 5;`
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"2test", "prefix", "prefix-only", "0test", "1test"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"2test",
+				"prefix",
+				"prefix-only",
+				"0test",
+				"1test",
+			},
 		},
 	})
 }

@@ -66,18 +66,19 @@ type Parser struct {
 	hasDeprecatedTag            bool
 	hasParseError               bool
 
-	identifiers             map[string]string
-	identifierCount         int
-	notParenthesizedArrow   collections.Set[int]
-	nodeSlicePool           core.Pool[*ast.Node]
-	stringSlicePool         core.Pool[string]
-	jsdocCache              map[*ast.Node][]*ast.Node
-	possibleAwaitSpans      []int
-	jsdocCommentsSpace      []string
-	jsdocCommentRangesSpace []ast.CommentRange
-	jsdocTagCommentsSpace   []string
-	reparseList             []*ast.Node
-	commonJSModuleIndicator *ast.Node
+	identifiers                map[string]string
+	identifierCount            int
+	notParenthesizedArrow      collections.Set[int]
+	nodeSlicePool              core.Pool[*ast.Node]
+	stringSlicePool            core.Pool[string]
+	jsdocCache                 map[*ast.Node][]*ast.Node
+	possibleAwaitSpans         []int
+	jsdocCommentsSpace         []string
+	jsdocCommentRangesSpace    []ast.CommentRange
+	jsdocTagCommentsSpace      []string
+	jsdocTagCommentsPartsSpace []*ast.Node
+	reparseList                []*ast.Node
+	commonJSModuleIndicator    *ast.Node
 
 	currentParent        *ast.Node
 	setParentFromContext ast.Visitor
@@ -344,7 +345,6 @@ func (p *Parser) parseSourceFileWorker() *ast.SourceFile {
 	if len(p.reparseList) > 0 {
 		statements = append(statements, p.reparseList...)
 		p.reparseList = nil
-		end = p.nodePos()
 	}
 	node := p.factory.NewSourceFile(p.opts, p.sourceText, p.newNodeList(core.NewTextRange(pos, end), statements), eof)
 	p.finishNode(node, pos)
@@ -510,9 +510,7 @@ func (p *Parser) parseListIndex(kind ParsingContext, parseElement func(p *Parser
 		}
 	}
 	p.parsingContexts = saveParsingContexts
-	slice := p.nodeSlicePool.NewSlice(len(list))
-	copy(slice, list)
-	return slice
+	return p.nodeSlicePool.Clone(list)
 }
 
 func (p *Parser) parseList(kind ParsingContext, parseElement func(p *Parser) *ast.Node) *ast.NodeList {
@@ -576,9 +574,7 @@ func (p *Parser) parseDelimitedList(kind ParsingContext, parseElement func(p *Pa
 		}
 	}
 	p.parsingContexts = saveParsingContexts
-	slice := p.nodeSlicePool.NewSlice(len(list))
-	copy(slice, list)
-	return p.newNodeList(core.NewTextRange(pos, p.nodePos()), slice)
+	return p.newNodeList(core.NewTextRange(pos, p.nodePos()), p.nodeSlicePool.Clone(list))
 }
 
 // Return a non-nil (but possibly empty) NodeList if parsing was successful, or nil if opening token wasn't found
@@ -1626,7 +1622,7 @@ func (p *Parser) parseFunctionDeclaration(pos int, hasJSDoc bool, modifiers *ast
 	returnType := p.parseReturnType(ast.KindColonToken, false /*isType*/)
 	body := p.parseFunctionBlockOrSemicolon(signatureFlags, diagnostics.X_or_expected)
 	p.contextFlags = saveContextFlags
-	result := p.factory.NewFunctionDeclaration(modifiers, asteriskToken, name, typeParameters, parameters, returnType, body)
+	result := p.factory.NewFunctionDeclaration(modifiers, asteriskToken, name, typeParameters, parameters, returnType, nil /*fullSignature*/, body)
 	p.finishNode(result, pos)
 	p.withJSDoc(result, hasJSDoc)
 	return result
@@ -1815,7 +1811,7 @@ func (p *Parser) tryParseConstructorDeclaration(pos int, hasJSDoc bool, modifier
 		parameters := p.parseParameters(ParseFlagsNone)
 		returnType := p.parseReturnType(ast.KindColonToken, false /*isType*/)
 		body := p.parseFunctionBlockOrSemicolon(ParseFlagsNone, diagnostics.X_or_expected)
-		result := p.factory.NewConstructorDeclaration(modifiers, typeParameters, parameters, returnType, body)
+		result := p.factory.NewConstructorDeclaration(modifiers, typeParameters, parameters, returnType, nil /*fullSignature*/, body)
 		p.finishNode(result, pos)
 		p.withJSDoc(result, hasJSDoc)
 		return result
@@ -1846,7 +1842,7 @@ func (p *Parser) parseMethodDeclaration(pos int, hasJSDoc bool, modifiers *ast.M
 	parameters := p.parseParameters(signatureFlags)
 	typeNode := p.parseReturnType(ast.KindColonToken, false /*isType*/)
 	body := p.parseFunctionBlockOrSemicolon(signatureFlags, diagnosticMessage)
-	result := p.factory.NewMethodDeclaration(modifiers, asteriskToken, name, questionToken, typeParameters, parameters, typeNode, body)
+	result := p.factory.NewMethodDeclaration(modifiers, asteriskToken, name, questionToken, typeParameters, parameters, typeNode, nil /*fullSignature*/, body)
 	p.finishNode(result, pos)
 	p.withJSDoc(result, hasJSDoc)
 	return result
@@ -2538,12 +2534,12 @@ func (p *Parser) parseUnionOrIntersectionType(operator ast.Kind, parseConstituen
 		typeNode = parseConstituentType(p)
 	}
 	if p.token == operator || hasLeadingOperator {
-		types := p.nodeSlicePool.NewSlice(2)[:1]
+		types := make([]*ast.Node, 1, 8)
 		types[0] = typeNode
 		for p.parseOptional(operator) {
 			types = append(types, p.parseFunctionOrConstructorTypeToError(isUnionType, parseConstituentType))
 		}
-		typeNode = p.createUnionOrIntersectionTypeNode(operator, p.newNodeList(core.NewTextRange(pos, p.nodePos()), types))
+		typeNode = p.createUnionOrIntersectionTypeNode(operator, p.newNodeList(core.NewTextRange(pos, p.nodePos()), p.nodeSlicePool.Clone(types)))
 		p.finishNode(typeNode, pos)
 	}
 	return typeNode
@@ -3366,9 +3362,9 @@ func (p *Parser) parseAccessorDeclaration(pos int, hasJSDoc bool, modifiers *ast
 	var result *ast.Node
 	// Keep track of `typeParameters` (for both) and `type` (for setters) if they were parsed those indicate grammar errors
 	if kind == ast.KindGetAccessor {
-		result = p.factory.NewGetAccessorDeclaration(modifiers, name, typeParameters, parameters, returnType, body)
+		result = p.factory.NewGetAccessorDeclaration(modifiers, name, typeParameters, parameters, returnType, nil /*fullSignature*/, body)
 	} else {
-		result = p.factory.NewSetAccessorDeclaration(modifiers, name, typeParameters, parameters, returnType, body)
+		result = p.factory.NewSetAccessorDeclaration(modifiers, name, typeParameters, parameters, returnType, nil /*fullSignature*/, body)
 	}
 	p.finishNode(result, pos)
 	p.withJSDoc(result, hasJSDoc)
@@ -3845,9 +3841,7 @@ func (p *Parser) parseModifiersEx(allowDecorators bool, permitConstAsModifier bo
 		}
 	}
 	if len(list) != 0 {
-		nodes := p.nodeSlicePool.NewSlice(len(list))
-		copy(nodes, list)
-		return p.newModifierList(core.NewTextRange(pos, p.nodePos()), nodes)
+		return p.newModifierList(core.NewTextRange(pos, p.nodePos()), p.nodeSlicePool.Clone(list))
 	}
 	return nil
 }
@@ -4390,7 +4384,7 @@ func (p *Parser) parseParenthesizedArrowFunctionExpression(allowAmbiguity bool, 
 			return nil
 		}
 	}
-	result := p.factory.NewArrowFunction(modifiers, typeParameters, parameters, returnType, equalsGreaterThanToken, body)
+	result := p.factory.NewArrowFunction(modifiers, typeParameters, parameters, returnType, nil /*fullSignature*/, equalsGreaterThanToken, body)
 	p.finishNode(result, pos)
 	p.withJSDoc(result, hasJSDoc)
 	return result
@@ -4504,7 +4498,7 @@ func (p *Parser) parseSimpleArrowFunctionExpression(pos int, identifier *ast.Nod
 	parameters := p.newNodeList(parameter.Loc, []*ast.Node{parameter})
 	equalsGreaterThanToken := p.parseExpectedToken(ast.KindEqualsGreaterThanToken)
 	body := p.parseArrowFunctionExpressionBody(asyncModifier != nil /*isAsync*/, allowReturnTypeInArrowFunction)
-	result := p.factory.NewArrowFunction(asyncModifier, nil /*typeParameters*/, parameters, nil /*returnType*/, equalsGreaterThanToken, body)
+	result := p.factory.NewArrowFunction(asyncModifier, nil /*typeParameters*/, parameters, nil /*returnType*/, nil /*fullSignature*/, equalsGreaterThanToken, body)
 	p.finishNode(result, pos)
 	p.withJSDoc(result, hasJSDoc)
 	return result
@@ -5478,7 +5472,8 @@ func (p *Parser) parseCallExpressionRest(pos int, expression *ast.Expression) *a
 		if questionDotToken != nil {
 			// We parsed `?.` but then failed to parse anything, so report a missing identifier here.
 			p.parseErrorAtCurrentToken(diagnostics.Identifier_expected)
-			expression = p.createMissingIdentifier()
+			name := p.createMissingIdentifier()
+			expression = p.factory.NewPropertyAccessExpression(expression, questionDotToken, name, ast.NodeFlagsOptionalChain)
 			p.finishNode(expression, pos)
 		}
 		break
@@ -5727,7 +5722,7 @@ func (p *Parser) parseFunctionExpression() *ast.Expression {
 	returnType := p.parseReturnType(ast.KindColonToken, false /*isType*/)
 	body := p.parseFunctionBlock(signatureFlags, nil /*diagnosticMessage*/)
 	p.contextFlags = saveContexFlags
-	result := p.factory.NewFunctionExpression(modifiers, asteriskToken, name, typeParameters, parameters, returnType, body)
+	result := p.factory.NewFunctionExpression(modifiers, asteriskToken, name, typeParameters, parameters, returnType, nil /*fullSignature*/, body)
 	p.finishNode(result, pos)
 	p.withJSDoc(result, hasJSDoc)
 	return result
@@ -6342,16 +6337,26 @@ func (p *Parser) isUsingDeclaration() bool {
 	// 'using' always starts a lexical declaration if followed by an identifier. We also eagerly parse
 	// |ObjectBindingPattern| so that we can report a grammar error during check. We don't parse out
 	// |ArrayBindingPattern| since it potentially conflicts with element access (i.e., `using[x]`).
-	return p.lookAhead((*Parser).nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine)
+	return p.lookAhead(func(p *Parser) bool {
+		return p.nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine( /*disallowOf*/ false)
+	})
 }
 
-func (p *Parser) nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine() bool {
+func (p *Parser) nextTokenIsEqualsOrSemicolonOrColonToken() bool {
 	p.nextToken()
+	return p.token == ast.KindEqualsToken || p.token == ast.KindSemicolonToken || p.token == ast.KindColonToken
+}
+
+func (p *Parser) nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine(disallowOf bool) bool {
+	p.nextToken()
+	if disallowOf && p.token == ast.KindOfKeyword {
+		return p.lookAhead((*Parser).nextTokenIsEqualsOrSemicolonOrColonToken)
+	}
 	return p.isBindingIdentifier() || p.token == ast.KindOpenBraceToken && !p.hasPrecedingLineBreak()
 }
 
 func (p *Parser) nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLineDisallowOf() bool {
-	return p.nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine() && p.token != ast.KindOfKeyword
+	return p.nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine( /*disallowOf*/ true)
 }
 
 func (p *Parser) isAwaitUsingDeclaration() bool {
@@ -6359,7 +6364,7 @@ func (p *Parser) isAwaitUsingDeclaration() bool {
 }
 
 func (p *Parser) nextIsUsingKeywordThenBindingIdentifierOrStartOfObjectDestructuringOnSameLine() bool {
-	return p.nextToken() == ast.KindUsingKeyword && p.nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine()
+	return p.nextToken() == ast.KindUsingKeyword && p.nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine( /*disallowOf*/ false)
 }
 
 func (p *Parser) nextTokenIsTokenStringLiteral() bool {

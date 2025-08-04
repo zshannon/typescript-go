@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
 
@@ -44,45 +45,85 @@ class C1 extends Base {
 	f.VerifyCompletions(t, "1", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Includes: []fourslash.CompletionsExpectedItem{"protectedMethod", "protectedProperty", "publicMethod", "publicProperty", "protectedOverriddenMethod", "protectedOverriddenProperty"},
-			Excludes: []string{"privateMethod", "privateProperty"},
+			Includes: []fourslash.CompletionsExpectedItem{
+				"protectedMethod",
+				"protectedProperty",
+				"publicMethod",
+				"publicProperty",
+				"protectedOverriddenMethod",
+				"protectedOverriddenProperty",
+			},
+			Excludes: []string{
+				"privateMethod",
+				"privateProperty",
+			},
 		},
 	})
 	f.VerifyCompletions(t, "2", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Includes: []fourslash.CompletionsExpectedItem{"protectedMethod", "publicMethod", "protectedOverriddenMethod"},
-			Excludes: []string{"privateMethod", "privateProperty", "protectedProperty", "publicProperty", "protectedOverriddenProperty"},
+			Includes: []fourslash.CompletionsExpectedItem{
+				"protectedMethod",
+				"publicMethod",
+				"protectedOverriddenMethod",
+			},
+			Excludes: []string{
+				"privateMethod",
+				"privateProperty",
+				"protectedProperty",
+				"publicProperty",
+				"protectedOverriddenProperty",
+			},
 		},
 	})
 	f.VerifyCompletions(t, "3", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Includes: []fourslash.CompletionsExpectedItem{"publicMethod", "publicProperty"},
-			Excludes: []string{"privateMethod", "privateProperty", "protectedMethod", "protectedProperty", "protectedOverriddenMethod", "protectedOverriddenProperty"},
+			Includes: []fourslash.CompletionsExpectedItem{
+				"publicMethod",
+				"publicProperty",
+			},
+			Excludes: []string{
+				"privateMethod",
+				"privateProperty",
+				"protectedMethod",
+				"protectedProperty",
+				"protectedOverriddenMethod",
+				"protectedOverriddenProperty",
+			},
 		},
 	})
 	f.VerifyCompletions(t, "4", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Includes: []fourslash.CompletionsExpectedItem{"protectedMethod", "protectedProperty", "publicMethod", "publicProperty", "protectedOverriddenMethod", "protectedOverriddenProperty"},
-			Excludes: []string{"privateMethod", "privateProperty"},
+			Includes: []fourslash.CompletionsExpectedItem{
+				"protectedMethod",
+				"protectedProperty",
+				"publicMethod",
+				"publicProperty",
+				"protectedOverriddenMethod",
+				"protectedOverriddenProperty",
+			},
+			Excludes: []string{
+				"privateMethod",
+				"privateProperty",
+			},
 		},
 	})
 }

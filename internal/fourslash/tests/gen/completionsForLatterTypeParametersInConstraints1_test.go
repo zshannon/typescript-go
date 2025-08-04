@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
 
@@ -18,23 +19,31 @@ type A1<K extends /*2*/, L> = K`
 	f.VerifyCompletions(t, []string{"1"}, &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Includes: []fourslash.CompletionsExpectedItem{"Second"},
-			Excludes: []string{"First"},
+			Includes: []fourslash.CompletionsExpectedItem{
+				"Second",
+			},
+			Excludes: []string{
+				"First",
+			},
 		},
 	})
 	f.VerifyCompletions(t, []string{"2"}, &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Includes: []fourslash.CompletionsExpectedItem{"L"},
-			Excludes: []string{"K"},
+			Includes: []fourslash.CompletionsExpectedItem{
+				"L",
+			},
+			Excludes: []string{
+				"K",
+			},
 		},
 	})
 }

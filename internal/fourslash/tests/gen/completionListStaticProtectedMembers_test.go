@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/ls"
 	"github.com/microsoft/typescript-go/internal/lsp/lsproto"
 	"github.com/microsoft/typescript-go/internal/testutil"
@@ -11,7 +12,7 @@ import (
 
 func TestCompletionListStaticProtectedMembers(t *testing.T) {
 	t.Parallel()
-	t.Skip()
+
 	defer testutil.RecoverAndFail(t, "Panic on fourslash test")
 	const content = `class Base {
     private static privateMethod() { }
@@ -41,22 +42,83 @@ class C1 extends Base {
 	f.VerifyCompletions(t, []string{"1", "2"}, &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Includes: []fourslash.CompletionsExpectedItem{&lsproto.CompletionItem{SortText: ptrTo(string(ls.SortTextLocalDeclarationPriority)), Label: "privateMethod"}, &lsproto.CompletionItem{SortText: ptrTo(string(ls.SortTextLocalDeclarationPriority)), Label: "privateProperty"}, &lsproto.CompletionItem{SortText: ptrTo(string(ls.SortTextLocalDeclarationPriority)), Label: "protectedMethod"}, &lsproto.CompletionItem{SortText: ptrTo(string(ls.SortTextLocalDeclarationPriority)), Label: "protectedProperty"}, &lsproto.CompletionItem{SortText: ptrTo(string(ls.SortTextLocalDeclarationPriority)), Label: "publicMethod"}, &lsproto.CompletionItem{SortText: ptrTo(string(ls.SortTextLocalDeclarationPriority)), Label: "publicProperty"}, &lsproto.CompletionItem{SortText: ptrTo(string(ls.SortTextLocalDeclarationPriority)), Label: "protectedOverriddenMethod"}, &lsproto.CompletionItem{SortText: ptrTo(string(ls.SortTextLocalDeclarationPriority)), Label: "protectedOverriddenProperty"}},
+			Includes: []fourslash.CompletionsExpectedItem{
+				&lsproto.CompletionItem{
+					Label:    "privateMethod",
+					SortText: PtrTo(string(ls.SortTextLocalDeclarationPriority)),
+				},
+				&lsproto.CompletionItem{
+					Label:    "privateProperty",
+					SortText: PtrTo(string(ls.SortTextLocalDeclarationPriority)),
+				},
+				&lsproto.CompletionItem{
+					Label:    "protectedMethod",
+					SortText: PtrTo(string(ls.SortTextLocalDeclarationPriority)),
+				},
+				&lsproto.CompletionItem{
+					Label:    "protectedProperty",
+					SortText: PtrTo(string(ls.SortTextLocalDeclarationPriority)),
+				},
+				&lsproto.CompletionItem{
+					Label:    "publicMethod",
+					SortText: PtrTo(string(ls.SortTextLocalDeclarationPriority)),
+				},
+				&lsproto.CompletionItem{
+					Label:    "publicProperty",
+					SortText: PtrTo(string(ls.SortTextLocalDeclarationPriority)),
+				},
+				&lsproto.CompletionItem{
+					Label:    "protectedOverriddenMethod",
+					SortText: PtrTo(string(ls.SortTextLocalDeclarationPriority)),
+				},
+				&lsproto.CompletionItem{
+					Label:    "protectedOverriddenProperty",
+					SortText: PtrTo(string(ls.SortTextLocalDeclarationPriority)),
+				},
+			},
 		},
 	})
 	f.VerifyCompletions(t, "3", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Includes: []fourslash.CompletionsExpectedItem{&lsproto.CompletionItem{SortText: ptrTo(string(ls.SortTextLocalDeclarationPriority)), Label: "privateMethod"}, &lsproto.CompletionItem{SortText: ptrTo(string(ls.SortTextLocalDeclarationPriority)), Label: "privateProperty"}, &lsproto.CompletionItem{SortText: ptrTo(string(ls.SortTextLocalDeclarationPriority)), Label: "protectedMethod"}, &lsproto.CompletionItem{SortText: ptrTo(string(ls.SortTextLocalDeclarationPriority)), Label: "protectedProperty"}, &lsproto.CompletionItem{SortText: ptrTo(string(ls.SortTextLocalDeclarationPriority)), Label: "publicMethod"}, &lsproto.CompletionItem{SortText: ptrTo(string(ls.SortTextLocalDeclarationPriority)), Label: "publicProperty"}},
-			Excludes: []string{"protectedOverriddenMethod", "protectedOverriddenProperty"},
+			Includes: []fourslash.CompletionsExpectedItem{
+				&lsproto.CompletionItem{
+					Label:    "privateMethod",
+					SortText: PtrTo(string(ls.SortTextLocalDeclarationPriority)),
+				},
+				&lsproto.CompletionItem{
+					Label:    "privateProperty",
+					SortText: PtrTo(string(ls.SortTextLocalDeclarationPriority)),
+				},
+				&lsproto.CompletionItem{
+					Label:    "protectedMethod",
+					SortText: PtrTo(string(ls.SortTextLocalDeclarationPriority)),
+				},
+				&lsproto.CompletionItem{
+					Label:    "protectedProperty",
+					SortText: PtrTo(string(ls.SortTextLocalDeclarationPriority)),
+				},
+				&lsproto.CompletionItem{
+					Label:    "publicMethod",
+					SortText: PtrTo(string(ls.SortTextLocalDeclarationPriority)),
+				},
+				&lsproto.CompletionItem{
+					Label:    "publicProperty",
+					SortText: PtrTo(string(ls.SortTextLocalDeclarationPriority)),
+				},
+			},
+			Excludes: []string{
+				"protectedOverriddenMethod",
+				"protectedOverriddenProperty",
+			},
 		},
 	})
 }

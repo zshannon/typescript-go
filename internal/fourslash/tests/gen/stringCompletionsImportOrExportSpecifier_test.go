@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
 
@@ -43,28 +44,36 @@ export { type foo, type "/*typeExport3*/" } from "./exports";`
 	f.VerifyCompletions(t, "valueImport0", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"__some type", "__some value", "foo"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"__some type",
+				"__some value",
+				"foo",
+			},
 		},
 	})
 	f.VerifyCompletions(t, "valueImport1", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"__some type", "__some value", "foo"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"__some type",
+				"__some value",
+				"foo",
+			},
 		},
 	})
 	f.VerifyCompletions(t, "valueImport2", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
 			Exact: []fourslash.CompletionsExpectedItem{},
@@ -73,38 +82,49 @@ export { type foo, type "/*typeExport3*/" } from "./exports";`
 	f.VerifyCompletions(t, "valueImport3", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"__some type", "__some value"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"__some type",
+				"__some value",
+			},
 		},
 	})
 	f.VerifyCompletions(t, "valueExport0", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"__some type", "__some value", "foo"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"__some type",
+				"__some value",
+				"foo",
+			},
 		},
 	})
 	f.VerifyCompletions(t, "valueExport1", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"__some type", "__some value", "foo"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"__some type",
+				"__some value",
+				"foo",
+			},
 		},
 	})
 	f.VerifyCompletions(t, "valueExport2", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
 			Exact: []fourslash.CompletionsExpectedItem{},
@@ -113,38 +133,49 @@ export { type foo, type "/*typeExport3*/" } from "./exports";`
 	f.VerifyCompletions(t, "valueExport3", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"__some type", "__some value"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"__some type",
+				"__some value",
+			},
 		},
 	})
 	f.VerifyCompletions(t, "typeImport0", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"__some type", "__some value", "foo"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"__some type",
+				"__some value",
+				"foo",
+			},
 		},
 	})
 	f.VerifyCompletions(t, "typeImport1", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"__some type", "__some value", "foo"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"__some type",
+				"__some value",
+				"foo",
+			},
 		},
 	})
 	f.VerifyCompletions(t, "typeImport2", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
 			Exact: []fourslash.CompletionsExpectedItem{},
@@ -153,38 +184,49 @@ export { type foo, type "/*typeExport3*/" } from "./exports";`
 	f.VerifyCompletions(t, "typeImport3", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"__some type", "__some value"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"__some type",
+				"__some value",
+			},
 		},
 	})
 	f.VerifyCompletions(t, "typeExport0", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"__some type", "__some value", "foo"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"__some type",
+				"__some value",
+				"foo",
+			},
 		},
 	})
 	f.VerifyCompletions(t, "typeExport1", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"__some type", "__some value", "foo"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"__some type",
+				"__some value",
+				"foo",
+			},
 		},
 	})
 	f.VerifyCompletions(t, "typeExport2", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
 			Exact: []fourslash.CompletionsExpectedItem{},
@@ -193,11 +235,14 @@ export { type foo, type "/*typeExport3*/" } from "./exports";`
 	f.VerifyCompletions(t, "typeExport3", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
-			CommitCharacters: &defaultCommitCharacters,
-			EditRange:        ignored,
+			CommitCharacters: &DefaultCommitCharacters,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"__some type", "__some value"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"__some type",
+				"__some value",
+			},
 		},
 	})
 }

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
 
@@ -36,20 +37,28 @@ func TestTripleSlashRefPathCompletionAbsolutePaths(t *testing.T) {
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"fourslash"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"fourslash",
+			},
 		},
 	})
 	f.VerifyCompletions(t, "2", &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"e1.ts", "f1.ts", "f2.tsx", "folder", "tests"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"e1.ts",
+				"f1.ts",
+				"f2.tsx",
+				"folder",
+				"tests",
+			},
 		},
 	})
 }

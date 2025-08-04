@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
 
@@ -36,10 +37,16 @@ import { } from "foo//**/";`
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"component-blah", "component-index", "component-subfolder", "nope", "cjs"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"component-blah",
+				"component-index",
+				"component-subfolder",
+				"nope",
+				"cjs",
+			},
 		},
 	})
 	f.Insert(t, "component-subfolder/")
@@ -47,10 +54,12 @@ import { } from "foo//**/";`
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"one"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"one",
+			},
 		},
 	})
 }

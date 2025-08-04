@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
 
@@ -20,10 +21,19 @@ func TestCompletionListInUnclosedFunction09(t *testing.T) {
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Includes: []fourslash.CompletionsExpectedItem{"foo", "x", "y", "z", "bar", "a", "b", "c"},
+			Includes: []fourslash.CompletionsExpectedItem{
+				"foo",
+				"x",
+				"y",
+				"z",
+				"bar",
+				"a",
+				"b",
+				"c",
+			},
 		},
 	})
 }

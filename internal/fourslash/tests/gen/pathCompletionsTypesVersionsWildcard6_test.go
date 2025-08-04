@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/microsoft/typescript-go/internal/fourslash"
+	. "github.com/microsoft/typescript-go/internal/fourslash/tests/util"
 	"github.com/microsoft/typescript-go/internal/testutil"
 )
 
@@ -41,10 +42,17 @@ import { } from "foo//**/";`
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"bar", "exact-match", "foo", "blah", "index", "subfolder"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"bar",
+				"exact-match",
+				"foo",
+				"blah",
+				"index",
+				"subfolder",
+			},
 		},
 	})
 	f.Insert(t, "foo/")
@@ -52,10 +60,15 @@ import { } from "foo//**/";`
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"blah", "index", "foo", "subfolder"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"blah",
+				"index",
+				"foo",
+				"subfolder",
+			},
 		},
 	})
 	f.Insert(t, "foo/")
@@ -63,10 +76,12 @@ import { } from "foo//**/";`
 		IsIncomplete: false,
 		ItemDefaults: &fourslash.CompletionsExpectedItemDefaults{
 			CommitCharacters: &[]string{},
-			EditRange:        ignored,
+			EditRange:        Ignored,
 		},
 		Items: &fourslash.CompletionsExpectedItems{
-			Exact: []fourslash.CompletionsExpectedItem{"onlyInFooFolder"},
+			Exact: []fourslash.CompletionsExpectedItem{
+				"onlyInFooFolder",
+			},
 		},
 	})
 }
