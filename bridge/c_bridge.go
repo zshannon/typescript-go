@@ -505,10 +505,12 @@ func newBridgeSystem() *bridgeSystem {
 		cwd = "."
 	}
 
+	libPath := bundled.LibPath()
+
 	return &bridgeSystem{
 		cwd:                tspath.NormalizePath(cwd),
 		fs:                 bundled.WrapFS(osvfs.FS()),
-		defaultLibraryPath: bundled.LibPath(),
+		defaultLibraryPath: libPath,
 		writer:             os.Stdout,
 		newLine:            core.IfElse(runtime.GOOS == "windows", "\r\n", "\n"),
 		start:              time.Now(),
@@ -955,7 +957,8 @@ func tsc_validate_simple(code *C.char) *C.char {
 			"module": "commonjs",
 			"strict": true,
 			"noEmit": true
-		}
+		},
+		"files": ["main.ts"]
 	}`)
 	resolver.AddDirectory("/project")
 

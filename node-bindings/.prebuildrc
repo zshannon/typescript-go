@@ -1,0 +1,10 @@
+{
+  "targets": [
+    {
+      "target": "24.0.0",
+      "arch": ["x64", "arm64"]
+    }
+  ],
+  "include": ["build/Release/tscgo.node"],
+  "strip": false
+}

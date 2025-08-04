@@ -1,0 +1,31 @@
+# Source files
+src/native/
+tests/
+*.test.ts
+
+# Build files
+build/
+CMakeLists.txt
+binding.gyp
+build-go-lib.sh
+Dockerfile.alpine
+
+# Development files
+.gitignore
+.npmignore
+tsconfig.json
+vitest.config.ts
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+
+# Keep only the built addon and JS files
+!dist/
+!lib/*.node

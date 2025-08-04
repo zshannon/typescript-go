@@ -1,0 +1,70 @@
+{
+  "name": "@zshannon/tscgo",
+  "version": "0.1.0",
+  "description": "TypeScript compiler bindings for Node.js using Go's TypeScript implementation",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "binding.gyp",
+    "src/native/**/*",
+    "lib/tsc_bridge.h",
+    "build/Release/tscgo.node",
+    "prebuilds"
+  ],
+  "scripts": {
+    "build": "npm run build:go && npm run build:native && npm run build:js",
+    "build:go": "./build-go-lib.sh",
+    "build:native": "node-gyp rebuild",
+    "build:js": "tsc",
+    "test": "GODEBUG=asyncpreemptoff=1 vitest",
+    "test:ci": "vitest --run",
+    "prebuild": "prebuildify --napi --strip --electron-compat",
+    "prepublishOnly": "npm run build && npm test",
+    "install": "node-gyp-build",
+    "clean": "rimraf build dist lib/*.a"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "typescript",
+    "compiler",
+    "tsc",
+    "go",
+    "native",
+    "binding",
+    "performance"
+  ],
+  "author": "zshannon",
+  "license": "MIT",
+  "dependencies": {
+    "node-addon-api": "^8.5.0",
+    "node-gyp-build": "^4.8.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.1.0",
+    "node-gyp": "^11.2.0",
+    "prebuildify": "^6.0.1",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zshannon/typescript-go.git",
+    "directory": "node-bindings"
+  },
+  "binary": {
+    "napi_versions": [
+      8
+    ]
+  }
+}
