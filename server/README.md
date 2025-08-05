@@ -1,14 +1,15 @@
 # TypeScript Compiler Server
 
-A minimal HTTP server that compiles TypeScript code to JavaScript using the TypeScript-Go compiler, designed to run on Unikraft Cloud.
+A high-performance HTTP server that provides TypeScript type checking and JavaScript compilation using the TypeScript-Go compiler and esbuild.
 
 ## Features
 
+- **TypeScript type checking**: Full TypeScript type checking with detailed diagnostics
+- **JavaScript bundling**: Uses esbuild for fast, optimized JavaScript output
+- **React support**: Built-in React global transform for JSX
 - **In-memory compilation**: No file system I/O required
-- **TypeScript → ESNext/ESM**: Compiles to modern JavaScript modules
-- **Error reporting**: Returns detailed TypeScript diagnostics with line/column information
-- **Unikraft deployment**: Optimized for unikernel deployment with ~37ms boot time
-- **High performance**: ~200ms average compilation time including network latency
+- **Module caching**: Node modules loaded once at startup for fast performance
+- **High performance**: ~155ms average build time, ~208ms typecheck (including network latency)
 
 ## API
 
@@ -20,8 +21,57 @@ Returns server information.
 TypeScript Go Server
 ```
 
-### `POST /compile`
-Compiles TypeScript code to JavaScript.
+### `GET /health`
+Returns server health and statistics.
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "version": "1.0.0",
+  "uptime": "26s",
+  "modules": {
+    "TotalFiles": 2557,
+    "TypeDefinitions": 482,
+    "JavaScriptFiles": 2056,
+    "PackageFiles": 19,
+    "LoadErrors": 0
+  }
+}
+```
+
+### `POST /typecheck`
+Type checks TypeScript code without compilation.
+
+**Request:**
+```json
+{
+  "code": "export const hello: string = 123"
+}
+```
+
+**Success Response:**
+```json
+{
+  "pass": true
+}
+```
+
+**Error Response:**
+```json
+{
+  "errors": [
+    {
+      "message": "Type 'number' is not assignable to type 'string'.",
+      "line": 1,
+      "column": 30
+    }
+  ]
+}
+```
+
+### `POST /build`
+Compiles and bundles TypeScript code to JavaScript.
 
 **Request:**
 ```json
@@ -52,18 +102,24 @@ Compiles TypeScript code to JavaScript.
 
 ## Deployment
 
-### Unikraft Cloud
+### Fly.io
 
 ```bash
 # Deploy using 1Password CLI for secure environment variables
-op run --env-file=".env" -- kraft cloud deploy -p 443:8080 . --name typescript-compiler
+op run --env-file=".env.op" -- sh -c 'cd .. && fly deploy --config server/fly.toml --dockerfile server/Dockerfile --build-secret GITHUB_TOKEN="$GITHUB_TOKEN"'
+
+# Or using npm scripts
+npm run deploy:server
 ```
 
-**Environment variables (`.env` file):**
+### Docker
+
 ```bash
-UKC_METRO=dal0
-UKC_TOKEN=your_unikraft_cloud_token_here
-KRAFTKIT_BUILDKIT_HOST=docker-container://buildkitd
+# Build Docker image
+npm run build:docker
+
+# Run locally
+docker run -p 8080:8080 typescript-server
 ```
 
 ### Local Development
@@ -76,29 +132,19 @@ go run server.go
 
 ### Benchmark Commands
 
-**Unikraft Cloud (deployed):**
-```bash
-hyperfine --warmup 2 --runs 5 \
-  'curl -X POST https://restless-mountain-fa2gk4yu.dal0.kraft.host/compile \
-   -H "Content-Type: application/json" \
-   -d "{\"code\": \"export const hello: number = \\\"hello!!!\\\"\"}"
-```
-
 **Fly.io (deployed):**
 ```bash
-hyperfine --warmup 3 --runs 10 \
-  'curl -X POST https://server-wild-sea-9370.fly.dev/compile \
-   -H "Content-Type: application/json" \
-   -d "{\"code\": \"export const hello: string = \\\"hello!!!\\\"\"}"
-```
+# Create test file
+cat > test-fortune-cookie.json << 'EOF'
+{
+  "code": "import { Button, Flex, Text } from '@crayonnow/core';\nimport { useState } from 'react';\n\nconst fortunes = [\n  \"A beautiful, smart, and loving person will be coming into your life.\",\n  \"Believe it can be done.\",\n  \"Your ability to overcome challenges will set you up for success.\"\n];\n\nexport default () => {\n  const [currentFortune, setCurrentFortune] = useState(fortunes[0]);\n\n  return (\n    <Flex style={{ padding: '20px' }}>\n      <Text>{currentFortune}</Text>\n      <Button onClick={() => setCurrentFortune(fortunes[Math.floor(Math.random() * fortunes.length)])}>\n        Get New Fortune\n      </Button>\n    </Flex>\n  );\n};"
+}
+EOF
 
-**Local development:**
-```bash
-# Start server: go run server.go
-hyperfine --warmup 2 --runs 5 \
-  'curl -X POST http://localhost:8080/compile \
-   -H "Content-Type: application/json" \
-   -d "{\"code\": \"export const hello: number = \\\"hello!!!\\\"\"}"
+# Benchmark both endpoints
+hyperfine --warmup 3 --min-runs 10 \
+  'curl -s -X POST https://server-wild-sea-9370.fly.dev/typecheck -H "Content-Type: application/json" -d @test-fortune-cookie.json' \
+  'curl -s -X POST https://server-wild-sea-9370.fly.dev/build -H "Content-Type: application/json" -d @test-fortune-cookie.json'
 ```
 
 ### Results
@@ -114,11 +160,13 @@ Benchmark 1: curl -X POST https://restless-mountain-fa2gk4yu.dal0.kraft.host/com
 
 **Fly.io:**
 ```
-Benchmark 1: curl -X POST https://server-wild-sea-9370.fly.dev/compile \
-   -H "Content-Type: application/json" \
-   -d "{\"code\": \"export const hello: string = \\\"hello!!!\\\"\"}"
-  Time (mean ± σ):      64.4 ms ±   6.2 ms    [User: 7.8 ms, System: 4.1 ms]
-  Range (min … max):    57.4 ms …  78.7 ms    10 runs
+Benchmark 1: curl -s -X POST https://server-wild-sea-9370.fly.dev/typecheck -H "Content-Type: application/json" -d @test-fortune-cookie.json
+  Time (mean ± σ):     212.1 ms ±  15.8 ms    [User: 10.4 ms, System: 7.1 ms]
+  Range (min … max):   190.3 ms … 246.7 ms    11 runs
+
+Benchmark 2: curl -s -X POST https://server-wild-sea-9370.fly.dev/build -H "Content-Type: application/json" -d @test-fortune-cookie.json
+  Time (mean ± σ):     146.6 ms ±  15.9 ms    [User: 8.8 ms, System: 5.5 ms]
+  Range (min … max):   125.5 ms … 187.3 ms    22 runs
 ```
 
 **Local:**

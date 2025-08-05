@@ -8,8 +8,43 @@ COPY ./server/package.json /types/package.json
 RUN --mount=type=secret,id=GITHUB_TOKEN \
     GITHUB_TOKEN="$(cat /run/secrets/GITHUB_TOKEN)" npm install --omit=dev
 RUN rm -f ~/.npmrc
-RUN find node_modules -name "*.js" -not -path "*/package.json" -delete
-RUN find node_modules -name "*.js.map" -delete
+
+# Delete TypeScript compiler JS files but KEEP the .d.ts files (they provide core types)
+RUN find node_modules -path "*/typescript/lib/*.js" -delete
+
+# Delete other unnecessary files but keep JS files for bundling
+RUN find node_modules -name "*.js.map" -delete && \
+    find node_modules -name "*.ts" -not -name "*.d.ts" -delete && \
+    find node_modules -name "*.md" -delete && \
+    find node_modules -name "*.txt" -delete && \
+    find node_modules -name "LICENSE*" -delete && \
+    find node_modules -name "*.yml" -delete && \
+    find node_modules -name "*.yaml" -delete && \
+    find node_modules -name ".npmignore" -delete && \
+    find node_modules -name ".gitignore" -delete && \
+    find node_modules -type d -name "test" -exec rm -rf {} + 2>/dev/null || true && \
+    find node_modules -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
+    find node_modules -type d -name "__tests__" -exec rm -rf {} + 2>/dev/null || true && \
+    find node_modules -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true && \
+    find node_modules -type d -name ".github" -exec rm -rf {} + 2>/dev/null || true
+
+# Debug: Show what packages we have
+RUN echo "=== Packages installed ==="
+RUN ls -la node_modules/
+RUN echo "=== @crayonnow contents ==="
+RUN ls -la node_modules/@crayonnow/ || echo "No @crayonnow"
+RUN echo "=== @crayonnow/core contents ==="
+RUN ls -la node_modules/@crayonnow/core/ || echo "No @crayonnow/core"
+RUN echo "=== @crayonnow/core package.json ==="
+RUN cat node_modules/@crayonnow/core/package.json | grep -E '"main"|"exports"' || echo "No package.json"
+RUN echo "=== react contents ==="
+RUN ls -la node_modules/react/ || echo "No react"
+RUN echo "=== typescript contents ==="
+RUN ls -la node_modules/typescript/ || echo "No typescript"
+RUN echo "=== File counts ==="
+RUN find node_modules -type f -name "*.js" | wc -l
+RUN find node_modules -type f -name "*.d.ts" | wc -l
+RUN find node_modules -type f -name "package.json" | wc -l
 
 FROM --platform=linux/x86_64 golang:1.24-bookworm AS build
 

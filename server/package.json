@@ -7,9 +7,10 @@
     "build:docker": "op run --env-file=\".env.op\" -- sh -c 'cd .. && docker build --secret id=GITHUB_TOKEN -t typescript-server -f server/Dockerfile .'",
     "deploy:server": "op run --env-file=\".env.op\" -- sh -c 'cd .. && fly deploy --config server/fly.toml --dockerfile server/Dockerfile --build-secret GITHUB_TOKEN=\"$GITHUB_TOKEN\"'"
   },
-  "devDependencies": {
+  "dependencies": {
     "@crayonnow/core": "0.0.1",
     "@types/react": "19.1.9",
+    "react": "19.1.1",
     "typescript": "5.9.2"
   }
 }
