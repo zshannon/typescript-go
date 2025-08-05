@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/evanw/esbuild/pkg/api"
 	"github.com/microsoft/typescript-go/internal/ast"
 	"github.com/microsoft/typescript-go/internal/bundled"
 	"github.com/microsoft/typescript-go/internal/collections"
@@ -26,6 +27,15 @@ type TypecheckRequest struct {
 
 type TypecheckResponse struct {
 	Pass   bool              `json:"pass,omitempty"`
+	Errors []DiagnosticError `json:"errors,omitempty"`
+}
+
+type BuildRequest struct {
+	Code string `json:"code"`
+}
+
+type BuildResponse struct {
+	Code   string            `json:"code,omitempty"`
 	Errors []DiagnosticError `json:"errors,omitempty"`
 }
 
@@ -69,7 +79,7 @@ func loadTypeDefinitions(memFS *memoryFS) {
 			return nil // Skip errors
 		}
 		
-		if !d.IsDir() && (strings.HasSuffix(path, ".d.ts") || strings.HasSuffix(path, ".ts") || strings.HasSuffix(path, "package.json")) {
+		if !d.IsDir() && (strings.HasSuffix(path, ".d.ts") || strings.HasSuffix(path, "package.json")) {
 			// Convert file system path to virtual path
 			// Example: ./node_modules/@crayonnow/core/index.d.ts -> /node_modules/@crayonnow/core/index.d.ts
 			virtualPath := path
@@ -201,7 +211,7 @@ func typecheckTypeScript(code string) TypecheckResponse {
 	fs := bundled.WrapFS(memFS)
 	
 	// Create minimal compiler options (matching CrayonDeveloper settings)
-	jsxImportSource := "react"
+	jsxImportSource := "@crayonnow/core"
 	compilerOptions := &core.CompilerOptions{
 		AllowJs:                          core.TSTrue,
 		Declaration:                      core.TSTrue,
@@ -272,7 +282,104 @@ func typecheckTypeScript(code string) TypecheckResponse {
 	return TypecheckResponse{Pass: true}
 }
 
+func buildTypeScript(code string) BuildResponse {
+	memFS := newMemoryFS()
+	
+	// Always use .tsx to support JSX
+	fileName := "/input.tsx"
+	
+	memFS.files[fileName] = code
+	
+	// Create virtual file resolver for esbuild
+	resolver := func(path string) (api.OnLoadResult, error) {
+		if content, exists := memFS.files[path]; exists {
+			return api.OnLoadResult{
+				Contents: &content,
+				Loader:   api.LoaderTSX,
+			}, nil
+		}
+		
+		// Try to resolve as node_modules
+		if !strings.HasPrefix(path, "/") {
+			nodePath := "/node_modules/" + path
+			if content, exists := memFS.files[nodePath]; exists {
+				return api.OnLoadResult{
+					Contents: &content,
+					Loader:   api.LoaderDefault,
+				}, nil
+			}
+		}
+		
+		return api.OnLoadResult{}, fmt.Errorf("file not found: %s", path)
+	}
+	
+	// Build with esbuild (matching Swift configuration)
+	result := api.Build(api.BuildOptions{
+		EntryPoints:        []string{fileName},
+		Bundle:             true,
+		Format:             api.FormatCommonJS,
+		JSXFactory:         "_CRAYONCORE_$REACT.createElement",
+		JSXFragment:        "_CRAYONCORE_$REACT.Fragment",
+		MinifyWhitespace:   true,
+		MinifyIdentifiers:  true,
+		MinifySyntax:       true,
+		Platform:           api.PlatformBrowser,
+		Target:             api.ES2022,
+		Write:              false,
+		Plugins: []api.Plugin{{
+			Name: "virtual-fs",
+			Setup: func(pb api.PluginBuild) {
+				pb.OnResolve(api.OnResolveOptions{Filter: ".*"}, func(args api.OnResolveArgs) (api.OnResolveResult, error) {
+					// Handle absolute imports
+					if strings.HasPrefix(args.Path, "/") {
+						return api.OnResolveResult{Path: args.Path, Namespace: "virtual"}, nil
+					}
+					
+					// Handle relative imports
+					if strings.HasPrefix(args.Path, "./") || strings.HasPrefix(args.Path, "../") {
+						importerDir := filepath.Dir(args.Importer)
+						resolvedPath := filepath.Join(importerDir, args.Path)
+						return api.OnResolveResult{Path: resolvedPath, Namespace: "virtual"}, nil
+					}
+					
+					// Handle node_modules imports
+					return api.OnResolveResult{Path: args.Path, Namespace: "virtual"}, nil
+				})
+				
+				pb.OnLoad(api.OnLoadOptions{Filter: ".*", Namespace: "virtual"}, func(args api.OnLoadArgs) (api.OnLoadResult, error) {
+					return resolver(args.Path)
+				})
+			},
+		}},
+	})
+	
+	if len(result.Errors) > 0 {
+		errors := make([]DiagnosticError, 0, len(result.Errors))
+		for _, err := range result.Errors {
+			diagErr := DiagnosticError{
+				Message: err.Text,
+			}
+			if err.Location != nil {
+				diagErr.Line = err.Location.Line
+				diagErr.Column = err.Location.Column
+			}
+			errors = append(errors, diagErr)
+		}
+		return BuildResponse{Errors: errors}
+	}
+	
+	if len(result.OutputFiles) == 0 {
+		return BuildResponse{Errors: []DiagnosticError{{Message: "No output generated"}}}
+	}
+	
+	return BuildResponse{Code: string(result.OutputFiles[0].Contents)}
+}
+
 func hello(w http.ResponseWriter, req *http.Request) {
+	if req.URL.Path != "/" {
+		http.NotFound(w, req)
+		return
+	}
 	fmt.Fprintf(w, "TypeScript Go Server\n")
 }
 
@@ -299,9 +406,33 @@ func typecheck(w http.ResponseWriter, req *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+func build(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var buildReq BuildRequest
+	if err := json.NewDecoder(req.Body).Decode(&buildReq); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	if buildReq.Code == "" {
+		http.Error(w, "Code is required", http.StatusBadRequest)
+		return
+	}
+
+	response := buildTypeScript(buildReq.Code)
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
 func main() {
-	http.HandleFunc("/", hello)
 	http.HandleFunc("/typecheck", typecheck)
+	http.HandleFunc("/build", build)
+	http.HandleFunc("/", hello)
 	fmt.Println("Listening on :8080...")
 	http.ListenAndServe(":8080", nil)
 }

@@ -1,0 +1,42 @@
+# Git
+.git
+.gitignore
+
+# Node modules
+node_modules
+*/node_modules
+*/*/node_modules
+
+# Build outputs
+_build
+_packages
+_submodules
+_extension
+_tools
+bridge/*.so
+server/server
+*.o
+
+# Test data
+testdata
+Tests
+test_protocols.o
+
+# Documentation
+*.md
+LICENSE
+NOTICE.txt
+
+# IDE and config files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Temporary files
+*.tmp
+*.temp

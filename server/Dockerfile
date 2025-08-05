@@ -1,35 +1,39 @@
 FROM --platform=linux/x86_64 node:24-alpine AS types
 
 WORKDIR /types
-COPY ./package.json /types/package.json
+COPY ./server/.npmrc /types/.npmrc
+COPY ./server/package.json /types/package.json
 
 # Configure npm to use GitHub token for private packages
 RUN --mount=type=secret,id=GITHUB_TOKEN \
-    if [ -f /run/secrets/GITHUB_TOKEN ]; then \
-        echo "//npm.pkg.github.com/:_authToken=$(cat /run/secrets/GITHUB_TOKEN)" > ~/.npmrc && \
-        echo "@crayonnow:registry=https://npm.pkg.github.com" >> ~/.npmrc; \
-    fi && \
-    npm install --production=false && \
-    rm -f ~/.npmrc
+    GITHUB_TOKEN="$(cat /run/secrets/GITHUB_TOKEN)" npm install --omit=dev
+RUN rm -f ~/.npmrc
+RUN find node_modules -name "*.js" -not -path "*/package.json" -delete
+RUN find node_modules -name "*.js.map" -delete
 
 FROM --platform=linux/x86_64 golang:1.24-bookworm AS build
 
-WORKDIR /src
+WORKDIR /workspace
 
-COPY ./server.go /src/server.go
-COPY ./go.mod /src/go.mod
-COPY ./go.sum /src/go.sum
-COPY ./vendor /src/vendor
-COPY --from=types /types/node_modules /src/node_modules
+# Copy only what's needed for the Go module
+COPY ./go.mod /workspace/go.mod
+COPY ./go.sum /workspace/go.sum
+COPY ./internal /workspace/internal
+COPY ./server /workspace/server
+
+# Set working directory to the server subdirectory
+WORKDIR /workspace/server
+
+# Copy node_modules from the types stage
+COPY --from=types /types/node_modules /workspace/server/node_modules
 
 RUN set -xe; \
     go build \
-      -mod=vendor \
-      -buildmode=pie \
-      -ldflags "-linkmode external -extldflags -static-pie" \
-      -tags netgo \
-      -o /server . \
-    ;
+    -mod=readonly \
+    -buildmode=pie \
+    -ldflags "-linkmode external -extldflags -static-pie" \
+    -tags netgo \
+    -o /server .
 
 FROM scratch
 
