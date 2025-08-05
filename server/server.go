@@ -768,6 +768,24 @@ func build(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Check if type validation is requested
+	validateTypes := req.URL.Query().Get("validate_types") == "true"
+	
+	if validateTypes {
+		// First run typecheck
+		typecheckResponse := typecheckTypeScript(buildReq.Code)
+		if len(typecheckResponse.Errors) > 0 {
+			// Return type errors as build errors
+			response := BuildResponse{
+				Errors: typecheckResponse.Errors,
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(response)
+			return
+		}
+	}
+
+	// Proceed with build
 	response := buildTypeScript(buildReq.Code)
 	
 	w.Header().Set("Content-Type", "application/json")

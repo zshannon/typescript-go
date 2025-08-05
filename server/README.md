@@ -73,6 +73,9 @@ Type checks TypeScript code without compilation.
 ### `POST /build`
 Compiles and bundles TypeScript code to JavaScript.
 
+**Query Parameters:**
+- `validate_types` (optional): Set to `true` to run type checking before building. If type errors are found, the build will fail and return the type errors instead of building.
+
 **Request:**
 ```json
 {
@@ -87,7 +90,22 @@ Compiles and bundles TypeScript code to JavaScript.
 }
 ```
 
-**Error Response:**
+**Error Response (build errors):**
+```json
+{
+  "errors": [
+    {
+      "message": "Module not found",
+      "line": 1,
+      "column": 7
+    }
+  ]
+}
+```
+
+**With Type Validation (`/build?validate_types=true`):**
+
+If type errors are found, returns them without attempting to build:
 ```json
 {
   "errors": [
