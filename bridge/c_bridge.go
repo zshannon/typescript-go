@@ -796,30 +796,30 @@ func (f *FileResolverDynamic) ResolveFile(path string) string {
 	if f.callbacks == nil || f.callbacks.resolver == nil {
 		return ""
 	}
-	
+
 	// Create C args
 	cArgs := (*C.c_file_resolve_args)(C.malloc(C.sizeof_c_file_resolve_args))
 	defer C.free(unsafe.Pointer(cArgs))
-	
+
 	cPath := C.CString(path)
 	defer C.free(unsafe.Pointer(cPath))
-	
+
 	cArgs.path = cPath
 	cArgs.path_length = C.int(len(path))
-	
+
 	// Call the Swift callback (like plugin callbacks)
 	cResult := C.call_file_resolve_callback(f.callbacks.resolver, cArgs, f.callbacks.resolver_data)
 	if cResult == nil {
 		return ""
 	}
 	defer C.free(unsafe.Pointer(cResult))
-	
+
 	if cResult.exists == 1 && cResult.content != nil { // file
 		content := C.GoStringN(cResult.content, cResult.content_length)
 		C.free(unsafe.Pointer(cResult.content))
 		return content
 	}
-	
+
 	return ""
 }
 
@@ -827,24 +827,24 @@ func (f *FileResolverDynamic) FileExists(path string) bool {
 	if f.callbacks == nil || f.callbacks.resolver == nil {
 		return false
 	}
-	
+
 	// Create C args
 	cArgs := (*C.c_file_resolve_args)(C.malloc(C.sizeof_c_file_resolve_args))
 	defer C.free(unsafe.Pointer(cArgs))
-	
+
 	cPath := C.CString(path)
 	defer C.free(unsafe.Pointer(cPath))
-	
+
 	cArgs.path = cPath
 	cArgs.path_length = C.int(len(path))
-	
+
 	// Call the Swift callback
 	cResult := C.call_file_resolve_callback(f.callbacks.resolver, cArgs, f.callbacks.resolver_data)
 	if cResult == nil {
 		return false
 	}
 	defer C.free(unsafe.Pointer(cResult))
-	
+
 	return cResult.exists == 1 // 1 = file
 }
 
@@ -852,24 +852,24 @@ func (f *FileResolverDynamic) DirectoryExists(path string) bool {
 	if f.callbacks == nil || f.callbacks.resolver == nil {
 		return false
 	}
-	
-	// Create C args  
+
+	// Create C args
 	cArgs := (*C.c_file_resolve_args)(C.malloc(C.sizeof_c_file_resolve_args))
 	defer C.free(unsafe.Pointer(cArgs))
-	
+
 	cPath := C.CString(path)
 	defer C.free(unsafe.Pointer(cPath))
-	
+
 	cArgs.path = cPath
 	cArgs.path_length = C.int(len(path))
-	
+
 	// Call the Swift callback
 	cResult := C.call_file_resolve_callback(f.callbacks.resolver, cArgs, f.callbacks.resolver_data)
 	if cResult == nil {
 		return false
 	}
 	defer C.free(unsafe.Pointer(cResult))
-	
+
 	return cResult.exists == 2 // 2 = directory
 }
 
@@ -883,24 +883,24 @@ func (f *FileResolverDynamic) GetAllPaths(directory string) *PathList {
 	if f.callbacks == nil || f.callbacks.resolver == nil {
 		return &PathList{Paths: []string{}}
 	}
-	
+
 	// Create C args
 	cArgs := (*C.c_file_resolve_args)(C.malloc(C.sizeof_c_file_resolve_args))
 	defer C.free(unsafe.Pointer(cArgs))
-	
+
 	cPath := C.CString(directory)
 	defer C.free(unsafe.Pointer(cPath))
-	
+
 	cArgs.path = cPath
 	cArgs.path_length = C.int(len(directory))
-	
+
 	// Call the Swift callback
 	cResult := C.call_file_resolve_callback(f.callbacks.resolver, cArgs, f.callbacks.resolver_data)
 	if cResult == nil || cResult.exists != 2 { // not a directory
 		return &PathList{Paths: []string{}}
 	}
 	defer C.free(unsafe.Pointer(cResult))
-	
+
 	// Convert directory files array
 	var paths []string
 	if cResult.directory_files != nil && cResult.directory_files_count > 0 {
@@ -913,7 +913,7 @@ func (f *FileResolverDynamic) GetAllPaths(directory string) *PathList {
 		}
 		C.free(unsafe.Pointer(cResult.directory_files))
 	}
-	
+
 	return &PathList{Paths: paths}
 }
 
@@ -951,7 +951,7 @@ func tsc_validate_simple(code *C.char) *C.char {
 	resolver.AddFile("/project/main.ts", goCode)
 	resolver.AddFile("/project/tsconfig.json", `{
 		"compilerOptions": {
-			"target": "es2015",
+			"target": "es2022",
 			"module": "commonjs",
 			"strict": true,
 			"noEmit": true

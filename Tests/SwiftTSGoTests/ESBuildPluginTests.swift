@@ -612,7 +612,7 @@ extension ESBuildPluginTests {
             platform: .neutral,
             plugins: [plugin],
             stdin: stdinOptions,
-            target: .es2015
+            target: .es2022
         )
 
         let result = esbuildBuild(options: buildOptions)

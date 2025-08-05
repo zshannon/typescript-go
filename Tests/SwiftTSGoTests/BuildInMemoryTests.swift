@@ -95,7 +95,7 @@ struct BuildInMemoryTests {
                 "/project/tsconfig.json": """
                 {
                     "compilerOptions": {
-                        "target": "es2015",
+                        "target": "es2022",
                         "module": "commonjs",
                         "noEmit": true
                     },
@@ -182,7 +182,7 @@ struct BuildInMemoryTests {
                 "/project/tsconfig.json": """
                 {
                     "compilerOptions": {
-                        "target": "es2015",
+                        "target": "es2022",
                         "module": "commonjs",
                         "noEmit": true
                     },
@@ -205,7 +205,7 @@ struct BuildInMemoryTests {
                 "/project/tsconfig.json": """
                 {
                     "compilerOptions": {
-                        "target": "es2015",
+                        "target": "es2022",
                         "module": "commonjs",
                         "noEmit": true
                     },

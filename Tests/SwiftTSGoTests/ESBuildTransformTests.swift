@@ -1023,8 +1023,8 @@ struct ESBuildTransformTests {
         #expect(transformedCode!.contains("sourceMappingURL"))
     }
 
-    @Test("ES2015 target transform")
-    func testES2015TargetTransform() {
+    @Test("ES2022 target transform")
+    func testES2022TargetTransform() {
         let modernCode = """
         const arrow = (x) => x * 2;
         const result = [1, 2, 3].map(arrow);
@@ -1032,7 +1032,7 @@ struct ESBuildTransformTests {
         """
 
         let options = ESBuildTransformOptions(
-            target: .es2015
+            target: .es2022
         )
 
         let result = esbuildTransform(code: modernCode, options: options)

@@ -426,7 +426,7 @@ public struct ESBuildTransformOptions {
 public extension ESBuildTransformOptions {
     /// Creates transform options optimized for minification
     static func minified(
-        target: ESBuildTarget = .es2015,
+        target: ESBuildTarget = .es2022,
         format: ESBuildFormat = .esmodule
     ) -> ESBuildTransformOptions {
         ESBuildTransformOptions(
