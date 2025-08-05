@@ -1,0 +1,15 @@
+{
+  "name": "typescript-server-types",
+  "version": "1.0.0",
+  "description": "Type definitions for TypeScript compilation server",
+  "scripts": {
+    "install:auth": "op run --env-file=\".env.op\" -- npm install",
+    "build:docker": "op run --env-file=\".env.op\" -- docker build --build-arg GITHUB_TOKEN=$GITHUB_TOKEN -t typescript-server .",
+    "deploy:server": "op run --env-file=\".env.op\" -- fly deploy --build-secret GITHUB_TOKEN=\"$GITHUB_TOKEN\""
+  },
+  "devDependencies": {
+    "@crayonnow/core": "*",
+    "@types/react": "19.1.9",
+    "typescript": "5.9.2"
+  }
+}

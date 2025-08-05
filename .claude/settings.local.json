@@ -26,7 +26,16 @@
       "Bash(kraft cloud:*)",
       "Bash(op run:*)",
       "Bash(curl:*)",
-      "Bash(hyperfine:*)"
+      "Bash(hyperfine:*)",
+      "Bash(docker run:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker stop:*)",
+      "Bash(docker rm:*)",
+      "Bash(npm install)",
+      "Bash(pkill:*)",
+      "Bash(cat:*)",
+      "Bash(go run:*)"
     ],
     "deny": []
   }

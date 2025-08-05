@@ -4,7 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/microsoft/typescript-go/internal/ast"
 	"github.com/microsoft/typescript-go/internal/bundled"
@@ -16,12 +20,12 @@ import (
 	"github.com/microsoft/typescript-go/internal/vfs"
 )
 
-type CompileRequest struct {
+type TypecheckRequest struct {
 	Code string `json:"code"`
 }
 
-type CompileResponse struct {
-	Code   string            `json:"code,omitempty"`
+type TypecheckResponse struct {
+	Pass   bool              `json:"pass,omitempty"`
 	Errors []DiagnosticError `json:"errors,omitempty"`
 }
 
@@ -36,11 +40,55 @@ type memoryFS struct {
 }
 
 func newMemoryFS() *memoryFS {
-	return &memoryFS{
+	memFS := &memoryFS{
 		files: map[string]string{
 			"/input.ts": "",
 		},
 	}
+	
+	// Load bundled type definitions
+	loadTypeDefinitions(memFS)
+	
+	return memFS
+}
+
+func loadTypeDefinitions(memFS *memoryFS) {
+	// Walk the node_modules directory and load .d.ts files
+	nodeModulesDir := "/node_modules"
+	if _, err := os.Stat(nodeModulesDir); os.IsNotExist(err) {
+		// Try local development path
+		nodeModulesDir = "./node_modules"
+		if _, err := os.Stat(nodeModulesDir); os.IsNotExist(err) {
+			return // No node_modules available
+		}
+	}
+	
+	loadedCount := 0
+	filepath.WalkDir(nodeModulesDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // Skip errors
+		}
+		
+		if !d.IsDir() && (strings.HasSuffix(path, ".d.ts") || strings.HasSuffix(path, ".ts") || strings.HasSuffix(path, "package.json")) {
+			// Convert file system path to virtual path
+			// Example: ./node_modules/@crayonnow/core/index.d.ts -> /node_modules/@crayonnow/core/index.d.ts
+			virtualPath := path
+			if strings.HasPrefix(virtualPath, "./") {
+				virtualPath = virtualPath[2:] // Remove ./
+			}
+			if !strings.HasPrefix(virtualPath, "/") {
+				virtualPath = "/" + virtualPath
+			}
+			virtualPath = strings.ReplaceAll(virtualPath, "\\", "/")
+			
+			if content, err := os.ReadFile(path); err == nil {
+				memFS.files[virtualPath] = string(content)
+				loadedCount++
+			}
+		}
+		
+		return nil
+	})
 }
 
 func (m *memoryFS) UseCaseSensitiveFileNames() bool { return true }
@@ -61,10 +109,66 @@ func (m *memoryFS) Remove(path string) error {
 	return nil
 }
 func (m *memoryFS) DirectoryExists(path string) bool {
-	return path == "/" || path == ""
+	if path == "/" || path == "" {
+		return true
+	}
+	
+	// Check if any file path starts with this directory
+	normalizedPath := strings.TrimSuffix(path, "/") + "/"
+	for filePath := range m.files {
+		if strings.HasPrefix(filePath, normalizedPath) {
+			return true
+		}
+	}
+	
+	return false
 }
+
 func (m *memoryFS) GetAccessibleEntries(path string) vfs.Entries {
-	return vfs.Entries{Files: []string{"input.ts"}}
+	entries := vfs.Entries{Files: []string{}, Directories: []string{}}
+	
+	// Normalize the path
+	searchPath := strings.TrimSuffix(path, "/")
+	if searchPath == "" {
+		searchPath = "/"
+	} else if !strings.HasPrefix(searchPath, "/") {
+		searchPath = "/" + searchPath
+	}
+	if searchPath != "/" {
+		searchPath += "/"
+	}
+	
+	seen := make(map[string]bool)
+	
+	for filePath := range m.files {
+		if !strings.HasPrefix(filePath, searchPath) {
+			continue
+		}
+		
+		relativePath := strings.TrimPrefix(filePath, searchPath)
+		if relativePath == "" {
+			continue
+		}
+		
+		// Get the first segment (file or directory name)
+		segments := strings.Split(relativePath, "/")
+		firstSegment := segments[0]
+		
+		if seen[firstSegment] {
+			continue
+		}
+		seen[firstSegment] = true
+		
+		if len(segments) == 1 {
+			// It's a file
+			entries.Files = append(entries.Files, firstSegment)
+		} else {
+			// It's a directory
+			entries.Directories = append(entries.Directories, firstSegment)
+		}
+	}
+	
+	return entries
 }
 func (m *memoryFS) Stat(path string) vfs.FileInfo { return nil }
 func (m *memoryFS) WalkDir(root string, walkFn vfs.WalkDirFunc) error { return nil }
@@ -86,24 +190,41 @@ func calculateLineColumn(text string, pos int) (int, int) {
 	return line, col
 }
 
-func compileTypeScript(code string) CompileResponse {
+func typecheckTypeScript(code string) TypecheckResponse {
 	memFS := newMemoryFS()
-	memFS.files["/input.ts"] = code
+	
+	// Always use .tsx to support JSX
+	fileName := "/input.tsx"
+	
+	memFS.files[fileName] = code
 	
 	fs := bundled.WrapFS(memFS)
 	
-	// Create minimal compiler options
+	// Create minimal compiler options (matching CrayonDeveloper settings)
+	jsxImportSource := "react"
 	compilerOptions := &core.CompilerOptions{
-		Target: core.ScriptTargetESNext,
-		Module: core.ModuleKindESNext,
-		Strict: core.TSTrue,
-		NoEmit: core.TSFalse,
+		AllowJs:                          core.TSTrue,
+		Declaration:                      core.TSTrue,
+		ESModuleInterop:                  core.TSTrue,
+		ForceConsistentCasingInFileNames: core.TSTrue,
+		IsolatedModules:                  core.TSTrue,
+		Jsx:                              core.JsxEmitReactJSX,
+		JsxImportSource:                  jsxImportSource,
+		Module:                           core.ModuleKindCommonJS,
+		ModuleResolution:                 core.ModuleResolutionKindBundler,
+		NoEmit:                           core.TSTrue,
+		ResolveJsonModule:                core.TSTrue,
+		SkipLibCheck:                     core.TSTrue,
+		Strict:                           core.TSTrue,
+		StrictNullChecks:                 core.TSTrue,
+		Target:                           core.ScriptTargetES2022,
+		Lib:                              []string{"ES2022"},
 	}
 	
 	// Create parsed options
 	parsedOptions := &core.ParsedOptions{
 		CompilerOptions: compilerOptions,
-		FileNames:       []string{"/input.ts"},
+		FileNames:       []string{fileName},
 	}
 	
 	// Create config
@@ -145,41 +266,34 @@ func compileTypeScript(code string) CompileResponse {
 			}
 			errors = append(errors, err)
 		}
-		return CompileResponse{Errors: errors}
+		return TypecheckResponse{Errors: errors}
 	}
 	
-	// Emit
-	program.Emit(ctx, compiler.EmitOptions{})
-	
-	if jsContent, ok := memFS.files["/input.js"]; ok {
-		return CompileResponse{Code: jsContent}
-	}
-	
-	return CompileResponse{Errors: []DiagnosticError{{Message: "No output generated"}}}
+	return TypecheckResponse{Pass: true}
 }
 
 func hello(w http.ResponseWriter, req *http.Request) {
 	fmt.Fprintf(w, "TypeScript Go Server\n")
 }
 
-func compile(w http.ResponseWriter, req *http.Request) {
+func typecheck(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	var compileReq CompileRequest
-	if err := json.NewDecoder(req.Body).Decode(&compileReq); err != nil {
+	var typecheckReq TypecheckRequest
+	if err := json.NewDecoder(req.Body).Decode(&typecheckReq); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
 
-	if compileReq.Code == "" {
+	if typecheckReq.Code == "" {
 		http.Error(w, "Code is required", http.StatusBadRequest)
 		return
 	}
 
-	response := compileTypeScript(compileReq.Code)
+	response := typecheckTypeScript(typecheckReq.Code)
 	
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
@@ -187,7 +301,7 @@ func compile(w http.ResponseWriter, req *http.Request) {
 
 func main() {
 	http.HandleFunc("/", hello)
-	http.HandleFunc("/compile", compile)
+	http.HandleFunc("/typecheck", typecheck)
 	fmt.Println("Listening on :8080...")
 	http.ListenAndServe(":8080", nil)
 }
