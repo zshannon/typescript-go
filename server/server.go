@@ -276,6 +276,11 @@ func calculateLineColumn(text string, pos int) (int, int) {
 }
 
 func typecheckTypeScript(code string) TypecheckResponse {
+	// Track typecheck duration
+	typecheckStart := time.Now()
+	defer func() {
+		typecheckDuration.Observe(time.Since(typecheckStart).Seconds())
+	}()
 	// Clone the global memFS to avoid concurrent modification issues
 	memFS := &memoryFS{
 		files: make(map[string]string, len(globalMemFS.files)),
@@ -357,13 +362,20 @@ func typecheckTypeScript(code string) TypecheckResponse {
 			}
 			errors = append(errors, err)
 		}
+		typecheckResults.WithLabelValues("error").Inc()
 		return TypecheckResponse{Errors: errors}
 	}
 	
+	typecheckResults.WithLabelValues("success").Inc()
 	return TypecheckResponse{Pass: true}
 }
 
 func buildTypeScript(code string) BuildResponse {
+	// Track compile duration
+	compileStart := time.Now()
+	defer func() {
+		compileDuration.Observe(time.Since(compileStart).Seconds())
+	}()
 	// Clone the global memFS to avoid concurrent modification issues
 	memFS := &memoryFS{
 		files: make(map[string]string, len(globalMemFS.files)),
@@ -380,6 +392,9 @@ func buildTypeScript(code string) BuildResponse {
 	// Create virtual file resolver for esbuild
 	resolver := func(path string) (api.OnLoadResult, error) {
 		log.Printf("Resolving: %s", path)
+		
+		// Track package resolutions
+		trackPackageResolution(path)
 		
 		// First try exact path
 		if content, exists := memFS.files[path]; exists {
@@ -550,6 +565,9 @@ func buildTypeScript(code string) BuildResponse {
 			Name: "virtual-fs",
 			Setup: func(pb api.PluginBuild) {
 				pb.OnResolve(api.OnResolveOptions{Filter: ".*"}, func(args api.OnResolveArgs) (api.OnResolveResult, error) {
+					// Track package resolutions in esbuild plugin
+					trackPackageResolution(args.Path)
+					
 					// Transform react imports to use global variable
 					if args.Path == "react" {
 						return api.OnResolveResult{
@@ -628,13 +646,16 @@ func buildTypeScript(code string) BuildResponse {
 			}
 			errors = append(errors, diagErr)
 		}
+		compileResults.WithLabelValues("error").Inc()
 		return BuildResponse{Errors: errors}
 	}
 	
 	if len(result.OutputFiles) == 0 {
+		compileResults.WithLabelValues("error").Inc()
 		return BuildResponse{Errors: []DiagnosticError{{Message: "No output generated"}}}
 	}
 	
+	compileResults.WithLabelValues("success").Inc()
 	return BuildResponse{Code: string(result.OutputFiles[0].Contents)}
 }
 
@@ -652,6 +673,9 @@ func loggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		// Log the request
 		duration := time.Since(start)
 		log.Printf("%s %s - %d - %v", r.Method, r.URL.Path, lrw.statusCode, duration)
+		
+		// Record metrics
+		recordHTTPMetrics(r, lrw.statusCode, duration)
 	}
 }
 
@@ -805,8 +829,12 @@ func main() {
 	http.HandleFunc("/build", loggingMiddleware(build))
 	http.HandleFunc("/", loggingMiddleware(hello))
 	
+	// Start Prometheus metrics server on port 9091
+	go startMetricsServer()
+	
 	log.Printf("Server ready! Listening on :8080...")
 	log.Printf("Endpoints: /, /health, /typecheck, /build")
+	log.Printf("Metrics available at :9091/metrics")
 	
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		log.Fatalf("Server failed to start: %v", err)

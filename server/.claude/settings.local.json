@@ -4,7 +4,10 @@
       "Bash(npm run deploy:server)",
       "Bash(docker stop:*)",
       "Bash(docker rm:*)",
-      "Bash(npm run build:docker:*)"
+      "Bash(npm run build:docker:*)",
+      "WebFetch(domain:fly.io)",
+      "Bash(go get:*)",
+      "Bash(go build:*)"
     ],
     "deny": []
   }
