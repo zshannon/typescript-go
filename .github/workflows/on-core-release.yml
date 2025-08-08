@@ -1,0 +1,59 @@
+name: Build and Deploy on Core Release
+
+on:
+  repository_dispatch:
+    types: [core-release]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version of @crayonnow/core to deploy with'
+        required: true
+        type: string
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+            VERSION="${{ github.event.client_payload.version }}"
+            echo "Triggered by @crayonnow/core release v${VERSION}"
+          else
+            VERSION="${{ github.event.inputs.version || 'latest' }}"
+            echo "Manually triggered with version: ${VERSION}"
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Update @crayonnow/core version in server
+        working-directory: ./server
+        env:
+          GITHUB_TOKEN: ${{ secrets.TYPESCRIPT_GO_READ_PACKAGES }}
+        run: |
+          npm install @crayonnow/core@${{ steps.version.outputs.VERSION }}
+          echo "Updated @crayonnow/core to version ${{ steps.version.outputs.VERSION }}"
+
+      - name: Setup Fly CLI
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Build and Deploy to Fly.io
+        working-directory: ./server
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TYPESCRIPT_GO_READ_PACKAGES }}
+        run: |
+          echo "Building Docker image with @crayonnow/core v${{ steps.version.outputs.VERSION }}"
+          cd ..
+          fly deploy --config server/fly.toml --dockerfile server/Dockerfile --build-secret GITHUB_TOKEN="${GITHUB_TOKEN}"
+          echo "Successfully deployed typescript-go with @crayonnow/core v${{ steps.version.outputs.VERSION }}"
