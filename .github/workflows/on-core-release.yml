@@ -48,12 +48,10 @@ jobs:
         uses: superfly/flyctl-actions/setup-flyctl@master
 
       - name: Build and Deploy to Fly.io
-        working-directory: ./server
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.TYPESCRIPT_GO_READ_PACKAGES }}
         run: |
           echo "Building Docker image with @crayonnow/core v${{ steps.version.outputs.VERSION }}"
-          cd ..
-          fly deploy --config server/fly.toml --dockerfile server/Dockerfile --build-secret GITHUB_TOKEN="${GITHUB_TOKEN}"
+          flyctl deploy --config server/fly.toml --dockerfile server/Dockerfile --build-secret GITHUB_TOKEN="${GITHUB_TOKEN}"
           echo "Successfully deployed typescript-go with @crayonnow/core v${{ steps.version.outputs.VERSION }}"
