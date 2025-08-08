@@ -36,7 +36,8 @@
       "Bash(pkill:*)",
       "Bash(cat:*)",
       "Bash(go run:*)",
-      "Bash(npm run build:docker:*)"
+      "Bash(npm run build:docker:*)",
+      "Bash(make:*)"
     ],
     "deny": []
   }

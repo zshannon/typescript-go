@@ -606,7 +606,7 @@ func buildWithConfig(projectPath string, printErrors bool, configFile string, re
 		}, nil
 	}
 
-	host := compiler.NewCachedFSCompilerHost(configParseResult.CompilerOptions(), sys.GetCurrentDirectory(), sys.FS(), sys.DefaultLibraryPath(), &extendedConfigCache)
+	host := compiler.NewCachedFSCompilerHost(sys.GetCurrentDirectory(), sys.FS(), sys.DefaultLibraryPath(), &extendedConfigCache)
 	program := compiler.NewProgram(compiler.ProgramOptions{
 		Config:           configParseResult,
 		Host:             host,
@@ -640,7 +640,7 @@ func buildWithConfig(projectPath string, printErrors bool, configFile string, re
 	var emitResult *compiler.EmitResult
 	var emittedFiles []string
 	if !options.ListFilesOnly.IsTrue() {
-		emitResult = program.Emit(compiler.EmitOptions{})
+		emitResult = program.Emit(ctx, compiler.EmitOptions{})
 		allDiagnostics = append(allDiagnostics, emitResult.Diagnostics...)
 		emittedFiles = emitResult.EmittedFiles
 

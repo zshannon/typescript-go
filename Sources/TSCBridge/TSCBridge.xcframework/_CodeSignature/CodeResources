@@ -10,7 +10,7 @@
 		</data>
 		<key>ios-arm64/libtsc_ios_arm64.a</key>
 		<data>
-		jBsrEZjgmmecEA2lvCr1Y1nx0yQ=
+		clijOAEKT+a3nRth2cHpNqmRX0A=
 		</data>
 		<key>ios-arm64_x86_64-simulator/Headers/tsc_bridge.h</key>
 		<data>
@@ -18,7 +18,7 @@
 		</data>
 		<key>ios-arm64_x86_64-simulator/libtsc_ios_sim_universal.a</key>
 		<data>
-		3Rhwle1Hi34LSyyQoV0wIYSV7tA=
+		McB7jX05pQgNGnHqvXF9GOXChI4=
 		</data>
 		<key>macos-arm64_x86_64/Headers/tsc_bridge.h</key>
 		<data>
@@ -26,7 +26,7 @@
 		</data>
 		<key>macos-arm64_x86_64/libtsc_macos_universal.a</key>
 		<data>
-		wEd9vIXoEJiZPaZTcDRGHPMvlhs=
+		Dd4wTdptUFuQanklH6NOxAuJeus=
 		</data>
 	</dict>
 	<key>files2</key>
@@ -46,11 +46,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			jBsrEZjgmmecEA2lvCr1Y1nx0yQ=
+			clijOAEKT+a3nRth2cHpNqmRX0A=
 			</data>
 			<key>hash2</key>
 			<data>
-			vPXcDSsQ/kj7IolwfwDZbJSgtxJdydkg3FiHxnRm9jc=
+			U88Do38pCFdz1Mp3/eCfJaV0hb8rX+h5dkoaeiNy7ng=
 			</data>
 		</dict>
 		<key>ios-arm64_x86_64-simulator/Headers/tsc_bridge.h</key>
@@ -68,11 +68,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			3Rhwle1Hi34LSyyQoV0wIYSV7tA=
+			McB7jX05pQgNGnHqvXF9GOXChI4=
 			</data>
 			<key>hash2</key>
 			<data>
-			Et0+l9IxAkLu6ROIxaniyFL4L5VWt8EEhOu/ubGxDA0=
+			vra5S6EycTqehx2oohhBnpxJSerVyAfhPO6It3iIrSA=
 			</data>
 		</dict>
 		<key>macos-arm64_x86_64/Headers/tsc_bridge.h</key>
@@ -90,11 +90,11 @@
 		<dict>
 			<key>hash</key>
 			<data>
-			wEd9vIXoEJiZPaZTcDRGHPMvlhs=
+			Dd4wTdptUFuQanklH6NOxAuJeus=
 			</data>
 			<key>hash2</key>
 			<data>
-			M7QUdJPjqJSNBDifhHDIxntyeRQzEp3Taa1bXDQsgb4=
+			DkIj5y93wWDGziylN1m/cYyq5Zxy7GgQP3eNVpaz30g=
 			</data>
 		</dict>
 	</dict>
