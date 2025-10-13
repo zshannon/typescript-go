@@ -13,8 +13,8 @@ if ProcessInfo.processInfo.environment["SWIFTTSGO_LOCAL"] != nil {
 } else {
     binaryTarget = .binaryTarget(
         name: "TSCBridgeLib",
-        url: "https://github.com/zshannon/typescript-go/releases/download/0.1.0/TSCBridge.xcframework.zip",
-        checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+        url: "https://github.com/zshannon/typescript-go/releases/download/0.1.2/TSCBridge.xcframework.zip",
+        checksum: "787054ee839b9798af9d8be925b76c265d6df7cf2ee25d7d23bec01cffb8a41a"
     )
 }
 
