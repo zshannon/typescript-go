@@ -1,0 +1,8 @@
+# Compiled Go binary
+server
+
+# Node modules
+node_modules/
+
+# OS files
+.DS_Store

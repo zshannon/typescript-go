@@ -1,0 +1,4 @@
+{
+  "code": "import { Text } from '@crayonnow/core';\\nexport default () => <Text>Hello</Text>;",
+  "version": "0.0.4"
+}

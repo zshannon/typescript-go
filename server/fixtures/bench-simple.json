@@ -1,0 +1,4 @@
+{
+  "code": "import React from 'react';\\nexport default () => React.createElement('div', null, 'Hello');",
+  "version": "0.0.4"
+}

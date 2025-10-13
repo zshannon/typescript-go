@@ -1,0 +1,48 @@
+name: Deploy Server to Fly.io
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "server/**"
+      - "internal/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/deploy-server.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Run Go tests
+        run: |
+          cd server
+          go test -v ./...
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Fly CLI
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to Fly.io
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl deploy --remote-only \
+            --config server/fly.toml \
+            --dockerfile server/Dockerfile \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            --build-arg GIT_COMMIT=${{ github.sha }}

@@ -1,0 +1,4 @@
+{
+  "code": "export const hello: string = 'world'; export const count: number = 42;",
+  "version": "0.0.4"
+}

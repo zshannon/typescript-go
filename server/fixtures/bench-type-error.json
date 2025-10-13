@@ -1,0 +1,4 @@
+{
+  "code": "export const hello: string = 123",
+  "version": "0.0.4"
+}

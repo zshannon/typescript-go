@@ -1,0 +1,129 @@
+name: Release XCFramework
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag (e.g., 0.1.0)"
+        required: true
+        type: string
+
+jobs:
+  build-and-release:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.0"
+          cache: true
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build XCFramework
+        env:
+          CI: true
+        run: ./scripts/build-xcframework.sh
+
+      - name: Read checksum
+        id: checksum
+        run: |
+          CHECKSUM=$(cat release/TSCBridge.xcframework.zip.sha256)
+          echo "checksum=${CHECKSUM}" >> $GITHUB_OUTPUT
+
+      - name: Create draft release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ inputs.version }}
+          release_name: Release ${{ inputs.version }}
+          body: |
+            ## TSCBridge XCFramework Release ${{ inputs.version }}
+
+            Binary distribution of the TypeScript-Go bridge framework.
+
+            ### Checksum
+            ```
+            ${{ steps.checksum.outputs.checksum }}
+            ```
+
+            ### Usage in Package.swift
+            ```swift
+            .binaryTarget(
+                name: "TSCBridgeLib",
+                url: "https://github.com/zshannon/typescript-go/releases/download/${{ inputs.version }}/TSCBridge.xcframework.zip",
+                checksum: "${{ steps.checksum.outputs.checksum }}"
+            )
+            ```
+          draft: true
+          prerelease: false
+
+      - name: Upload XCFramework to release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./release/TSCBridge.xcframework.zip
+          asset_name: TSCBridge.xcframework.zip
+          asset_content_type: application/zip
+
+      - name: Upload checksum to release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./release/TSCBridge.xcframework.zip.sha256
+          asset_name: TSCBridge.xcframework.zip.sha256
+          asset_content_type: text/plain
+
+      - name: Update Package.swift with new version
+        run: |
+          sed -i '' "s|releases/download/[^/]*/|releases/download/${{ inputs.version }}/|g" Package.swift
+          sed -i '' "s|checksum: \"[^\"]*\"|checksum: \"${{ steps.checksum.outputs.checksum }}\"|g" Package.swift
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: |
+            Update Package.swift for release ${{ inputs.version }}
+
+            - Update release URL to ${{ inputs.version }}
+            - Update checksum to ${{ steps.checksum.outputs.checksum }}
+
+            🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+            Co-Authored-By: Claude <noreply@anthropic.com>
+          branch: release/${{ inputs.version }}
+          delete-branch: true
+          title: "Release TSCBridge ${{ inputs.version }}"
+          body: |
+            ## Release TSCBridge ${{ inputs.version }}
+
+            This PR updates Package.swift to reference the new XCFramework release.
+
+            ### Changes
+            - Updated release URL to version ${{ inputs.version }}
+            - Updated checksum to `${{ steps.checksum.outputs.checksum }}`
+
+            ### Draft Release
+            A draft release has been created at: ${{ steps.create_release.outputs.html_url }}
+
+            ### Workflow
+            1. Review this PR
+            2. Merge when ready
+            3. The release will be automatically published upon merge
+
+            🤖 Generated with [Claude Code](https://claude.com/claude-code)

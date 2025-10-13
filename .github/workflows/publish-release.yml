@@ -1,0 +1,45 @@
+name: Publish Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+jobs:
+  publish-release:
+    # Only run if PR was merged and branch name starts with 'release/'
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Extract version from branch name
+        id: version
+        run: |
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          VERSION="${BRANCH_NAME#release/}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Publish draft release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Get the draft release ID
+          RELEASE_ID=$(gh api repos/${{ github.repository }}/releases \
+            --jq ".[] | select(.tag_name == \"${VERSION}\" and .draft == true) | .id")
+
+          if [ -z "$RELEASE_ID" ]; then
+            echo "Error: No draft release found for version ${VERSION}"
+            exit 1
+          fi
+
+          # Publish the release
+          gh api repos/${{ github.repository }}/releases/${RELEASE_ID} \
+            -X PATCH \
+            -f draft=false
+
+          echo "Published release ${VERSION}"
