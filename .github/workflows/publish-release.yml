@@ -24,12 +24,12 @@ jobs:
 
       - name: Publish draft release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TYPESCRIPT_GO_SWIFT_RELEASE_TOKEN }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
 
-          # Get the draft release ID
-          RELEASE_ID=$(gh api repos/${{ github.repository }}/releases \
+          # Get the draft release ID from typescript-go-swift repo
+          RELEASE_ID=$(gh api repos/zshannon/typescript-go-swift/releases \
             --jq ".[] | select(.tag_name == \"${VERSION}\" and .draft == true) | .id")
 
           if [ -z "$RELEASE_ID" ]; then
@@ -38,7 +38,7 @@ jobs:
           fi
 
           # Publish the release
-          gh api repos/${{ github.repository }}/releases/${RELEASE_ID} \
+          gh api repos/zshannon/typescript-go-swift/releases/${RELEASE_ID} \
             -X PATCH \
             -f draft=false
 

@@ -41,62 +41,52 @@ jobs:
 
       - name: Create draft release
         id: create_release
-        uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.TYPESCRIPT_GO_SWIFT_RELEASE_TOKEN }}
+        run: |
+          RELEASE_URL=$(gh release create ${{ inputs.version }} \
+            --repo zshannon/typescript-go-swift \
+            --draft \
+            --title "Release ${{ inputs.version }}" \
+            --notes "## TSCBridge XCFramework Release ${{ inputs.version }}
+
+          Binary distribution of the TypeScript-Go bridge framework.
+
+          ### Checksum
+          \`\`\`
+          ${{ steps.checksum.outputs.checksum }}
+          \`\`\`
+
+          ### Usage in Package.swift
+          \`\`\`swift
+          .binaryTarget(
+              name: \"TSCBridgeLib\",
+              url: \"https://github.com/zshannon/typescript-go-swift/releases/download/${{ inputs.version }}/TSCBridge.xcframework.zip\",
+              checksum: \"${{ steps.checksum.outputs.checksum }}\"
+          )
+          \`\`\`" \
+            ./release/TSCBridge.xcframework.zip \
+            ./release/TSCBridge.xcframework.zip.sha256)
+          echo "html_url=${RELEASE_URL}" >> $GITHUB_OUTPUT
+
+      - name: Checkout typescript-go-swift repo
+        uses: actions/checkout@v4
         with:
-          tag_name: ${{ inputs.version }}
-          release_name: Release ${{ inputs.version }}
-          body: |
-            ## TSCBridge XCFramework Release ${{ inputs.version }}
-
-            Binary distribution of the TypeScript-Go bridge framework.
-
-            ### Checksum
-            ```
-            ${{ steps.checksum.outputs.checksum }}
-            ```
-
-            ### Usage in Package.swift
-            ```swift
-            .binaryTarget(
-                name: "TSCBridgeLib",
-                url: "https://github.com/zshannon/typescript-go/releases/download/${{ inputs.version }}/TSCBridge.xcframework.zip",
-                checksum: "${{ steps.checksum.outputs.checksum }}"
-            )
-            ```
-          draft: true
-          prerelease: false
-
-      - name: Upload XCFramework to release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./release/TSCBridge.xcframework.zip
-          asset_name: TSCBridge.xcframework.zip
-          asset_content_type: application/zip
-
-      - name: Upload checksum to release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./release/TSCBridge.xcframework.zip.sha256
-          asset_name: TSCBridge.xcframework.zip.sha256
-          asset_content_type: text/plain
+          repository: zshannon/typescript-go-swift
+          token: ${{ secrets.TYPESCRIPT_GO_SWIFT_RELEASE_TOKEN }}
+          path: typescript-go-swift
 
       - name: Update Package.swift with new version
         run: |
+          cd typescript-go-swift
           sed -i '' "s|releases/download/[^/]*/|releases/download/${{ inputs.version }}/|g" Package.swift
           sed -i '' "s|checksum: \"[^\"]*\"|checksum: \"${{ steps.checksum.outputs.checksum }}\"|g" Package.swift
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v7
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.TYPESCRIPT_GO_SWIFT_RELEASE_TOKEN }}
+          path: typescript-go-swift
           commit-message: |
             Update Package.swift for release ${{ inputs.version }}
 

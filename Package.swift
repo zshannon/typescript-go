@@ -2,8 +2,10 @@
 import PackageDescription
 import Foundation
 
-// Use local XCFramework when SWIFTTSGO_LOCAL environment variable is set
-// Otherwise use the released version from GitHub
+// This Package.swift is for local development and testing.
+// The distributed Swift Package lives in swift-package/ submodule.
+// Set SWIFTTSGO_LOCAL=1 to test with a locally built XCFramework.
+
 let binaryTarget: Target
 if ProcessInfo.processInfo.environment["SWIFTTSGO_LOCAL"] != nil {
     binaryTarget = .binaryTarget(
@@ -13,7 +15,7 @@ if ProcessInfo.processInfo.environment["SWIFTTSGO_LOCAL"] != nil {
 } else {
     binaryTarget = .binaryTarget(
         name: "TSCBridgeLib",
-        url: "https://github.com/zshannon/typescript-go/releases/download/0.1.2/TSCBridge.xcframework.zip",
+        url: "https://github.com/zshannon/typescript-go-swift/releases/download/0.1.2/TSCBridge.xcframework.zip",
         checksum: "fbef72612b8819e62ecf86a5a29f5d2a09b6a2725433d5b58195ceede151743a"
     )
 }
@@ -30,11 +32,12 @@ let package = Package(
     targets: [
         .systemLibrary(
             name: "TSCBridge",
-            path: "Sources/TSCBridge"
+            path: "swift-package/Sources/TSCBridge"
         ),
         binaryTarget,
         .target(
             name: "SwiftTSGo",
+            path: "swift-package/Sources/SwiftTSGo",
             dependencies: [
                 .target(name: "TSCBridge"),
                 .target(name: "TSCBridgeLib"),

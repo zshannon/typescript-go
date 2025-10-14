@@ -2,3 +2,6 @@
 	path = _submodules/TypeScript
 	url = https://github.com/microsoft/TypeScript.git
 	branch = tsgo-port
+[submodule "swift-package"]
+	path = swift-package
+	url = https://github.com/zshannon/typescript-go-swift.git
