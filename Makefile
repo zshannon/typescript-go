@@ -26,6 +26,12 @@ build-bridge:
 	@mkdir -p $(OUTPUT_DIR)
 	@echo "$(YELLOW)Cleaning previous builds...$(NC)"
 	@rm -f $(OUTPUT_DIR)/*.a $(OUTPUT_DIR)/*.h $(BRIDGE_DIR)/*.a $(BRIDGE_DIR)/*.h
+	@echo "$(YELLOW)Applying library compatibility patch...$(NC)"
+	@if git apply --check internal-osvfs-library-fix.patch 2>/dev/null; then \
+		git apply internal-osvfs-library-fix.patch; \
+	else \
+		echo "$(BLUE)Patch already applied or not needed$(NC)"; \
+	fi
 	@echo "$(YELLOW)Building for macOS x86_64...$(NC)"
 	@cd $(BRIDGE_DIR) && CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -buildmode=c-archive -o libtsc_darwin_amd64.a .
 	@echo "$(YELLOW)Building for macOS arm64...$(NC)"
@@ -56,6 +62,8 @@ build-bridge:
 	@echo "$(YELLOW)Cleaning up intermediate files...$(NC)"
 	@cd $(BRIDGE_DIR) && rm -f libtsc_*.a *.h
 	@cd $(BRIDGE_DIR) && rm -rf TSCBridge.xcframework headers
+	@echo "$(YELLOW)Reverting library compatibility patch...$(NC)"
+	@git checkout -- internal/vfs/osvfs/os.go 2>/dev/null || true
 	@echo "$(GREEN)C Bridge build completed successfully!$(NC)"
 	@$(MAKE) sign-bridge
 	@$(MAKE) verify-bridge

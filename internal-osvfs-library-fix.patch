@@ -1,0 +1,16 @@
+--- a/internal/vfs/osvfs/os.go
++++ b/internal/vfs/osvfs/os.go
+@@ -47,7 +47,12 @@ var isFileSystemCaseSensitive = func() bool {
+ 	// but this is largely good enough for our purposes (and what sys.ts used to do with __filename).
+ 	exe, err := os.Executable()
+ 	if err != nil {
+-		panic(fmt.Sprintf("vfs: failed to get executable path: %v", err))
++		// When loaded as a shared library (e.g., from Swift/C via gomobile), os.Executable() may fail.
++		// This is a known issue: https://github.com/golang/go/issues/22529
++		// In this case, default to case-sensitive on Unix-like systems except darwin.
++		// macOS with APFS defaults to case-insensitive, but we can't reliably detect this
++		// without an executable path.
++		return runtime.GOOS != "darwin"
+ 	}
+
+ 	// If the current executable exists under a different case, we must be case-insensitive.

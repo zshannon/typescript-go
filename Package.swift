@@ -32,16 +32,16 @@ let package = Package(
     targets: [
         .systemLibrary(
             name: "TSCBridge",
-            path: "swift-package/Sources/TSCBridge"
+            path: "swift-package/swift-package/Sources/TSCBridge"
         ),
         binaryTarget,
         .target(
             name: "SwiftTSGo",
-            path: "swift-package/Sources/SwiftTSGo",
             dependencies: [
                 .target(name: "TSCBridge"),
                 .target(name: "TSCBridgeLib"),
-            ]
+            ],
+            path: "swift-package/swift-package/Sources/SwiftTSGo"
         ),
         .testTarget(
             name: "SwiftTSGoTests",

@@ -397,6 +397,7 @@ void swift_plugin_on_end_callback(void* callbackData);
 import "C"
 
 import (
+	"sync"
 	"unsafe"
 
 	"github.com/evanw/esbuild/pkg/api"
@@ -2613,19 +2614,26 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 // and linked externally. No Go implementations needed.
 
 // Plugin registry to store registered plugins
-var pluginRegistry = make(map[unsafe.Pointer]*C.c_plugin)
+var (
+	pluginRegistry   = make(map[unsafe.Pointer]*C.c_plugin)
+	pluginRegistryMu sync.RWMutex
+)
 
 //export register_plugin
 func register_plugin(plugin *C.c_plugin) unsafe.Pointer {
 	// Generate a unique ID for this plugin
 	pluginID := unsafe.Pointer(plugin)
+	pluginRegistryMu.Lock()
 	pluginRegistry[pluginID] = plugin
+	pluginRegistryMu.Unlock()
 	return pluginID
 }
 
 //export unregister_plugin
 func unregister_plugin(pluginID unsafe.Pointer) {
+	pluginRegistryMu.Lock()
 	delete(pluginRegistry, pluginID)
+	pluginRegistryMu.Unlock()
 }
 
 // Main function is already defined in c_bridge.go
