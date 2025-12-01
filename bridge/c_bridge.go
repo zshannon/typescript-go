@@ -89,6 +89,7 @@ import (
 	"github.com/microsoft/typescript-go/internal/compiler"
 	"github.com/microsoft/typescript-go/internal/core"
 	"github.com/microsoft/typescript-go/internal/diagnosticwriter"
+	"github.com/microsoft/typescript-go/internal/locale"
 	"github.com/microsoft/typescript-go/internal/tsoptions"
 	"github.com/microsoft/typescript-go/internal/tspath"
 	"github.com/microsoft/typescript-go/internal/vfs"
@@ -685,7 +686,7 @@ func buildWithConfig(projectPath string, printErrors bool, configFile string, re
 	if printErrors && len(allDiagnostics) > 0 {
 		for _, diag := range allDiagnostics {
 			formatOpts := &diagnosticwriter.FormattingOptions{NewLine: "\n"}
-			diagnosticwriter.WriteFormatDiagnostic(sys.Writer(), diag, formatOpts)
+			diagnosticwriter.WriteFormatDiagnostic(sys.Writer(), diagnosticwriter.WrapASTDiagnostic(diag), formatOpts)
 		}
 	}
 
@@ -722,7 +723,7 @@ func convertASTDiagnostics(diagnostics []*ast.Diagnostic) []BridgeDiagnostic {
 		result[i] = BridgeDiagnostic{
 			Code:     int(diag.Code()),
 			Category: diag.Category().Name(),
-			Message:  diag.Message(),
+			Message:  diag.Localize(locale.Default),
 		}
 
 		if diag.File() != nil {
