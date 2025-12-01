@@ -28,6 +28,7 @@ import (
 	"github.com/microsoft/typescript-go/internal/compiler"
 	"github.com/microsoft/typescript-go/internal/core"
 	"github.com/microsoft/typescript-go/internal/execute/tsc"
+	"github.com/microsoft/typescript-go/internal/locale"
 	"github.com/microsoft/typescript-go/internal/tsoptions"
 	"github.com/microsoft/typescript-go/internal/vfs"
 )
@@ -894,7 +895,7 @@ func typecheckTypeScript(code string, version string) TypecheckResponse {
 		errors := make([]DiagnosticError, 0, len(diagnostics))
 		for _, diag := range diagnostics {
 			err := DiagnosticError{
-				Message: diag.Message(),
+				Message: diag.Localize(locale.Default),
 			}
 			if diag.File() != nil && diag.Loc().Pos() >= 0 {
 				line, col := calculateLineColumn(diag.File().Text(), diag.Loc().Pos())
