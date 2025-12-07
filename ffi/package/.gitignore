@@ -1,0 +1,7 @@
+node_modules/
+dist/
+binaries/
+*.so
+*.dylib
+*.dll
+*.h

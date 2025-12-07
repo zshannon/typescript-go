@@ -1,0 +1,56 @@
+{
+  "name": "tsgo",
+  "version": "0.1.0",
+  "description": "Blazing fast TypeScript type checker powered by TypeScript-Go, accessible via Bun FFI",
+  "keywords": [
+    "typescript",
+    "type-checker",
+    "typecheck",
+    "ffi",
+    "bun",
+    "go",
+    "fast",
+    "jsx",
+    "react"
+  ],
+  "author": "TypeScript-Go Contributors",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anthropics/typescript-go"
+  },
+  "homepage": "https://github.com/anthropics/typescript-go#readme",
+  "bugs": {
+    "url": "https://github.com/anthropics/typescript-go/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --target bun",
+    "build:types": "bun x tsc --declaration --emitDeclarationOnly --outDir dist src/index.ts",
+    "prepublishOnly": "bun run build && bun run build:types",
+    "test": "bun test",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  }
+}
