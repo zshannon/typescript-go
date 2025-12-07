@@ -240,6 +240,94 @@ describe("tsgo FFI Type Checker", () => {
       )).toBe(true);
     });
 
+    test("custom jsxImportSource with @mini/jsx-runtime succeeds", () => {
+      // Test with our mini custom JSX runtime using UNIQUE element names
+      // These elements (zframe, zheading, zbutton, ztext, zstack) DON'T exist in react-dom!
+      // If this passes, it proves jsxImportSource is actually being used
+      const code = `
+        const App = () => {
+          return (
+            <zframe layout="centered">
+              <zheading level={1}>Hello Mini JSX!</zheading>
+              <zstack direction="horizontal" gap={8}>
+                <ztext color="blue" bold>Welcome to custom JSX</ztext>
+                <zbutton variant="primary" onTap={() => console.log("tapped")}>
+                  Tap me
+                </zbutton>
+              </zstack>
+            </zframe>
+          );
+        };
+
+        export default App;
+      `;
+      const result = tsgo.typecheckWithOptions(code, "/project/MiniApp.tsx", {
+        jsx: "react-jsx",
+        jsxImportSource: "@mini/jsx-runtime",
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        strict: true,
+        skipLibCheck: true,
+        lib: ["ES2022", "DOM"],
+      });
+      expect(result.success).toBe(true);
+      expect(result.diagnostics?.length ?? 0).toBe(0);
+    });
+
+    test("custom jsxImportSource fails with unknown element", () => {
+      // Using 'div' which does NOT exist in @mini/jsx-runtime (only zframe, ztext, etc.)
+      // This MUST fail - proving that our custom JSX definitions are enforced
+      const code = `
+        const App = () => {
+          return (
+            <div>This should fail - div is not in @mini/jsx-runtime!</div>
+          );
+        };
+
+        export default App;
+      `;
+      const result = tsgo.typecheckWithOptions(code, "/project/BadElement.tsx", {
+        jsx: "react-jsx",
+        jsxImportSource: "@mini/jsx-runtime",
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        strict: true,
+        skipLibCheck: true,
+        lib: ["ES2022", "DOM"],
+      });
+      expect(result.success).toBe(false);
+      // Should error because 'div' is not in IntrinsicElements
+      expect(result.diagnostics?.some(d => d.message.includes("div"))).toBe(true);
+    });
+
+    test("custom jsxImportSource fails with wrong prop type", () => {
+      // Using wrong prop type: level should be number, not string
+      const code = `
+        const App = () => {
+          return (
+            <zheading level="wrong">Wrong type!</zheading>
+          );
+        };
+
+        export default App;
+      `;
+      const result = tsgo.typecheckWithOptions(code, "/project/BadProp.tsx", {
+        jsx: "react-jsx",
+        jsxImportSource: "@mini/jsx-runtime",
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "Bundler",
+        strict: true,
+        skipLibCheck: true,
+        lib: ["ES2022", "DOM"],
+      });
+      expect(result.success).toBe(false);
+      // Should error because level expects 1|2|3|4|5|6, not string
+      expect(result.diagnostics?.length).toBeGreaterThan(0);
+    });
+
     test("full server-compatible config works", () => {
       const code = `
         import React, { PropsWithChildren } from 'react';
