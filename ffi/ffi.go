@@ -407,14 +407,21 @@ func typeCheckCode(code string, fileName string, options *core.CompilerOptions, 
 	// Default compiler options if not provided
 	if options == nil {
 		options = &core.CompilerOptions{
-			Target:           core.ScriptTargetES2022,
-			Module:           core.ModuleKindESNext,
-			Strict:           core.TSTrue,
-			StrictNullChecks: core.TSTrue,
-			NoEmit:           core.TSTrue,
-			SkipLibCheck:     core.TSTrue,
-			Jsx:              core.JsxEmitReactJSX,
-			Lib:              []string{"ES2022", "DOM"},
+			AllowJs:                          core.TSTrue,
+			Declaration:                      core.TSTrue,
+			ESModuleInterop:                  core.TSTrue,
+			ForceConsistentCasingInFileNames: core.TSTrue,
+			IsolatedModules:                  core.TSTrue,
+			Jsx:                              core.JsxEmitReactJSX,
+			Module:                           core.ModuleKindESNext,
+			ModuleResolution:                 core.ModuleResolutionKindBundler,
+			NoEmit:                           core.TSTrue,
+			ResolveJsonModule:                core.TSTrue,
+			SkipLibCheck:                     core.TSTrue,
+			Strict:                           core.TSTrue,
+			StrictNullChecks:                 core.TSTrue,
+			Target:                           core.ScriptTargetES2022,
+			Lib:                              []string{"ES2022", "DOM"},
 		}
 	}
 
@@ -513,7 +520,7 @@ func tsgo_typecheck_with_options(code *C.char, fileName *C.char, optionsJSON *C.
 		if err := json.Unmarshal([]byte(goOptionsJSON), &optionsMap); err == nil {
 			options = &core.CompilerOptions{}
 
-			// Parse common options
+			// Parse target
 			if target, ok := optionsMap["target"].(string); ok {
 				switch target {
 				case "ES5":
@@ -539,19 +546,51 @@ func tsgo_typecheck_with_options(code *C.char, fileName *C.char, optionsJSON *C.
 				}
 			}
 
-			if strict, ok := optionsMap["strict"].(bool); ok && strict {
-				options.Strict = core.TSTrue
-				options.StrictNullChecks = core.TSTrue
+			// Parse module
+			if module, ok := optionsMap["module"].(string); ok {
+				switch module {
+				case "CommonJS":
+					options.Module = core.ModuleKindCommonJS
+				case "AMD":
+					options.Module = core.ModuleKindAMD
+				case "UMD":
+					options.Module = core.ModuleKindUMD
+				case "System":
+					options.Module = core.ModuleKindSystem
+				case "ES6", "ES2015":
+					options.Module = core.ModuleKindES2015
+				case "ES2020":
+					options.Module = core.ModuleKindES2020
+				case "ES2022":
+					options.Module = core.ModuleKindES2022
+				case "ESNext":
+					options.Module = core.ModuleKindESNext
+				case "Node16":
+					options.Module = core.ModuleKindNode16
+				case "NodeNext":
+					options.Module = core.ModuleKindNodeNext
+				case "Preserve":
+					options.Module = core.ModuleKindPreserve
+				}
 			}
 
-			if noEmit, ok := optionsMap["noEmit"].(bool); ok && noEmit {
-				options.NoEmit = core.TSTrue
+			// Parse moduleResolution
+			if moduleRes, ok := optionsMap["moduleResolution"].(string); ok {
+				switch moduleRes {
+				case "Classic":
+					options.ModuleResolution = core.ModuleResolutionKindClassic
+				case "Node", "Node10":
+					options.ModuleResolution = core.ModuleResolutionKindNode10
+				case "Node16":
+					options.ModuleResolution = core.ModuleResolutionKindNode16
+				case "NodeNext":
+					options.ModuleResolution = core.ModuleResolutionKindNodeNext
+				case "Bundler":
+					options.ModuleResolution = core.ModuleResolutionKindBundler
+				}
 			}
 
-			if skipLibCheck, ok := optionsMap["skipLibCheck"].(bool); ok && skipLibCheck {
-				options.SkipLibCheck = core.TSTrue
-			}
-
+			// Parse JSX options
 			if jsx, ok := optionsMap["jsx"].(string); ok {
 				switch jsx {
 				case "react":
@@ -565,6 +604,60 @@ func tsgo_typecheck_with_options(code *C.char, fileName *C.char, optionsJSON *C.
 				}
 			}
 
+			// Parse jsxImportSource (critical for custom JSX runtimes)
+			if jsxImportSource, ok := optionsMap["jsxImportSource"].(string); ok {
+				options.JsxImportSource = jsxImportSource
+			}
+
+			// Parse jsxFactory
+			if jsxFactory, ok := optionsMap["jsxFactory"].(string); ok {
+				options.JsxFactory = jsxFactory
+			}
+
+			// Parse jsxFragmentFactory
+			if jsxFragmentFactory, ok := optionsMap["jsxFragmentFactory"].(string); ok {
+				options.JsxFragmentFactory = jsxFragmentFactory
+			}
+
+			// Parse boolean options
+			if strict, ok := optionsMap["strict"].(bool); ok && strict {
+				options.Strict = core.TSTrue
+				options.StrictNullChecks = core.TSTrue
+			}
+
+			if noEmit, ok := optionsMap["noEmit"].(bool); ok && noEmit {
+				options.NoEmit = core.TSTrue
+			}
+
+			if skipLibCheck, ok := optionsMap["skipLibCheck"].(bool); ok && skipLibCheck {
+				options.SkipLibCheck = core.TSTrue
+			}
+
+			if allowJs, ok := optionsMap["allowJs"].(bool); ok && allowJs {
+				options.AllowJs = core.TSTrue
+			}
+
+			if declaration, ok := optionsMap["declaration"].(bool); ok && declaration {
+				options.Declaration = core.TSTrue
+			}
+
+			if esModuleInterop, ok := optionsMap["esModuleInterop"].(bool); ok && esModuleInterop {
+				options.ESModuleInterop = core.TSTrue
+			}
+
+			if forceConsistentCasingInFileNames, ok := optionsMap["forceConsistentCasingInFileNames"].(bool); ok && forceConsistentCasingInFileNames {
+				options.ForceConsistentCasingInFileNames = core.TSTrue
+			}
+
+			if isolatedModules, ok := optionsMap["isolatedModules"].(bool); ok && isolatedModules {
+				options.IsolatedModules = core.TSTrue
+			}
+
+			if resolveJsonModule, ok := optionsMap["resolveJsonModule"].(bool); ok && resolveJsonModule {
+				options.ResolveJsonModule = core.TSTrue
+			}
+
+			// Parse lib array
 			if lib, ok := optionsMap["lib"].([]interface{}); ok {
 				for _, l := range lib {
 					if s, ok := l.(string); ok {

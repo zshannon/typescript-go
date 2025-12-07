@@ -74,12 +74,34 @@ export interface TypeCheckResult {
 
 /** Compiler options for type checking */
 export interface CompilerOptions {
+  // Target and module
   target?: "ES5" | "ES6" | "ES2015" | "ES2016" | "ES2017" | "ES2018" | "ES2019" | "ES2020" | "ES2021" | "ES2022" | "ESNext";
-  strict?: boolean;
-  noEmit?: boolean;
-  skipLibCheck?: boolean;
-  jsx?: "react" | "react-jsx" | "react-jsxdev" | "preserve";
+  module?: "CommonJS" | "AMD" | "UMD" | "System" | "ES6" | "ES2015" | "ES2020" | "ES2022" | "ESNext" | "Node16" | "NodeNext" | "Preserve";
+  moduleResolution?: "Classic" | "Node" | "Node10" | "Node16" | "NodeNext" | "Bundler";
   lib?: string[];
+
+  // JSX options
+  jsx?: "react" | "react-jsx" | "react-jsxdev" | "preserve";
+  jsxImportSource?: string;  // e.g., "react", "@emotion/react", "@crayonnow/core"
+  jsxFactory?: string;       // e.g., "React.createElement"
+  jsxFragmentFactory?: string; // e.g., "React.Fragment"
+
+  // Strictness
+  strict?: boolean;
+
+  // Emit options
+  noEmit?: boolean;
+  declaration?: boolean;
+
+  // Module options
+  allowJs?: boolean;
+  esModuleInterop?: boolean;
+  isolatedModules?: boolean;
+  resolveJsonModule?: boolean;
+
+  // Other
+  skipLibCheck?: boolean;
+  forceConsistentCasingInFileNames?: boolean;
 }
 
 /**
