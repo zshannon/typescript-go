@@ -53,9 +53,9 @@ const validResult = tsgo.typecheck(helloWorldComponent, "/project/HelloWorld.tsx
 console.log("\nResult:");
 console.log(`  Success: ${validResult.success}`);
 console.log(`  Duration: ${validResult.duration_ms.toFixed(2)}ms`);
-console.log(`  Diagnostics: ${validResult.diagnostics.length}`);
+console.log(`  Diagnostics: ${validResult.diagnostics?.length ?? 0}`);
 
-if (validResult.diagnostics.length > 0) {
+if ((validResult.diagnostics?.length ?? 0) > 0) {
   console.log("\n  Errors:");
   for (const diag of validResult.diagnostics) {
     console.log(`    - [${diag.category}] ${diag.message}`);
@@ -103,9 +103,9 @@ const errorResult = tsgo.typecheck(componentWithError, "/project/Button.tsx");
 console.log("\nResult:");
 console.log(`  Success: ${errorResult.success}`);
 console.log(`  Duration: ${errorResult.duration_ms.toFixed(2)}ms`);
-console.log(`  Diagnostics: ${errorResult.diagnostics.length}`);
+console.log(`  Diagnostics: ${errorResult.diagnostics?.length ?? 0}`);
 
-if (errorResult.diagnostics.length > 0) {
+if ((errorResult.diagnostics?.length ?? 0) > 0) {
   console.log("\n  Errors:");
   for (const diag of errorResult.diagnostics) {
     console.log(`    - [${diag.category}] ${diag.message}`);
@@ -177,9 +177,9 @@ const multiResult = tsgo.typecheckMultiple(files, {
 console.log("\nResult:");
 console.log(`  Success: ${multiResult.success}`);
 console.log(`  Duration: ${multiResult.duration_ms.toFixed(2)}ms`);
-console.log(`  Diagnostics: ${multiResult.diagnostics.length}`);
+console.log(`  Diagnostics: ${multiResult.diagnostics?.length ?? 0}`);
 
-if (multiResult.diagnostics.length > 0) {
+if ((multiResult.diagnostics?.length ?? 0) > 0) {
   console.log("\n  Errors:");
   for (const diag of multiResult.diagnostics) {
     console.log(`    - [${diag.category}] ${diag.message}`);

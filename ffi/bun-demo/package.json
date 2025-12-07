@@ -8,9 +8,13 @@
     "benchmark": "bun run benchmark.ts",
     "test": "bun test"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@types/react-dom": "^19.2.3",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1"
+  },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/react": "^18.2.0"
+    "@types/react": "^19.2.7"
   }
 }

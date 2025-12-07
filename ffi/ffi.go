@@ -28,7 +28,10 @@ import "C"
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -40,7 +43,16 @@ import (
 	"github.com/microsoft/typescript-go/internal/locale"
 	"github.com/microsoft/typescript-go/internal/tsoptions"
 	"github.com/microsoft/typescript-go/internal/vfs"
+	"github.com/microsoft/typescript-go/internal/vfs/osvfs"
 )
+
+var debugMode = os.Getenv("TSGO_DEBUG") == "1"
+
+func debugLog(format string, args ...interface{}) {
+	if debugMode {
+		fmt.Fprintf(os.Stderr, "[TSGO] "+format+"\n", args...)
+	}
+}
 
 // InMemoryFS implements vfs.FS for in-memory files
 type InMemoryFS struct {
@@ -160,6 +172,162 @@ func (fs *InMemoryFS) WalkDir(root string, walkFn vfs.WalkDirFunc) error { retur
 func (fs *InMemoryFS) Realpath(path string) string     { return path }
 func (fs *InMemoryFS) Chtimes(path string, aTime time.Time, mTime time.Time) error { return nil }
 
+// HybridFS combines in-memory files with real filesystem for node_modules
+type HybridFS struct {
+	memFS      *InMemoryFS
+	diskFS     vfs.FS
+	projectDir string // The real project directory with node_modules
+}
+
+func NewHybridFS(memFS *InMemoryFS, projectDir string) *HybridFS {
+	return &HybridFS{
+		memFS:      memFS,
+		diskFS:     osvfs.FS(),
+		projectDir: projectDir,
+	}
+}
+
+func (h *HybridFS) UseCaseSensitiveFileNames() bool { return true }
+
+func (h *HybridFS) toRealPath(path string) string {
+	// Map virtual paths to real paths
+	if len(path) > 0 && path[0] == '/' {
+		// /node_modules/... -> {projectDir}/node_modules/...
+		if strings.HasPrefix(path, "/node_modules/") {
+			realPath := h.projectDir + path
+			debugLog("toRealPath: %s -> %s", path, realPath)
+			return realPath
+		}
+		// Already a real path under projectDir/node_modules - pass through
+		nodeModulesPrefix := h.projectDir + "/node_modules/"
+		if strings.HasPrefix(path, nodeModulesPrefix) {
+			debugLog("toRealPath: %s -> %s (passthrough)", path, path)
+			return path
+		}
+		// /project/... -> keep in memory
+	}
+	return ""
+}
+
+func (h *HybridFS) FileExists(path string) bool {
+	// Check in-memory first
+	if h.memFS.FileExists(path) {
+		debugLog("FileExists (mem): %s = true", path)
+		return true
+	}
+	// Check real filesystem for node_modules
+	realPath := h.toRealPath(path)
+	if realPath != "" {
+		exists := h.diskFS.FileExists(realPath)
+		debugLog("FileExists (disk): %s (%s) = %v", path, realPath, exists)
+		return exists
+	}
+	debugLog("FileExists: %s = false (no mapping)", path)
+	return false
+}
+
+func (h *HybridFS) ReadFile(path string) (string, bool) {
+	// Check in-memory first
+	if content, ok := h.memFS.ReadFile(path); ok {
+		debugLog("ReadFile (mem): %s = found (%d bytes)", path, len(content))
+		return content, true
+	}
+	// Check real filesystem for node_modules
+	realPath := h.toRealPath(path)
+	if realPath != "" {
+		content, ok := h.diskFS.ReadFile(realPath)
+		debugLog("ReadFile (disk): %s (%s) = %v (%d bytes)", path, realPath, ok, len(content))
+		return content, ok
+	}
+	debugLog("ReadFile: %s = not found (no mapping)", path)
+	return "", false
+}
+
+func (h *HybridFS) WriteFile(path string, data string, bom bool) error {
+	return h.memFS.WriteFile(path, data, bom)
+}
+
+func (h *HybridFS) Remove(path string) error {
+	return h.memFS.Remove(path)
+}
+
+func (h *HybridFS) DirectoryExists(path string) bool {
+	if h.memFS.DirectoryExists(path) {
+		debugLog("DirectoryExists (mem): %s = true", path)
+		return true
+	}
+	realPath := h.toRealPath(path)
+	if realPath != "" {
+		exists := h.diskFS.DirectoryExists(realPath)
+		debugLog("DirectoryExists (disk): %s (%s) = %v", path, realPath, exists)
+		return exists
+	}
+	debugLog("DirectoryExists: %s = false (no mapping)", path)
+	return false
+}
+
+func (h *HybridFS) GetAccessibleEntries(path string) vfs.Entries {
+	// Combine entries from memory and disk
+	memEntries := h.memFS.GetAccessibleEntries(path)
+
+	realPath := h.toRealPath(path)
+	if realPath != "" {
+		diskEntries := h.diskFS.GetAccessibleEntries(realPath)
+		// Merge
+		filesSet := make(map[string]bool)
+		dirsSet := make(map[string]bool)
+		for _, f := range memEntries.Files {
+			filesSet[f] = true
+		}
+		for _, d := range memEntries.Directories {
+			dirsSet[d] = true
+		}
+		for _, f := range diskEntries.Files {
+			filesSet[f] = true
+		}
+		for _, d := range diskEntries.Directories {
+			dirsSet[d] = true
+		}
+		var files, dirs []string
+		for f := range filesSet {
+			files = append(files, f)
+		}
+		for d := range dirsSet {
+			dirs = append(dirs, d)
+		}
+		return vfs.Entries{Files: files, Directories: dirs}
+	}
+	return memEntries
+}
+
+func (h *HybridFS) Stat(path string) vfs.FileInfo {
+	realPath := h.toRealPath(path)
+	if realPath != "" {
+		return h.diskFS.Stat(realPath)
+	}
+	return nil
+}
+
+func (h *HybridFS) WalkDir(root string, walkFn vfs.WalkDirFunc) error {
+	realPath := h.toRealPath(root)
+	if realPath != "" {
+		return h.diskFS.WalkDir(realPath, walkFn)
+	}
+	return nil
+}
+
+func (h *HybridFS) Realpath(path string) string {
+	realPath := h.toRealPath(path)
+	if realPath != "" {
+		return h.diskFS.Realpath(realPath)
+	}
+	return path
+}
+
+func (h *HybridFS) Chtimes(path string, aTime time.Time, mTime time.Time) error {
+	return nil
+}
+
 // Diagnostic represents a TypeScript diagnostic
 type Diagnostic struct {
 	Code     int    `json:"code"`
@@ -215,16 +383,26 @@ func convertDiagnostics(diagnostics []*ast.Diagnostic) []Diagnostic {
 }
 
 // typeCheckCode performs type checking on TypeScript code
-func typeCheckCode(code string, fileName string, options *core.CompilerOptions) TypeCheckResult {
+// projectDir is the real directory containing node_modules (for reading installed packages)
+func typeCheckCode(code string, fileName string, options *core.CompilerOptions, projectDir string) TypeCheckResult {
 	start := time.Now()
 
 	// Create in-memory filesystem
 	memFS := NewInMemoryFS()
 	memFS.AddFile(fileName, code)
 	memFS.AddDirectory("/project")
+	memFS.AddDirectory("/node_modules")
+
+	// Create hybrid FS that combines in-memory with real node_modules
+	var fs vfs.FS
+	if projectDir != "" {
+		fs = NewHybridFS(memFS, projectDir)
+	} else {
+		fs = memFS
+	}
 
 	// Wrap with bundled TypeScript libs
-	wrappedFS := bundled.WrapFS(memFS)
+	wrappedFS := bundled.WrapFS(fs)
 
 	// Default compiler options if not provided
 	if options == nil {
@@ -289,15 +467,16 @@ func typeCheckCode(code string, fileName string, options *core.CompilerOptions) 
 }
 
 //export tsgo_typecheck
-func tsgo_typecheck(code *C.char, fileName *C.char) *C.char {
+func tsgo_typecheck(code *C.char, fileName *C.char, projectDir *C.char) *C.char {
 	goCode := C.GoString(code)
 	goFileName := C.GoString(fileName)
+	goProjectDir := C.GoString(projectDir)
 
 	if goFileName == "" {
 		goFileName = "/project/input.tsx"
 	}
 
-	result := typeCheckCode(goCode, goFileName, nil)
+	result := typeCheckCode(goCode, goFileName, nil, goProjectDir)
 
 	jsonBytes, err := json.Marshal(result)
 	if err != nil {
@@ -316,10 +495,11 @@ func tsgo_typecheck(code *C.char, fileName *C.char) *C.char {
 }
 
 //export tsgo_typecheck_with_options
-func tsgo_typecheck_with_options(code *C.char, fileName *C.char, optionsJSON *C.char) *C.char {
+func tsgo_typecheck_with_options(code *C.char, fileName *C.char, optionsJSON *C.char, projectDir *C.char) *C.char {
 	goCode := C.GoString(code)
 	goFileName := C.GoString(fileName)
 	goOptionsJSON := C.GoString(optionsJSON)
+	goProjectDir := C.GoString(projectDir)
 
 	if goFileName == "" {
 		goFileName = "/project/input.tsx"
@@ -395,7 +575,7 @@ func tsgo_typecheck_with_options(code *C.char, fileName *C.char, optionsJSON *C.
 		}
 	}
 
-	result := typeCheckCode(goCode, goFileName, options)
+	result := typeCheckCode(goCode, goFileName, options, goProjectDir)
 
 	jsonBytes, err := json.Marshal(result)
 	if err != nil {
@@ -414,9 +594,10 @@ func tsgo_typecheck_with_options(code *C.char, fileName *C.char, optionsJSON *C.
 }
 
 //export tsgo_typecheck_multiple
-func tsgo_typecheck_multiple(filesJSON *C.char, optionsJSON *C.char) *C.char {
+func tsgo_typecheck_multiple(filesJSON *C.char, optionsJSON *C.char, projectDir *C.char) *C.char {
 	goFilesJSON := C.GoString(filesJSON)
 	goOptionsJSON := C.GoString(optionsJSON)
+	goProjectDir := C.GoString(projectDir)
 
 	start := time.Now()
 
@@ -438,6 +619,7 @@ func tsgo_typecheck_multiple(filesJSON *C.char, optionsJSON *C.char) *C.char {
 	// Create in-memory filesystem
 	memFS := NewInMemoryFS()
 	memFS.AddDirectory("/project")
+	memFS.AddDirectory("/node_modules")
 
 	var fileNames []string
 	for path, content := range files {
@@ -445,8 +627,16 @@ func tsgo_typecheck_multiple(filesJSON *C.char, optionsJSON *C.char) *C.char {
 		fileNames = append(fileNames, path)
 	}
 
+	// Create hybrid FS that combines in-memory with real node_modules
+	var fs vfs.FS
+	if goProjectDir != "" {
+		fs = NewHybridFS(memFS, goProjectDir)
+	} else {
+		fs = memFS
+	}
+
 	// Wrap with bundled TypeScript libs
-	wrappedFS := bundled.WrapFS(memFS)
+	wrappedFS := bundled.WrapFS(fs)
 
 	// Parse options
 	options := &core.CompilerOptions{

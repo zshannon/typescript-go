@@ -107,9 +107,9 @@ typedef struct { void *data; GoInt len; GoInt cap; } GoSlice;
 extern "C" {
 #endif
 
-extern char* tsgo_typecheck(char* code, char* fileName);
-extern char* tsgo_typecheck_with_options(char* code, char* fileName, char* optionsJSON);
-extern char* tsgo_typecheck_multiple(char* filesJSON, char* optionsJSON);
+extern char* tsgo_typecheck(char* code, char* fileName, char* projectDir);
+extern char* tsgo_typecheck_with_options(char* code, char* fileName, char* optionsJSON, char* projectDir);
+extern char* tsgo_typecheck_multiple(char* filesJSON, char* optionsJSON, char* projectDir);
 extern void tsgo_free_string(char* str);
 extern char* tsgo_version(void);
 
