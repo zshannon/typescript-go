@@ -1,0 +1,16 @@
+{
+  "name": "tsgo-bun-demo",
+  "version": "1.0.0",
+  "description": "Demo of tsgo TypeScript type checker via Bun FFI",
+  "type": "module",
+  "scripts": {
+    "demo": "bun run demo.ts",
+    "benchmark": "bun run benchmark.ts",
+    "test": "bun test"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^18.2.0"
+  }
+}
