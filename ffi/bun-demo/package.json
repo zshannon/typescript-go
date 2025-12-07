@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "demo": "bun run demo.ts",
+    "demo:simple": "bun run demo-simple.ts",
     "benchmark": "bun run benchmark.ts",
+    "benchmark:full": "bun run benchmark-full.ts",
     "test": "bun test"
   },
   "dependencies": {
