@@ -55,6 +55,7 @@
     "generate:platforms": "bun run scripts/generate-platform-packages.ts",
     "prepublishOnly": "bun run build && bun run build:types",
     "test": "bun test",
+    "bench": "bun run bench/typecheck.bench.ts",
     "clean": "rm -rf dist node_modules"
   },
   "devDependencies": {
