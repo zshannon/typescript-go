@@ -62,7 +62,7 @@ for (const platform of platforms) {
     license: "Apache-2.0",
     repository: {
       type: "git",
-      url: "https://github.com/anthropics/typescript-go",
+      url: "https://github.com/zshannon/typescript-go",
       directory: "bun",
     },
     os: [platform.os],
