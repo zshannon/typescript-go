@@ -106,10 +106,8 @@ jobs:
           name: libtsgo-${{ matrix.platform }}
           path: bun/
 
-      - name: Rename library for development mode
-        run: |
-          mv bun/libtsgo.${{ matrix.ext }} bun/libtsgo.${{ matrix.ext }}
-          ls -la bun/
+      - name: Verify library downloaded
+        run: ls -la bun/
 
       - name: Install dependencies
         working-directory: bun
