@@ -1,6 +1,6 @@
 {
   "name": "@flickfyi/tsgo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Blazing fast TypeScript type checker powered by TypeScript-Go, accessible via Bun FFI",
   "keywords": [
     "typescript",
