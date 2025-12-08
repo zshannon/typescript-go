@@ -76,9 +76,39 @@ jobs:
           path: bun/binaries/${{ matrix.platform }}/libtsgo.${{ matrix.ext }}
           retention-days: 7
 
+  test:
+    name: Test
+    needs: build-native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Download native library
+        uses: actions/download-artifact@v4
+        with:
+          name: libtsgo-linux-x64
+          path: bun/
+
+      - name: Install dependencies
+        working-directory: bun
+        run: bun install
+
+      - name: Type check
+        working-directory: bun
+        run: bun run build:types
+
+      - name: Run tests
+        working-directory: bun
+        run: bun test
+
   publish:
     name: Publish to npm
-    needs: build-native
+    needs: [build-native, test]
     runs-on: ubuntu-latest
     if: github.event.inputs.publish == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]'))
     permissions:
