@@ -36,6 +36,10 @@ jobs:
         working-directory: bun
         run: bun install
 
+      - name: Type check
+        working-directory: bun
+        run: bun run build:types
+
       - name: Run tests
         working-directory: bun
         run: bun test

@@ -44,7 +44,7 @@
   },
   "scripts": {
     "build": "bun build ./src/index.ts --outdir ./dist --target bun",
-    "build:types": "bun x tsc --declaration --emitDeclarationOnly --outDir dist src/index.ts",
+    "build:types": "bun x tsc -p tsconfig.json --declaration --emitDeclarationOnly",
     "build:native": "./scripts/build-native.sh current",
     "build:native:all": "./scripts/build-native.sh all",
     "build:native:darwin-arm64": "./scripts/build-native.sh darwin-arm64",

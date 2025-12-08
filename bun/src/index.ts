@@ -30,7 +30,7 @@
  * ```
  */
 
-import { dlopen, FFIType, ptr, CString } from "bun:ffi";
+import { dlopen, FFIType, ptr, CString, type Pointer } from "bun:ffi";
 import { existsSync } from "fs";
 import { join, dirname } from "path";
 import { platform, arch } from "os";
@@ -238,8 +238,8 @@ function toCString(str: string): Buffer {
 }
 
 /** Read C string from pointer and free it */
-function readAndFreeString(pointer: number | bigint): string {
-  if (!pointer || pointer === 0n || pointer === 0) {
+function readAndFreeString(pointer: Pointer | null): string {
+  if (!pointer) {
     return "";
   }
   const cstr = new CString(pointer);
@@ -248,8 +248,8 @@ function readAndFreeString(pointer: number | bigint): string {
   return result;
 }
 
-function parseResult(resultPtr: number | bigint): TypeCheckResult {
-  if (!resultPtr || resultPtr === 0n || resultPtr === 0) {
+function parseResult(resultPtr: Pointer | null): TypeCheckResult {
+  if (!resultPtr) {
     return {
       success: false,
       diagnostics: [{ code: 0, category: "error", message: "FFI call returned null" }],
