@@ -56,7 +56,8 @@
     "prepublishOnly": "bun build ./src/index.ts --outdir ./dist --target bun && bun run build:types",
     "test": "bun test",
     "bench": "bun run bench/typecheck.bench.ts",
-    "clean": "rm -rf dist node_modules"
+    "clean": "rm -rf dist node_modules",
+    "postversion": "bun run scripts/sync-versions.ts"
   },
   "devDependencies": {
     "@mini/jsx-runtime": "file:./test/fixtures/@mini/jsx-runtime",
@@ -66,10 +67,10 @@
     "typescript": "^5.0.0"
   },
   "optionalDependencies": {
-    "@flickfyi/tsgo-darwin-arm64": "0.1.0",
-    "@flickfyi/tsgo-darwin-x64": "0.1.0",
-    "@flickfyi/tsgo-linux-arm64": "0.1.0",
-    "@flickfyi/tsgo-linux-x64": "0.1.0",
-    "@flickfyi/tsgo-win32-x64": "0.1.0"
+    "@flickfyi/tsgo-darwin-arm64": "0.1.2",
+    "@flickfyi/tsgo-darwin-x64": "0.1.2",
+    "@flickfyi/tsgo-linux-arm64": "0.1.2",
+    "@flickfyi/tsgo-linux-x64": "0.1.2",
+    "@flickfyi/tsgo-win32-x64": "0.1.2"
   }
 }
