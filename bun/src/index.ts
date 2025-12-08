@@ -174,6 +174,8 @@ function getBinaryPath(): string {
     join(import.meta.dir, "..", "binaries", `${plat}-${ar}`, binaryName),
     // Platform package installed in this package's node_modules
     join(import.meta.dir, "..", "node_modules", packageName, binaryName),
+    // Bun hoisted - platform package is sibling in @flickfyi scope
+    join(import.meta.dir, "..", "..", packageName, binaryName),
     // Platform package installed at project root node_modules
     join(process.cwd(), "node_modules", packageName, binaryName),
     // Hoisted in monorepo - check parent directories
