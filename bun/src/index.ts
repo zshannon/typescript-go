@@ -1,27 +1,32 @@
 /**
- * @module tsgo
+ * @module @flickfyi/tsgo
  * @description Blazing fast TypeScript type checker powered by TypeScript-Go
+ *
+ * The `fileName` parameter is a **virtual path** - it doesn't read from disk.
+ * It's used for: error messages, file type detection (.ts vs .tsx), and import resolution.
  *
  * @example
  * ```typescript
- * import tsgo from 'tsgo';
+ * import tsgo from '@flickfyi/tsgo';
  *
- * // Simple type check
- * const result = tsgo.typecheck(`const x: number = 42;`, '/project/file.ts');
- * console.log(result.success); // true
+ * // Type check a string - fileName is virtual (not read from disk)
+ * const result = tsgo.typecheck(
+ *   `const x: number = 42;`,
+ *   'input.ts'  // Virtual path: determines .ts/.tsx mode
+ * );
  *
- * // Type check with custom options
- * const result = tsgo.typecheckWithOptions(code, '/project/App.tsx', {
- *   jsx: 'react-jsx',
- *   strict: true,
- *   target: 'ES2022',
- * });
+ * // JSX requires .tsx extension
+ * const result = tsgo.typecheckWithOptions(
+ *   `const App = () => <div>Hello</div>;`,
+ *   'App.tsx',  // .tsx enables JSX
+ *   { jsx: 'react-jsx', strict: true }
+ * );
  *
- * // Multi-file project
+ * // Multi-file: paths are used for import resolution
  * const result = tsgo.typecheckMultiple({
- *   '/project/types.ts': 'export interface User { name: string; }',
- *   '/project/main.ts': 'import { User } from "./types"; const u: User = { name: "Alice" };',
- * }, { strict: true });
+ *   'types.ts': 'export interface User { name: string; }',
+ *   'main.ts': 'import { User } from "./types"; const u: User = { name: "Alice" };',
+ * });
  * ```
  */
 
@@ -292,21 +297,20 @@ function version(): string {
  * - target: ES2022
  *
  * @param code - The TypeScript source code to check
- * @param fileName - Virtual file path (used for error messages and JSX detection)
+ * @param fileName - Virtual path (not read from disk). Use .tsx for JSX files.
+ * @param projectDir - Directory for resolving node_modules (defaults to cwd)
  * @returns Type checking result with diagnostics
  *
  * @example
  * ```typescript
- * // Basic TypeScript
- * const result = tsgo.typecheck(`const x: number = "wrong";`, '/project/file.ts');
- * // result.success === false
- * // result.diagnostics[0].message contains type error
+ * // Basic TypeScript - .ts extension
+ * const result = tsgo.typecheck(`const x: number = "wrong";`, 'file.ts');
  *
- * // React component
+ * // React component - .tsx extension enables JSX
  * const result = tsgo.typecheck(`
  *   import React from 'react';
  *   const App: React.FC = () => <div>Hello</div>;
- * `, '/project/App.tsx');
+ * `, 'App.tsx');
  * ```
  */
 function typecheck(code: string, fileName: string, projectDir?: string): TypeCheckResult {
@@ -333,14 +337,14 @@ function typecheck(code: string, fileName: string, projectDir?: string): TypeChe
  * @example
  * ```typescript
  * // Custom JSX runtime (e.g., Emotion, Preact, custom)
- * const result = tsgo.typecheckWithOptions(code, '/project/App.tsx', {
+ * const result = tsgo.typecheckWithOptions(code, 'App.tsx', {
  *   jsx: 'react-jsx',
  *   jsxImportSource: '@emotion/react',
  *   strict: true,
  * });
  *
  * // Legacy React
- * const result = tsgo.typecheckWithOptions(code, '/project/App.tsx', {
+ * const result = tsgo.typecheckWithOptions(code, 'App.tsx', {
  *   jsx: 'react',
  *   jsxFactory: 'React.createElement',
  *   jsxFragmentFactory: 'React.Fragment',
@@ -380,28 +384,19 @@ function typecheckWithOptions(
  * @example
  * ```typescript
  * const result = tsgo.typecheckMultiple({
- *   '/project/types.ts': `
- *     export interface User {
- *       id: number;
- *       name: string;
- *     }
+ *   'types.ts': `
+ *     export interface User { id: number; name: string; }
  *   `,
- *   '/project/utils.ts': `
+ *   'utils.ts': `
  *     import { User } from './types';
- *     export function greet(user: User): string {
- *       return \`Hello, \${user.name}!\`;
- *     }
+ *     export const greet = (u: User) => \`Hello, \${u.name}!\`;
  *   `,
- *   '/project/main.ts': `
+ *   'main.ts': `
  *     import { User } from './types';
  *     import { greet } from './utils';
  *     const user: User = { id: 1, name: 'Alice' };
- *     console.log(greet(user));
  *   `,
- * }, {
- *   strict: true,
- *   target: 'ES2022',
- * });
+ * }, { strict: true });
  * ```
  */
 function typecheckMultiple(

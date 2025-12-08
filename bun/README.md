@@ -38,7 +38,7 @@ import tsgo from '@flickfyi/tsgo';
 const result = tsgo.typecheck(`
   const x: number = 42;
   const y: string = "hello";
-`, '/project/file.ts');
+`, 'file.ts');
 
 console.log(result.success); // true
 console.log(result.duration_ms); // ~15ms
@@ -65,7 +65,7 @@ const result = tsgo.typecheck(code: string, fileName: string): TypeCheckResult;
 // Catches type errors
 const result = tsgo.typecheck(`
   const x: number = "not a number";
-`, '/project/error.ts');
+`, 'file.ts');
 
 console.log(result.success); // false
 console.log(result.diagnostics[0].message);
@@ -94,7 +94,7 @@ const result = tsgo.typecheckWithOptions(`
       Styled with Emotion
     </div>
   );
-`, '/project/App.tsx', {
+`, 'file.ts', {
   jsx: 'react-jsx',
   jsxImportSource: '@emotion/react',
   strict: true,
@@ -104,7 +104,7 @@ const result = tsgo.typecheckWithOptions(`
 
 **Example - Legacy React:**
 ```typescript
-const result = tsgo.typecheckWithOptions(code, '/project/App.tsx', {
+const result = tsgo.typecheckWithOptions(code, 'file.ts', {
   jsx: 'react',
   jsxFactory: 'React.createElement',
   jsxFragmentFactory: 'React.Fragment',
@@ -125,14 +125,14 @@ const result = tsgo.typecheckMultiple(
 **Example:**
 ```typescript
 const result = tsgo.typecheckMultiple({
-  '/project/types.ts': `
+  'file.ts': `
     export interface User {
       id: number;
       name: string;
       email: string;
     }
   `,
-  '/project/api.ts': `
+  'file.ts': `
     import { User } from './types';
 
     export async function fetchUser(id: number): Promise<User> {
@@ -140,7 +140,7 @@ const result = tsgo.typecheckMultiple({
       return response.json();
     }
   `,
-  '/project/App.tsx': `
+  'file.ts': `
     import React, { useState, useEffect } from 'react';
     import { User } from './types';
     import { fetchUser } from './api';
@@ -285,7 +285,7 @@ Compared to `tsc --noEmit`:
 ```typescript
 // Real-time type checking as users type
 const checkTypes = debounce((code: string) => {
-  const result = tsgo.typecheck(code, '/project/current.tsx');
+  const result = tsgo.typecheck(code, 'file.ts');
   updateDiagnostics(result.diagnostics);
 }, 100);
 ```
@@ -311,7 +311,7 @@ if (!result.success) {
 ### Custom JSX Frameworks
 ```typescript
 // Validate custom JSX elements
-const result = tsgo.typecheckWithOptions(code, '/project/App.tsx', {
+const result = tsgo.typecheckWithOptions(code, 'file.ts', {
   jsx: 'react-jsx',
   jsxImportSource: '@my-framework/jsx-runtime',
 });
