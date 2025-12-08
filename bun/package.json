@@ -47,7 +47,7 @@
     "build:types": "bun x tsc --declaration --emitDeclarationOnly --outDir dist src/index.ts",
     "build:native": "cd .. && go build -buildmode=c-shared -o bun/libtsgo.so ./bun/cgo.go",
     "prepublishOnly": "bun run build && bun run build:types",
-    "pretest": "mkdir -p node_modules/@mini && cp -r test/fixtures/@mini/* node_modules/@mini/",
+    "pretest": "mkdir -p node_modules/@mini node_modules/react node_modules/@types/react && cp -r test/fixtures/@mini/* node_modules/@mini/ && cp -r test/fixtures/react/* node_modules/react/ && cp -r test/fixtures/@types/react/* node_modules/@types/react/",
     "test": "bun test",
     "clean": "rm -rf dist node_modules"
   },

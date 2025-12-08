@@ -1,18 +1,9 @@
 import { expect, test, describe } from "bun:test";
-import { existsSync } from "fs";
-import { join } from "path";
 import tsgo from "../src/index";
 
 // Virtual file paths for type checking - these don't hit the filesystem
 const ts = (name: string) => `/virtual/${name}.ts`;
 const tsx = (name: string) => `/virtual/${name}.tsx`;
-
-// Check if real React types are installed (not fake fixtures)
-const hasReact = existsSync(join(process.cwd(), "node_modules", "react", "package.json")) &&
-                 existsSync(join(process.cwd(), "node_modules", "@types", "react", "package.json"));
-
-// Skip React tests if React isn't installed
-const reactTest = hasReact ? test : test.skip;
 
 describe("tsgo", () => {
   describe("version", () => {
@@ -120,7 +111,7 @@ describe("tsgo", () => {
   });
 
   describe("typecheck - React", () => {
-    reactTest("valid React component passes", () => {
+    test("valid React component passes", () => {
       const code = `
         import React from 'react';
 
@@ -144,7 +135,7 @@ describe("tsgo", () => {
       expect(result.success).toBe(true);
     });
 
-    reactTest("React component with missing required prop fails", () => {
+    test("React component with missing required prop fails", () => {
       const code = `
         import React from 'react';
 
@@ -168,7 +159,7 @@ describe("tsgo", () => {
       )).toBe(true);
     });
 
-    reactTest("React hooks type inference", () => {
+    test("React hooks type inference", () => {
       const code = `
         import React, { useState, useEffect, useCallback } from 'react';
 
@@ -359,7 +350,7 @@ describe("tsgo", () => {
       expect(result.diagnostics?.some(d => d.message.includes("name"))).toBe(true);
     });
 
-    reactTest("React multi-file project", () => {
+    test("React multi-file project", () => {
       const files = {
         [ts("types")]: `
           export interface Todo {
