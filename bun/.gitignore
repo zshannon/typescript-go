@@ -1,6 +1,7 @@
 node_modules/
 dist/
 binaries/
+platforms/
 *.so
 *.dylib
 *.dll

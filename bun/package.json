@@ -43,7 +43,7 @@
     "bun": ">=1.0.0"
   },
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --target bun",
+    "build": "bun run build:native && bun build ./src/index.ts --outdir ./dist --target bun",
     "build:types": "bun x tsc -p tsconfig.json --declaration --emitDeclarationOnly",
     "build:native": "./scripts/build-native.sh current",
     "build:native:all": "./scripts/build-native.sh all",
@@ -53,7 +53,7 @@
     "build:native:linux-x64": "./scripts/build-native.sh linux-x64",
     "build:native:win32-x64": "./scripts/build-native.sh win32-x64",
     "generate:platforms": "bun run scripts/generate-platform-packages.ts",
-    "prepublishOnly": "bun run build && bun run build:types",
+    "prepublishOnly": "bun build ./src/index.ts --outdir ./dist --target bun && bun run build:types",
     "test": "bun test",
     "bench": "bun run bench/typecheck.bench.ts",
     "clean": "rm -rf dist node_modules"
@@ -61,8 +61,8 @@
   "devDependencies": {
     "@mini/jsx-runtime": "file:./test/fixtures/@mini/jsx-runtime",
     "@types/bun": "latest",
-    "@types/react": "^18.2.0",
-    "react": "^18.2.0",
+    "@types/react": "19.2.7",
+    "react": "19.2.1",
     "typescript": "^5.0.0"
   },
   "optionalDependencies": {
