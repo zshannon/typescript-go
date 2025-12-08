@@ -204,6 +204,12 @@ func (h *HybridFS) toRealPath(path string) string {
 			debugLog("toRealPath: %s -> %s (passthrough)", path, path)
 			return path
 		}
+		// Handle absolute real paths (after symlink resolution)
+		// These are paths like /Users/... that exist on the real filesystem
+		if h.diskFS.FileExists(path) || h.diskFS.DirectoryExists(path) {
+			debugLog("toRealPath: %s -> %s (real filesystem path)", path, path)
+			return path
+		}
 		// /project/... -> keep in memory
 	}
 	return ""
@@ -389,9 +395,18 @@ func typeCheckCode(code string, fileName string, options *core.CompilerOptions, 
 
 	// Create in-memory filesystem
 	memFS := NewInMemoryFS()
-	memFS.AddFile(fileName, code)
 	memFS.AddDirectory("/project")
 	memFS.AddDirectory("/node_modules")
+
+	// Normalize fileName to be under /project for the compiler host
+	if strings.HasPrefix(fileName, "/") {
+		// Absolute path - strip leading / and put under /project/
+		fileName = "/project" + fileName
+	} else {
+		// Relative path - put under /project/
+		fileName = "/project/" + fileName
+	}
+	memFS.AddFile(fileName, code)
 
 	// Create hybrid FS that combines in-memory with real node_modules
 	var fs vfs.FS
@@ -448,12 +463,10 @@ func typeCheckCode(code string, fileName string, options *core.CompilerOptions, 
 
 	ctx := context.Background()
 
-	// Get all diagnostics
+	// Get all diagnostics - both syntactic AND semantic
 	var allDiagnostics []*ast.Diagnostic
 	allDiagnostics = append(allDiagnostics, program.GetSyntacticDiagnostics(ctx, nil)...)
-	if len(allDiagnostics) == 0 {
-		allDiagnostics = append(allDiagnostics, program.GetSemanticDiagnostics(ctx, nil)...)
-	}
+	allDiagnostics = append(allDiagnostics, program.GetSemanticDiagnostics(ctx, nil)...)
 
 	duration := time.Since(start).Seconds() * 1000
 
@@ -778,12 +791,10 @@ func tsgo_typecheck_multiple(filesJSON *C.char, optionsJSON *C.char, projectDir 
 
 	ctx := context.Background()
 
-	// Get all diagnostics
+	// Get all diagnostics - both syntactic AND semantic
 	var allDiagnostics []*ast.Diagnostic
 	allDiagnostics = append(allDiagnostics, program.GetSyntacticDiagnostics(ctx, nil)...)
-	if len(allDiagnostics) == 0 {
-		allDiagnostics = append(allDiagnostics, program.GetSemanticDiagnostics(ctx, nil)...)
-	}
+	allDiagnostics = append(allDiagnostics, program.GetSemanticDiagnostics(ctx, nil)...)
 
 	duration := time.Since(start).Seconds() * 1000
 
