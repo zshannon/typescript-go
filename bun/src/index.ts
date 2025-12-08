@@ -168,12 +168,17 @@ function getBinaryPath(): string {
 
   // Try to find the binary in various locations
   const paths = [
-    // Development mode - binary in package root
+    // Development mode - binary in package root (for local testing)
     join(import.meta.dir, "..", binaryName),
-    // Installed as dependency - platform package in node_modules
-    join(dirname(import.meta.dir), "node_modules", packageName, binaryName),
-    // Installed at project root
+    // Development mode - binary in binaries subdirectory
+    join(import.meta.dir, "..", "binaries", `${plat}-${ar}`, binaryName),
+    // Platform package installed in this package's node_modules
+    join(import.meta.dir, "..", "node_modules", packageName, binaryName),
+    // Platform package installed at project root node_modules
     join(process.cwd(), "node_modules", packageName, binaryName),
+    // Hoisted in monorepo - check parent directories
+    join(process.cwd(), "..", "node_modules", packageName, binaryName),
+    join(process.cwd(), "..", "..", "node_modules", packageName, binaryName),
   ];
 
   for (const p of paths) {

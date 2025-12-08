@@ -1,0 +1,205 @@
+name: Bun Package CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'bun/**'
+      - '.github/workflows/bun-package.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'bun/**'
+      - '.github/workflows/bun-package.yml'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to npm'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  build-native:
+    name: Build Native (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: darwin-arm64
+            os: macos-14
+            goos: darwin
+            goarch: arm64
+            ext: dylib
+          - platform: darwin-x64
+            os: macos-13
+            goos: darwin
+            goarch: amd64
+            ext: dylib
+          - platform: linux-x64
+            os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            ext: so
+          - platform: linux-arm64
+            os: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+            ext: so
+          - platform: win32-x64
+            os: windows-latest
+            goos: windows
+            goarch: amd64
+            ext: dll
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Build native library
+        shell: bash
+        run: |
+          mkdir -p bun/binaries/${{ matrix.platform }}
+          CGO_ENABLED=1 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -buildmode=c-shared \
+            -o bun/binaries/${{ matrix.platform }}/libtsgo.${{ matrix.ext }} \
+            ./bun
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libtsgo-${{ matrix.platform }}
+          path: bun/binaries/${{ matrix.platform }}/libtsgo.${{ matrix.ext }}
+          retention-days: 7
+
+  test:
+    name: Test
+    needs: build-native
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-14
+            platform: darwin-arm64
+            ext: dylib
+          - os: ubuntu-latest
+            platform: linux-x64
+            ext: so
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Download native library
+        uses: actions/download-artifact@v4
+        with:
+          name: libtsgo-${{ matrix.platform }}
+          path: bun/
+
+      - name: Rename library for development mode
+        run: |
+          mv bun/libtsgo.${{ matrix.ext }} bun/libtsgo.${{ matrix.ext }}
+          ls -la bun/
+
+      - name: Install dependencies
+        working-directory: bun
+        run: bun install
+
+      - name: Run tests
+        working-directory: bun
+        run: bun test
+
+  publish:
+    name: Publish to npm
+    needs: [build-native, test]
+    runs-on: ubuntu-latest
+    if: github.event.inputs.publish == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]'))
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Set up Node.js (for npm publish)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Organize binaries
+        run: |
+          # Move artifacts into binaries directory structure
+          for platform in darwin-arm64 darwin-x64 linux-arm64 linux-x64 win32-x64; do
+            mkdir -p bun/binaries/$platform
+            if [ -d "artifacts/libtsgo-$platform" ]; then
+              mv artifacts/libtsgo-$platform/* bun/binaries/$platform/
+            fi
+          done
+          echo "Binary structure:"
+          ls -laR bun/binaries/
+
+      - name: Install dependencies
+        working-directory: bun
+        run: bun install
+
+      - name: Build TypeScript
+        working-directory: bun
+        run: bun run build
+
+      - name: Generate platform packages
+        working-directory: bun
+        run: bun run generate:platforms
+
+      - name: Publish platform packages
+        working-directory: bun
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for platform in darwin-arm64 darwin-x64 linux-arm64 linux-x64 win32-x64; do
+            echo "Publishing @flickfyi/tsgo-$platform..."
+            cd platforms/$platform
+            npm publish --access public || echo "Package may already exist"
+            cd ../..
+          done
+
+      - name: Publish main package
+        working-directory: bun
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
+
+      - name: Create package tarballs for release
+        working-directory: bun
+        run: |
+          npm pack
+          for platform in darwin-arm64 darwin-x64 linux-arm64 linux-x64 win32-x64; do
+            cd platforms/$platform
+            npm pack
+            mv *.tgz ../../
+            cd ../..
+          done
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-packages
+          path: bun/*.tgz
+          retention-days: 30

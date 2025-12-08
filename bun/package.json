@@ -45,16 +45,30 @@
   "scripts": {
     "build": "bun build ./src/index.ts --outdir ./dist --target bun",
     "build:types": "bun x tsc --declaration --emitDeclarationOnly --outDir dist src/index.ts",
-    "build:native": "cd .. && go build -buildmode=c-shared -o bun/libtsgo.so ./bun/cgo.go",
+    "build:native": "./scripts/build-native.sh current",
+    "build:native:all": "./scripts/build-native.sh all",
+    "build:native:darwin-arm64": "./scripts/build-native.sh darwin-arm64",
+    "build:native:darwin-x64": "./scripts/build-native.sh darwin-x64",
+    "build:native:linux-arm64": "./scripts/build-native.sh linux-arm64",
+    "build:native:linux-x64": "./scripts/build-native.sh linux-x64",
+    "build:native:win32-x64": "./scripts/build-native.sh win32-x64",
+    "generate:platforms": "bun run scripts/generate-platform-packages.ts",
     "prepublishOnly": "bun run build && bun run build:types",
-    "pretest": "mkdir -p node_modules/@mini node_modules/react node_modules/@types/react && cp -r test/fixtures/@mini/* node_modules/@mini/ && cp -r test/fixtures/react/* node_modules/react/ && cp -r test/fixtures/@types/react/* node_modules/@types/react/",
     "test": "bun test",
     "clean": "rm -rf dist node_modules"
   },
   "devDependencies": {
+    "@mini/jsx-runtime": "file:./test/fixtures/@mini/jsx-runtime",
     "@types/bun": "latest",
     "@types/react": "^18.2.0",
     "react": "^18.2.0",
     "typescript": "^5.0.0"
+  },
+  "optionalDependencies": {
+    "@flickfyi/tsgo-darwin-arm64": "0.1.0",
+    "@flickfyi/tsgo-darwin-x64": "0.1.0",
+    "@flickfyi/tsgo-linux-arm64": "0.1.0",
+    "@flickfyi/tsgo-linux-x64": "0.1.0",
+    "@flickfyi/tsgo-win32-x64": "0.1.0"
   }
 }
