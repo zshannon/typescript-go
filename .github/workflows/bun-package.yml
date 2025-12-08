@@ -2,12 +2,10 @@ name: Bun Package CI
 
 on:
   push:
-    branches: [main]
     paths:
       - 'bun/**'
       - '.github/workflows/bun-package.yml'
   pull_request:
-    branches: [main]
     paths:
       - 'bun/**'
       - '.github/workflows/bun-package.yml'
