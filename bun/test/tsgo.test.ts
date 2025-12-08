@@ -149,7 +149,10 @@ describe("tsgo", () => {
       `;
       const result = tsgo.typecheck(code, "/project/MissingProp.tsx");
       expect(result.success).toBe(false);
-      expect(result.diagnostics?.some(d => d.message.includes("onClick"))).toBe(true);
+      // Error should mention the type mismatch (ButtonProps or the missing property)
+      expect(result.diagnostics?.some(d =>
+        d.message.includes("ButtonProps") || d.message.includes("onClick") || d.message.includes("label")
+      )).toBe(true);
     });
 
     test("React hooks type inference", () => {

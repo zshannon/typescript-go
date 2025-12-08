@@ -1,5 +1,5 @@
 {
-  "name": "tsgo",
+  "name": "@flickfyi/tsgo",
   "version": "0.1.0",
   "description": "Blazing fast TypeScript type checker powered by TypeScript-Go, accessible via Bun FFI",
   "keywords": [
@@ -13,7 +13,7 @@
     "jsx",
     "react"
   ],
-  "author": "TypeScript-Go Contributors",
+  "author": "Flick",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -45,12 +45,16 @@
   "scripts": {
     "build": "bun build ./src/index.ts --outdir ./dist --target bun",
     "build:types": "bun x tsc --declaration --emitDeclarationOnly --outDir dist src/index.ts",
+    "build:native": "cd .. && go build -buildmode=c-shared -o bun/libtsgo.so ./bun/cgo.go",
     "prepublishOnly": "bun run build && bun run build:types",
+    "pretest": "mkdir -p node_modules/@mini node_modules/react && cp -r test/fixtures/@mini/* node_modules/@mini/ && cp -r test/fixtures/react/* node_modules/react/",
     "test": "bun test",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist node_modules"
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/react": "^18.2.0",
+    "react": "^18.2.0",
     "typescript": "^5.0.0"
   }
 }

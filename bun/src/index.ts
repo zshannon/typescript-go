@@ -157,20 +157,18 @@ function getBinaryPath(): string {
     );
   }
 
-  const packageName = `@tsgo/${plat}-${ar}`;
+  const packageName = `@flickfyi/tsgo-${plat}-${ar}`;
   const extension = currentPlatform === "win32" ? ".dll" : currentPlatform === "darwin" ? ".dylib" : ".so";
   const binaryName = `libtsgo${extension}`;
 
-  // Try to find the binary in node_modules
+  // Try to find the binary in various locations
   const paths = [
-    // Installed as dependency
+    // Development mode - binary in package root
+    join(import.meta.dir, "..", binaryName),
+    // Installed as dependency - platform package in node_modules
     join(dirname(import.meta.dir), "node_modules", packageName, binaryName),
-    // Installed at root
+    // Installed at project root
     join(process.cwd(), "node_modules", packageName, binaryName),
-    // Development mode - look in binaries folder
-    join(import.meta.dir, "..", "binaries", `${plat}-${ar}`, binaryName),
-    // Development mode - direct path
-    join(import.meta.dir, "..", "..", "libtsgo" + extension),
   ];
 
   for (const p of paths) {
@@ -183,7 +181,7 @@ function getBinaryPath(): string {
     `Could not find tsgo binary for ${currentPlatform}-${currentArch}.\n` +
     `Tried paths:\n${paths.map(p => `  - ${p}`).join("\n")}\n\n` +
     `Please ensure the platform-specific package is installed:\n` +
-    `  bun add ${packageName}`
+    `  bun add @flickfyi/tsgo`
   );
 }
 

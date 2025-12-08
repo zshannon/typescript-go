@@ -1,0 +1,20 @@
+{
+  "name": "react",
+  "version": "18.2.0",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./jsx-runtime": {
+      "types": "./jsx-runtime.d.ts",
+      "default": "./jsx-runtime.js"
+    },
+    "./jsx-dev-runtime": {
+      "types": "./jsx-runtime.d.ts",
+      "default": "./jsx-runtime.js"
+    }
+  }
+}

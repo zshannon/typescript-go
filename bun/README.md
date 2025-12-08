@@ -1,4 +1,4 @@
-# tsgo
+# @flickfyi/tsgo
 
 Blazing fast TypeScript type checker powered by [TypeScript-Go](https://github.com/anthropics/typescript-go), accessible via Bun FFI.
 
@@ -16,23 +16,23 @@ Blazing fast TypeScript type checker powered by [TypeScript-Go](https://github.c
 ## Installation
 
 ```bash
-bun add tsgo
+bun add @flickfyi/tsgo
 ```
 
 The package automatically installs the correct binary for your platform:
 
 | Platform | Architecture | Package |
 |----------|--------------|---------|
-| macOS | Apple Silicon (M1/M2/M3) | `@tsgo/darwin-arm64` |
-| macOS | Intel | `@tsgo/darwin-x64` |
-| Linux | x64 | `@tsgo/linux-x64` |
-| Linux | ARM64 | `@tsgo/linux-arm64` |
-| Windows | x64 | `@tsgo/win32-x64` |
+| macOS | Apple Silicon (M1/M2/M3) | `@flickfyi/tsgo-darwin-arm64` |
+| macOS | Intel | `@flickfyi/tsgo-darwin-x64` |
+| Linux | x64 | `@flickfyi/tsgo-linux-x64` |
+| Linux | ARM64 | `@flickfyi/tsgo-linux-arm64` |
+| Windows | x64 | `@flickfyi/tsgo-win32-x64` |
 
 ## Quick Start
 
 ```typescript
-import tsgo from 'tsgo';
+import tsgo from '@flickfyi/tsgo';
 
 // Simple type check
 const result = tsgo.typecheck(`
