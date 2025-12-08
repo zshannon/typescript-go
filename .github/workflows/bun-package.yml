@@ -152,7 +152,7 @@ jobs:
 
       - name: Build TypeScript
         working-directory: bun
-        run: bun run build
+        run: bun build ./src/index.ts --outdir ./dist --target bun
 
       - name: Generate platform packages
         working-directory: bun
