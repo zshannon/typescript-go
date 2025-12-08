@@ -1,6 +1,10 @@
 import { expect, test, describe } from "bun:test";
 import tsgo from "../src/index";
 
+// Virtual file paths for type checking - these don't hit the filesystem
+const ts = (name: string) => `/virtual/${name}.ts`;
+const tsx = (name: string) => `/virtual/${name}.tsx`;
+
 describe("tsgo", () => {
   describe("version", () => {
     test("returns version string", () => {
@@ -16,7 +20,7 @@ describe("tsgo", () => {
         const y: string = "hello";
         const z: boolean = true;
       `;
-      const result = tsgo.typecheck(code, "/project/basic.ts");
+      const result = tsgo.typecheck(code, ts("basic"));
       expect(result.success).toBe(true);
       expect(result.diagnostics?.length ?? 0).toBe(0);
     });
@@ -25,7 +29,7 @@ describe("tsgo", () => {
       const code = `
         const x: number = "not a number";
       `;
-      const result = tsgo.typecheck(code, "/project/error.ts");
+      const result = tsgo.typecheck(code, ts("error"));
       expect(result.success).toBe(false);
       expect(result.diagnostics?.length).toBeGreaterThan(0);
       expect(result.diagnostics?.[0]?.message).toContain("Type 'string' is not assignable to type 'number'");
@@ -45,7 +49,7 @@ describe("tsgo", () => {
           email: "alice@example.com"
         };
       `;
-      const result = tsgo.typecheck(code, "/project/interface.ts");
+      const result = tsgo.typecheck(code, ts("interface"));
       expect(result.success).toBe(true);
     });
 
@@ -63,7 +67,7 @@ describe("tsgo", () => {
           // missing email
         };
       `;
-      const result = tsgo.typecheck(code, "/project/missing-prop.ts");
+      const result = tsgo.typecheck(code, ts("missing-prop"));
       expect(result.success).toBe(false);
       expect(result.diagnostics?.[0]?.message).toContain("email");
     });
@@ -79,7 +83,7 @@ describe("tsgo", () => {
         const numCheck: number = num;
         const strCheck: string = str;
       `;
-      const result = tsgo.typecheck(code, "/project/generics.ts");
+      const result = tsgo.typecheck(code, ts("generics"));
       expect(result.success).toBe(true);
     });
 
@@ -101,7 +105,7 @@ describe("tsgo", () => {
         counter.increment();
         const count: number = counter.getCount();
       `;
-      const result = tsgo.typecheck(code, "/project/class.ts");
+      const result = tsgo.typecheck(code, ts("class"));
       expect(result.success).toBe(true);
     });
   });
@@ -127,7 +131,7 @@ describe("tsgo", () => {
 
         export default Greeting;
       `;
-      const result = tsgo.typecheck(code, "/project/Greeting.tsx");
+      const result = tsgo.typecheck(code, tsx("Greeting"));
       expect(result.success).toBe(true);
     });
 
@@ -147,7 +151,7 @@ describe("tsgo", () => {
         // Missing onClick prop
         const App = () => <Button label="Click me" />;
       `;
-      const result = tsgo.typecheck(code, "/project/MissingProp.tsx");
+      const result = tsgo.typecheck(code, tsx("MissingProp"));
       expect(result.success).toBe(false);
       // Error should mention the type mismatch (ButtonProps or the missing property)
       expect(result.diagnostics?.some(d =>
@@ -181,7 +185,7 @@ describe("tsgo", () => {
 
         export default Counter;
       `;
-      const result = tsgo.typecheck(code, "/project/Hooks.tsx");
+      const result = tsgo.typecheck(code, tsx("Hooks"));
       expect(result.success).toBe(true);
     });
   });
@@ -193,7 +197,7 @@ describe("tsgo", () => {
         const App = () => <div>Hello</div>;
         export default App;
       `;
-      const result = tsgo.typecheckWithOptions(code, "/project/Emotion.tsx", {
+      const result = tsgo.typecheckWithOptions(code, tsx("Emotion"), {
         jsx: "react-jsx",
         jsxImportSource: "@emotion/react",
         strict: true,
@@ -228,7 +232,7 @@ describe("tsgo", () => {
 
         export default App;
       `;
-      const result = tsgo.typecheckWithOptions(code, "/project/MiniApp.tsx", {
+      const result = tsgo.typecheckWithOptions(code, tsx("MiniApp"), {
         jsx: "react-jsx",
         jsxImportSource: "@mini/jsx-runtime",
         target: "ES2022",
@@ -252,7 +256,7 @@ describe("tsgo", () => {
 
         export default App;
       `;
-      const result = tsgo.typecheckWithOptions(code, "/project/BadElement.tsx", {
+      const result = tsgo.typecheckWithOptions(code, tsx("BadElement"), {
         jsx: "react-jsx",
         jsxImportSource: "@mini/jsx-runtime",
         target: "ES2022",
@@ -277,7 +281,7 @@ describe("tsgo", () => {
 
         export default App;
       `;
-      const result = tsgo.typecheckWithOptions(code, "/project/BadProp.tsx", {
+      const result = tsgo.typecheckWithOptions(code, tsx("BadProp"), {
         jsx: "react-jsx",
         jsxImportSource: "@mini/jsx-runtime",
         target: "ES2022",
@@ -295,20 +299,20 @@ describe("tsgo", () => {
   describe("typecheckMultiple - multi-file projects", () => {
     test("cross-file imports work", () => {
       const files = {
-        "/project/types.ts": `
+        [ts("types")]: `
           export interface User {
             id: number;
             name: string;
           }
         `,
-        "/project/utils.ts": `
+        [ts("utils")]: `
           import { User } from './types';
 
           export function greet(user: User): string {
             return \`Hello, \${user.name}!\`;
           }
         `,
-        "/project/main.ts": `
+        [ts("main")]: `
           import { User } from './types';
           import { greet } from './utils';
 
@@ -325,13 +329,13 @@ describe("tsgo", () => {
 
     test("cross-file type errors are caught", () => {
       const files = {
-        "/project/types.ts": `
+        [ts("types")]: `
           export interface User {
             id: number;
             name: string;
           }
         `,
-        "/project/main.ts": `
+        [ts("main")]: `
           import { User } from './types';
 
           // Missing name property
@@ -348,14 +352,14 @@ describe("tsgo", () => {
 
     test("React multi-file project", () => {
       const files = {
-        "/project/types.ts": `
+        [ts("types")]: `
           export interface Todo {
             id: number;
             text: string;
             completed: boolean;
           }
         `,
-        "/project/TodoItem.tsx": `
+        [tsx("TodoItem")]: `
           import React from 'react';
           import { Todo } from './types';
 
@@ -373,7 +377,7 @@ describe("tsgo", () => {
             );
           };
         `,
-        "/project/App.tsx": `
+        [tsx("App")]: `
           import React, { useState } from 'react';
           import { Todo } from './types';
           import { TodoItem } from './TodoItem';
@@ -416,20 +420,20 @@ describe("tsgo", () => {
       const code = `const x: number = 1;
 const y: number = "wrong";
 const z: number = 3;`;
-      const result = tsgo.typecheck(code, "/project/lines.ts");
+      const result = tsgo.typecheck(code, ts("lines"));
       expect(result.success).toBe(false);
       expect(result.diagnostics?.[0]?.line).toBe(2);
     });
 
     test("reports error category", () => {
       const code = `const x: number = "wrong";`;
-      const result = tsgo.typecheck(code, "/project/category.ts");
+      const result = tsgo.typecheck(code, ts("category"));
       expect(result.diagnostics?.[0]?.category).toBe("error");
     });
 
     test("reports error code", () => {
       const code = `const x: number = "wrong";`;
-      const result = tsgo.typecheck(code, "/project/code.ts");
+      const result = tsgo.typecheck(code, ts("code"));
       expect(result.diagnostics?.[0]?.code).toBe(2322);
     });
   });
@@ -437,7 +441,7 @@ const z: number = 3;`;
   describe("performance", () => {
     test("reports duration", () => {
       const code = `const x = 1;`;
-      const result = tsgo.typecheck(code, "/project/perf.ts");
+      const result = tsgo.typecheck(code, ts("perf"));
       expect(result.duration_ms).toBeGreaterThan(0);
       expect(result.duration_ms).toBeLessThan(5000);
     });
