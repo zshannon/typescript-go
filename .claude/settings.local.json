@@ -52,7 +52,8 @@
       "Read(///**)",
       "Bash(SWIFTTSGO_LOCAL=1 swift test:*)",
       "Bash(git fetch:*)",
-      "Bash(/Users/zcs/Code/zshannon/2025/typescript-go/server/integration_test.sh:*)"
+      "Bash(/Users/zcs/Code/zshannon/2025/typescript-go/server/integration_test.sh:*)",
+      "Bash(npm publish:*)"
     ],
     "deny": []
   }
