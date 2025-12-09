@@ -101,6 +101,43 @@ type DiagnosticError struct {
 	Column  int    `json:"column"`
 }
 
+// V2 API types for multi-file support
+type TypecheckV2Request struct {
+	Files       map[string]string `json:"files"`                 // path -> content
+	EntryPoints []string          `json:"entryPoints,omitempty"` // optional, defaults to all .ts/.tsx
+	Version     string            `json:"version"`
+}
+
+type BuildV2Request struct {
+	Files      map[string]string `json:"files"`      // path -> content
+	EntryPoint string            `json:"entryPoint"` // required for bundling
+	Version    string            `json:"version"`
+}
+
+type DiagnosticErrorV2 struct {
+	File    string `json:"file"`
+	Message string `json:"message"`
+	Line    int    `json:"line"`
+	Column  int    `json:"column"`
+}
+
+type TypecheckV2Response struct {
+	Pass   bool                `json:"pass,omitempty"`
+	Errors []DiagnosticErrorV2 `json:"errors,omitempty"`
+}
+
+type BuildV2Response struct {
+	Code   string              `json:"code,omitempty"`
+	Errors []DiagnosticErrorV2 `json:"errors,omitempty"`
+}
+
+// V2 API limits
+const (
+	maxFilesPerRequest = 100
+	maxFileSizeBytes   = 1 * 1024 * 1024  // 1MB per file
+	maxTotalSizeBytes  = 10 * 1024 * 1024 // 10MB total
+)
+
 type HealthResponse struct {
 	Status         string            `json:"status"`
 	Version        string            `json:"version"`
@@ -118,9 +155,10 @@ type CachePrewarmStatus struct {
 }
 
 type s3FS struct {
-	version string
-	files   map[string]string // in-memory cache for this request
-	mu      sync.RWMutex      // protects files map
+	version      string
+	files        map[string]string // in-memory cache for this request
+	mu           sync.RWMutex      // protects files map
+	hasUserFiles bool              // true if user provided multiple files (v2 mode)
 }
 
 func newS3FS(version string) *s3FS {
@@ -130,6 +168,56 @@ func newS3FS(version string) *s3FS {
 			"/input.ts": "",
 		},
 	}
+}
+
+// normalizeAndValidatePath ensures paths are absolute and prevents security issues
+func normalizeAndValidatePath(path string) (string, error) {
+	// Ensure absolute path
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+
+	// Clean the path (resolve . and ..)
+	path = filepath.Clean(path)
+	path = strings.ReplaceAll(path, "\\", "/")
+
+	// Security: prevent node_modules override
+	if strings.HasPrefix(path, "/node_modules/") || path == "/node_modules" {
+		return "", fmt.Errorf("cannot override node_modules: %s", path)
+	}
+
+	// Security: prevent lib override (TypeScript lib files)
+	if strings.HasPrefix(path, "/lib.") || strings.HasPrefix(path, "/lib/") {
+		return "", fmt.Errorf("cannot override TypeScript lib: %s", path)
+	}
+
+	return path, nil
+}
+
+// validateV2Files checks file count and size limits
+func validateV2Files(files map[string]string) error {
+	if len(files) == 0 {
+		return fmt.Errorf("at least one file is required")
+	}
+
+	if len(files) > maxFilesPerRequest {
+		return fmt.Errorf("too many files: %d (max %d)", len(files), maxFilesPerRequest)
+	}
+
+	var totalSize int64
+	for path, content := range files {
+		size := int64(len(content))
+		if size > maxFileSizeBytes {
+			return fmt.Errorf("file too large: %s (%d bytes, max %d)", path, size, maxFileSizeBytes)
+		}
+		totalSize += size
+	}
+
+	if totalSize > maxTotalSizeBytes {
+		return fmt.Errorf("total size too large: %d bytes (max %d)", totalSize, maxTotalSizeBytes)
+	}
+
+	return nil
 }
 
 // getFromCache retrieves an entry from cache or fetches from S3
@@ -778,7 +866,24 @@ func (fs *s3FS) DirectoryExists(path string) bool {
 	if path == "/" || path == "" {
 		return true
 	}
-	
+
+	// Only check in-memory files for v2 mode (multi-file requests)
+	fs.mu.RLock()
+	hasUserFiles := fs.hasUserFiles
+	if hasUserFiles {
+		prefix := path
+		if !strings.HasSuffix(prefix, "/") {
+			prefix += "/"
+		}
+		for filePath := range fs.files {
+			if strings.HasPrefix(filePath, prefix) {
+				fs.mu.RUnlock()
+				return true
+			}
+		}
+	}
+	fs.mu.RUnlock()
+
 	// Check S3 cache
 	ctx := context.Background()
 	entry := getFromCache(ctx, fs.version, path)
@@ -786,16 +891,88 @@ func (fs *s3FS) DirectoryExists(path string) bool {
 }
 
 func (fs *s3FS) GetAccessibleEntries(path string) vfs.Entries {
+	filesSet := make(map[string]struct{})
+	dirsSet := make(map[string]struct{})
+
+	// Only scan in-memory files for v2 mode (multi-file requests)
+	fs.mu.RLock()
+	hasUserFiles := fs.hasUserFiles
+	if hasUserFiles {
+		prefix := path
+		if prefix != "/" {
+			if !strings.HasSuffix(prefix, "/") {
+				prefix += "/"
+			}
+		} else {
+			prefix = "/"
+		}
+
+		for filePath := range fs.files {
+			var relativePath string
+			if prefix == "/" {
+				relativePath = strings.TrimPrefix(filePath, "/")
+			} else {
+				if !strings.HasPrefix(filePath, prefix) {
+					continue
+				}
+				relativePath = strings.TrimPrefix(filePath, prefix)
+			}
+
+			if relativePath == "" {
+				continue
+			}
+
+			parts := strings.SplitN(relativePath, "/", 2)
+			if len(parts) == 1 {
+				// Direct file in this directory
+				filesSet[parts[0]] = struct{}{}
+			} else if len(parts) > 1 && parts[0] != "" {
+				// Subdirectory
+				dirsSet[parts[0]] = struct{}{}
+			}
+		}
+	}
+	fs.mu.RUnlock()
+
+	// Get S3 entries
 	ctx := context.Background()
 	entry := getFromCache(ctx, fs.version, path)
-	
-	if !entry.Exists || entry.IsFile {
-		return vfs.Entries{Files: []string{}, Directories: []string{}}
+
+	// If no user files (v1 mode), return S3 entries directly (original behavior)
+	if !hasUserFiles {
+		if !entry.Exists || entry.IsFile {
+			return vfs.Entries{Files: []string{}, Directories: []string{}}
+		}
+		return vfs.Entries{
+			Files:       entry.Files,
+			Directories: entry.Dirs,
+		}
 	}
-	
+
+	// v2 mode: merge with S3 entries
+	if entry.Exists && !entry.IsFile {
+		for _, f := range entry.Files {
+			filesSet[f] = struct{}{}
+		}
+		for _, d := range entry.Dirs {
+			dirsSet[d] = struct{}{}
+		}
+	}
+
+	// Convert sets to slices
+	files := make([]string, 0, len(filesSet))
+	for f := range filesSet {
+		files = append(files, f)
+	}
+
+	dirs := make([]string, 0, len(dirsSet))
+	for d := range dirsSet {
+		dirs = append(dirs, d)
+	}
+
 	return vfs.Entries{
-		Files:       entry.Files,
-		Directories: entry.Dirs,
+		Files:       files,
+		Directories: dirs,
 	}
 }
 
@@ -1337,6 +1514,474 @@ func flushCache(w http.ResponseWriter, req *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// typecheckV2 handles multi-file typecheck requests
+func typecheckV2(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var v2Req TypecheckV2Request
+	if err := json.NewDecoder(req.Body).Decode(&v2Req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// Validate request
+	if err := validateV2Files(v2Req.Files); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if v2Req.Version == "" {
+		http.Error(w, "Version is required", http.StatusBadRequest)
+		return
+	}
+
+	response := typecheckTypeScriptV2(v2Req.Files, v2Req.EntryPoints, v2Req.Version)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// typecheckTypeScriptV2 handles multi-file typechecking
+func typecheckTypeScriptV2(files map[string]string, entryPoints []string, version string) TypecheckV2Response {
+	typecheckStart := time.Now()
+	defer func() {
+		duration := time.Since(typecheckStart)
+		typecheckDuration.Observe(duration.Seconds())
+		log.Printf("[PERF] typecheckTypeScriptV2 total: %v (%d files)", duration, len(files))
+	}()
+
+	// Create S3-backed filesystem for this version
+	fs := newS3FS(version)
+	fs.hasUserFiles = true // Enable v2 mode for directory resolution
+
+	// Populate with all user files and collect TypeScript entry points
+	var fileNames []string
+	for path, content := range files {
+		normalized, err := normalizeAndValidatePath(path)
+		if err != nil {
+			return TypecheckV2Response{
+				Errors: []DiagnosticErrorV2{{
+					File:    path,
+					Message: err.Error(),
+				}},
+			}
+		}
+
+		fs.mu.Lock()
+		fs.files[normalized] = content
+		fs.mu.Unlock()
+
+		// Collect .ts and .tsx files as potential entry points
+		if strings.HasSuffix(normalized, ".ts") || strings.HasSuffix(normalized, ".tsx") {
+			fileNames = append(fileNames, normalized)
+		}
+	}
+
+	// Use specified entry points if provided
+	if len(entryPoints) > 0 {
+		fileNames = make([]string, 0, len(entryPoints))
+		for _, ep := range entryPoints {
+			normalized, err := normalizeAndValidatePath(ep)
+			if err != nil {
+				return TypecheckV2Response{
+					Errors: []DiagnosticErrorV2{{
+						File:    ep,
+						Message: err.Error(),
+					}},
+				}
+			}
+			fileNames = append(fileNames, normalized)
+		}
+	}
+
+	if len(fileNames) == 0 {
+		return TypecheckV2Response{
+			Errors: []DiagnosticErrorV2{{
+				Message: "No TypeScript files found to check",
+			}},
+		}
+	}
+
+	wrappedFS := bundled.WrapFS(fs)
+
+	// Create compiler options (matching existing settings)
+	jsxImportSource := "@crayonnow/core"
+	compilerOptions := &core.CompilerOptions{
+		AllowJs:                          core.TSTrue,
+		Declaration:                      core.TSTrue,
+		ESModuleInterop:                  core.TSTrue,
+		ForceConsistentCasingInFileNames: core.TSTrue,
+		IsolatedModules:                  core.TSTrue,
+		Jsx:                              core.JsxEmitReactJSX,
+		JsxImportSource:                  jsxImportSource,
+		Module:                           core.ModuleKindCommonJS,
+		ModuleResolution:                 core.ModuleResolutionKindBundler,
+		NoEmit:                           core.TSTrue,
+		ResolveJsonModule:                core.TSTrue,
+		SkipLibCheck:                     core.TSTrue,
+		Strict:                           core.TSTrue,
+		StrictNullChecks:                 core.TSTrue,
+		Target:                           core.ScriptTargetES2022,
+		Lib:                              []string{"ES2022"},
+	}
+
+	parsedOptions := &core.ParsedOptions{
+		CompilerOptions: compilerOptions,
+		FileNames:       fileNames,
+	}
+
+	config := &tsoptions.ParsedCommandLine{
+		ParsedConfig: parsedOptions,
+	}
+
+	extendedConfigCache := &tsc.ExtendedConfigCache{}
+	host := compiler.NewCachedFSCompilerHost("/", wrappedFS, bundled.LibPath(), extendedConfigCache, nil)
+
+	program := compiler.NewProgram(compiler.ProgramOptions{
+		Config:           config,
+		Host:             host,
+		JSDocParsingMode: ast.JSDocParsingModeParseForTypeErrors,
+	})
+
+	ctx := context.Background()
+
+	// Get diagnostics
+	diagnostics := program.GetSyntacticDiagnostics(ctx, nil)
+	if len(diagnostics) == 0 {
+		diagnostics = append(diagnostics, program.GetSemanticDiagnostics(ctx, nil)...)
+	}
+
+	if len(diagnostics) > 0 {
+		errors := make([]DiagnosticErrorV2, 0, len(diagnostics))
+		for _, diag := range diagnostics {
+			err := DiagnosticErrorV2{
+				Message: diag.Localize(locale.Default),
+			}
+			if diag.File() != nil {
+				err.File = diag.File().FileName()
+				if diag.Loc().Pos() >= 0 {
+					line, col := calculateLineColumn(diag.File().Text(), diag.Loc().Pos())
+					err.Line = line + 1
+					err.Column = col + 1
+				}
+			}
+			errors = append(errors, err)
+		}
+		typecheckResults.WithLabelValues("error").Inc()
+		return TypecheckV2Response{Errors: errors}
+	}
+
+	typecheckResults.WithLabelValues("success").Inc()
+	return TypecheckV2Response{Pass: true}
+}
+
+// buildV2 handles multi-file build requests
+func buildV2(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var v2Req BuildV2Request
+	if err := json.NewDecoder(req.Body).Decode(&v2Req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// Validate request
+	if err := validateV2Files(v2Req.Files); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if v2Req.Version == "" {
+		http.Error(w, "Version is required", http.StatusBadRequest)
+		return
+	}
+
+	if v2Req.EntryPoint == "" {
+		http.Error(w, "EntryPoint is required", http.StatusBadRequest)
+		return
+	}
+
+	// Check if type validation is requested
+	validateTypes := req.URL.Query().Get("validate_types") == "true"
+
+	if validateTypes {
+		// First run typecheck on all files
+		typecheckResponse := typecheckTypeScriptV2(v2Req.Files, []string{v2Req.EntryPoint}, v2Req.Version)
+		if len(typecheckResponse.Errors) > 0 {
+			response := BuildV2Response{
+				Errors: typecheckResponse.Errors,
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(response)
+			return
+		}
+	}
+
+	response := buildTypeScriptV2(v2Req.Files, v2Req.EntryPoint, v2Req.Version)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// buildTypeScriptV2 handles multi-file bundling
+func buildTypeScriptV2(files map[string]string, entryPoint string, version string) BuildV2Response {
+	compileStart := time.Now()
+	defer func() {
+		duration := time.Since(compileStart)
+		compileDuration.Observe(duration.Seconds())
+		log.Printf("[PERF] buildTypeScriptV2 total: %v (%d files)", duration, len(files))
+	}()
+
+	// Create S3-backed filesystem for this version
+	fs := newS3FS(version)
+	fs.hasUserFiles = true // Enable v2 mode for directory resolution
+
+	// Populate with all user files
+	for path, content := range files {
+		normalized, err := normalizeAndValidatePath(path)
+		if err != nil {
+			return BuildV2Response{
+				Errors: []DiagnosticErrorV2{{
+					File:    path,
+					Message: err.Error(),
+				}},
+			}
+		}
+
+		fs.mu.Lock()
+		fs.files[normalized] = content
+		fs.mu.Unlock()
+	}
+
+	// Normalize entry point
+	normalizedEntryPoint, err := normalizeAndValidatePath(entryPoint)
+	if err != nil {
+		return BuildV2Response{
+			Errors: []DiagnosticErrorV2{{
+				File:    entryPoint,
+				Message: err.Error(),
+			}},
+		}
+	}
+
+	// Verify entry point exists in provided files
+	fs.mu.RLock()
+	_, entryExists := fs.files[normalizedEntryPoint]
+	fs.mu.RUnlock()
+	if !entryExists {
+		return BuildV2Response{
+			Errors: []DiagnosticErrorV2{{
+				File:    entryPoint,
+				Message: fmt.Sprintf("Entry point not found in provided files: %s", entryPoint),
+			}},
+		}
+	}
+
+	// Create virtual file resolver for esbuild
+	resolverCalls := 0
+	resolver := func(path string) (api.OnLoadResult, error) {
+		resolverCalls++
+		trackPackageResolution(path)
+
+		if strings.HasPrefix(path, "/") || strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../") {
+			if content, exists := fs.ReadFile(path); exists {
+				if strings.Contains(path, "node_modules") {
+					log.Printf("[BUILD V2] Cache HIT for path: %s", path)
+				}
+				loader := api.LoaderDefault
+				if strings.HasSuffix(path, ".tsx") || strings.HasSuffix(path, ".ts") {
+					loader = api.LoaderTSX
+				} else if strings.HasSuffix(path, ".jsx") {
+					loader = api.LoaderJSX
+				} else if strings.HasSuffix(path, ".json") {
+					loader = api.LoaderJSON
+				}
+				return api.OnLoadResult{
+					Contents: &content,
+					Loader:   loader,
+				}, nil
+			}
+		}
+
+		if strings.Contains(path, "node_modules") {
+			log.Printf("[BUILD V2] Cache MISS for path: %s", path)
+		}
+
+		// Try with common extensions
+		if strings.HasPrefix(path, "/") {
+			extensions := []string{".js", ".jsx", ".mjs", ".json", ".ts", ".tsx"}
+			for _, ext := range extensions {
+				testPath := path + ext
+				if content, exists := fs.ReadFile(testPath); exists {
+					loader := api.LoaderDefault
+					if ext == ".tsx" || ext == ".ts" {
+						loader = api.LoaderTSX
+					} else if ext == ".jsx" {
+						loader = api.LoaderJSX
+					} else if ext == ".json" {
+						loader = api.LoaderJSON
+					}
+					return api.OnLoadResult{
+						Contents: &content,
+						Loader:   loader,
+					}, nil
+				}
+			}
+		}
+
+		// Try to resolve using module resolver
+		if !strings.HasPrefix(path, "/") {
+			if strings.Contains(path, "node_modules") || strings.Contains(path, "@") {
+				log.Printf("[BUILD V2] Resolving module: %s", path)
+			}
+			resolvedPath := resolveModule(fs, path, "")
+			if strings.Contains(path, "@") && resolvedPath != "" {
+				log.Printf("[BUILD V2] Resolved %s -> %s", path, resolvedPath)
+			}
+			if resolvedPath != "" {
+				if content, exists := fs.ReadFile(resolvedPath); exists {
+					loader := api.LoaderDefault
+					if strings.HasSuffix(resolvedPath, ".tsx") || strings.HasSuffix(resolvedPath, ".ts") {
+						loader = api.LoaderTSX
+					} else if strings.HasSuffix(resolvedPath, ".jsx") {
+						loader = api.LoaderJSX
+					} else if strings.HasSuffix(resolvedPath, ".json") {
+						loader = api.LoaderJSON
+					} else if strings.HasSuffix(resolvedPath, ".mjs") {
+						loader = api.LoaderJS
+					}
+					return api.OnLoadResult{
+						Contents: &content,
+						Loader:   loader,
+					}, nil
+				}
+			}
+		}
+
+		return api.OnLoadResult{}, fmt.Errorf("file not found: %s", path)
+	}
+
+	// Build with esbuild
+	esbuildStart := time.Now()
+	result := api.Build(api.BuildOptions{
+		EntryPoints:       []string{normalizedEntryPoint},
+		Bundle:            true,
+		Format:            api.FormatCommonJS,
+		JSXFactory:        "_CRAYONCORE_$REACT.createElement",
+		JSXFragment:       "_CRAYONCORE_$REACT.Fragment",
+		MinifyWhitespace:  true,
+		MinifyIdentifiers: false,
+		MinifySyntax:      true,
+		Platform:          api.PlatformBrowser,
+		Target:            api.ES2022,
+		Write:             false,
+		External:          []string{"*"},
+		Plugins: []api.Plugin{{
+			Name: "virtual-fs-v2",
+			Setup: func(pb api.PluginBuild) {
+				pb.OnResolve(api.OnResolveOptions{Filter: ".*"}, func(args api.OnResolveArgs) (api.OnResolveResult, error) {
+					trackPackageResolution(args.Path)
+
+					// Transform react imports to use global variable
+					if args.Path == "react" {
+						return api.OnResolveResult{
+							Path:      "react",
+							Namespace: "use-crayon-react-global",
+						}, nil
+					}
+
+					// Handle absolute imports
+					if strings.HasPrefix(args.Path, "/") {
+						return api.OnResolveResult{Path: args.Path, Namespace: "virtual"}, nil
+					}
+
+					// Handle relative imports
+					if strings.HasPrefix(args.Path, "./") || strings.HasPrefix(args.Path, "../") {
+						resolvedPath := resolveModule(fs, args.Path, args.Importer)
+						if resolvedPath == "" {
+							importerPath := args.Importer
+							if !strings.HasPrefix(importerPath, "/") {
+								importerPath = resolveBarePackageImporter(fs, importerPath)
+							}
+							importerDir := filepath.Dir(importerPath)
+							resolvedPath = filepath.Join(importerDir, args.Path)
+							resolvedPath = strings.ReplaceAll(resolvedPath, "\\", "/")
+						}
+						return api.OnResolveResult{Path: resolvedPath, Namespace: "virtual"}, nil
+					}
+
+					// Handle bare imports
+					if !strings.Contains(args.Path, "/") || strings.HasPrefix(args.Path, "@") {
+						return api.OnResolveResult{Path: args.Path, Namespace: "virtual"}, nil
+					}
+
+					// Handle subpath imports
+					if args.Importer != "" && strings.Contains(args.Importer, "/node_modules/") {
+						parts := strings.Split(args.Importer, "/node_modules/")
+						if len(parts) >= 2 {
+							remainingPath := parts[1]
+							packageParts := strings.Split(remainingPath, "/")
+							packageName := packageParts[0]
+							if strings.HasPrefix(packageName, "@") && len(packageParts) > 1 {
+								packageName = packageParts[0] + "/" + packageParts[1]
+							}
+							resolvedPath := "/node_modules/" + packageName + "/" + args.Path
+							return api.OnResolveResult{Path: resolvedPath, Namespace: "virtual"}, nil
+						}
+					}
+
+					return api.OnResolveResult{Path: args.Path, Namespace: "virtual"}, nil
+				})
+
+				pb.OnLoad(api.OnLoadOptions{Filter: ".*", Namespace: "virtual"}, func(args api.OnLoadArgs) (api.OnLoadResult, error) {
+					return resolver(args.Path)
+				})
+
+				pb.OnLoad(api.OnLoadOptions{Filter: ".*", Namespace: "use-crayon-react-global"}, func(args api.OnLoadArgs) (api.OnLoadResult, error) {
+					contents := "module.exports = _CRAYONCORE_$REACT"
+					return api.OnLoadResult{
+						Contents: &contents,
+						Loader:   api.LoaderJS,
+					}, nil
+				})
+			},
+		}},
+	})
+	log.Printf("[PERF] esbuild.Build V2: %v (resolver called %d times)", time.Since(esbuildStart), resolverCalls)
+
+	if len(result.Errors) > 0 {
+		errors := make([]DiagnosticErrorV2, 0, len(result.Errors))
+		for _, err := range result.Errors {
+			diagErr := DiagnosticErrorV2{
+				Message: err.Text,
+			}
+			if err.Location != nil {
+				diagErr.File = err.Location.File
+				diagErr.Line = err.Location.Line
+				diagErr.Column = err.Location.Column
+			}
+			errors = append(errors, diagErr)
+		}
+		compileResults.WithLabelValues("error").Inc()
+		return BuildV2Response{Errors: errors}
+	}
+
+	if len(result.OutputFiles) == 0 {
+		compileResults.WithLabelValues("error").Inc()
+		return BuildV2Response{Errors: []DiagnosticErrorV2{{Message: "No output generated"}}}
+	}
+
+	outputCode := string(result.OutputFiles[0].Contents)
+	compileResults.WithLabelValues("success").Inc()
+	return BuildV2Response{Code: outputCode}
+}
+
 func main() {
 	log.Printf("TypeScript Go Server v%s starting...", serverVersion)
 	
@@ -1407,6 +2052,8 @@ func main() {
 	http.HandleFunc("/typecheck", loggingMiddleware(typecheck))
 	http.HandleFunc("/build", loggingMiddleware(build))
 	http.HandleFunc("/flush-cache", loggingMiddleware(flushCache))
+	http.HandleFunc("/v2/typecheck", loggingMiddleware(typecheckV2))
+	http.HandleFunc("/v2/build", loggingMiddleware(buildV2))
 	http.HandleFunc("/", loggingMiddleware(hello))
 	
 	// Start Prometheus metrics server on port 9091
@@ -1421,7 +2068,7 @@ func main() {
 	// Start server in goroutine
 	go func() {
 		log.Printf("Server ready! Listening on :8080...")
-		log.Printf("Endpoints: /, /health, /typecheck, /build, /flush-cache")
+		log.Printf("Endpoints: /, /health, /typecheck, /build, /flush-cache, /v2/typecheck, /v2/build")
 		log.Printf("Metrics available at :9091/metrics")
 		
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
