@@ -165,11 +165,13 @@ func resolveBarePackageImporter(fs FileSystem, packageName string) string {
 
 // resolveModule is the main module resolution function
 func resolveModule(fs FileSystem, importPath string, importer string) string {
-	// Security: validate paths
-	if err := validatePath(importPath); err != nil {
-		return ""
+	// Security: validate paths (skip for relative imports - they're validated after resolution)
+	if !strings.HasPrefix(importPath, "./") && !strings.HasPrefix(importPath, "../") {
+		if err := validatePath(importPath); err != nil {
+			return ""
+		}
 	}
-	
+
 	// Handle absolute imports
 	if strings.HasPrefix(importPath, "/") {
 		if err := validatePath(importPath); err != nil {
@@ -192,13 +194,14 @@ func resolveModule(fs FileSystem, importPath string, importer string) string {
 	// Handle relative imports
 	if strings.HasPrefix(importPath, "./") || strings.HasPrefix(importPath, "../") {
 		var importerPath string
-		
-		// Check if importer is a bare package name (special case from the fix)
-		if importer != "" && !strings.HasPrefix(importer, "/") && !strings.Contains(importer, ".") {
-			// This is a bare package name, resolve its actual path
-			importerPath = resolveBarePackageImporter(fs, importer)
-		} else {
+
+		// If importer is already an absolute path, use it directly
+		if strings.HasPrefix(importer, "/") {
 			importerPath = importer
+		} else if importer != "" {
+			// Importer is a bare package name or subpath export (e.g., "zod-schema-faker/v4")
+			// Use resolveModule to properly resolve it via exports field
+			importerPath = resolveModule(fs, importer, "")
 		}
 		
 		if importerPath == "" {

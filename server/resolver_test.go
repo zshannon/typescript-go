@@ -386,6 +386,94 @@ func TestResolvePackageExports(t *testing.T) {
 	}
 }
 
+// TestSubpathExportRelativeImports tests that relative imports from files
+// loaded via subpath exports resolve correctly relative to the actual file location,
+// not relative to the subpath name.
+//
+// Bug reproduction: zod-schema-faker/v4
+//   1. zod-schema-faker/v4 resolves to ./dist/v4/zod-schema-faker.cjs via exports
+//   2. That file contains require("../randexp-IynBq8em.cjs")
+//   3. Should resolve to ./dist/randexp-IynBq8em.cjs (going up from dist/v4/)
+//   4. Bug: was resolving to ./v4/randexp-IynBq8em.cjs (treating "v4" as the dir)
+func TestSubpathExportRelativeImports(t *testing.T) {
+	tests := []struct {
+		name       string
+		setupFiles map[string]string
+		importPath string
+		importer   string
+		expected   string
+	}{
+		{
+			name: "relative import with ../ from subpath export",
+			setupFiles: map[string]string{
+				"/node_modules/zod-schema-faker/package.json": `{
+					"name": "zod-schema-faker",
+					"exports": {
+						"./v4": {
+							"require": "./dist/v4/zod-schema-faker.cjs"
+						}
+					}
+				}`,
+				"/node_modules/zod-schema-faker/dist/v4/zod-schema-faker.cjs": `require("../randexp-IynBq8em.cjs")`,
+				"/node_modules/zod-schema-faker/dist/randexp-IynBq8em.cjs":    `module.exports = "randexp"`,
+			},
+			importPath: "../randexp-IynBq8em.cjs",
+			// The importer should be the RESOLVED path, not the bare subpath
+			importer: "/node_modules/zod-schema-faker/dist/v4/zod-schema-faker.cjs",
+			expected: "/node_modules/zod-schema-faker/dist/randexp-IynBq8em.cjs",
+		},
+		{
+			name: "relative import with ../ from subpath export - bare importer (current bug)",
+			setupFiles: map[string]string{
+				"/node_modules/zod-schema-faker/package.json": `{
+					"name": "zod-schema-faker",
+					"exports": {
+						"./v4": {
+							"require": "./dist/v4/zod-schema-faker.cjs"
+						}
+					}
+				}`,
+				"/node_modules/zod-schema-faker/dist/v4/zod-schema-faker.cjs": `require("../randexp-IynBq8em.cjs")`,
+				"/node_modules/zod-schema-faker/dist/randexp-IynBq8em.cjs":    `module.exports = "randexp"`,
+			},
+			importPath: "../randexp-IynBq8em.cjs",
+			// When importer is the bare subpath (what esbuild passes), resolution should
+			// still find the correct file by resolving the subpath first
+			importer: "zod-schema-faker/v4",
+			expected: "/node_modules/zod-schema-faker/dist/randexp-IynBq8em.cjs",
+		},
+		{
+			name: "relative import with ./ from subpath export - bare importer",
+			setupFiles: map[string]string{
+				"/node_modules/pkg/package.json": `{
+					"exports": {
+						"./sub": "./lib/deep/entry.js"
+					}
+				}`,
+				"/node_modules/pkg/lib/deep/entry.js":  `require("./helper.js")`,
+				"/node_modules/pkg/lib/deep/helper.js": `module.exports = "helper"`,
+			},
+			importPath: "./helper.js",
+			importer:   "pkg/sub",
+			expected:   "/node_modules/pkg/lib/deep/helper.js",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := NewMockFS()
+			for path, content := range tt.setupFiles {
+				fs.AddFile(path, content)
+			}
+
+			result := resolveModule(fs, tt.importPath, tt.importer)
+			if result != tt.expected {
+				t.Errorf("Expected %s, got %s", tt.expected, result)
+			}
+		})
+	}
+}
+
 // TestResolutionPriority verifies correct priority order
 func TestResolutionPriority(t *testing.T) {
 	t.Run("exports field takes precedence over main", func(t *testing.T) {
