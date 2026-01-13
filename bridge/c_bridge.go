@@ -310,11 +310,11 @@ type extendedConfigCacheAdapter struct {
 	cache *collections.SyncMap[tspath.Path, *tsoptions.ExtendedConfigCacheEntry]
 }
 
-func (a *extendedConfigCacheAdapter) GetExtendedConfig(fileName string, path tspath.Path, parse func() *tsoptions.ExtendedConfigCacheEntry) *tsoptions.ExtendedConfigCacheEntry {
+func (a *extendedConfigCacheAdapter) GetExtendedConfig(fileName string, path tspath.Path, resolutionStack []string, host tsoptions.ParseConfigHost) *tsoptions.ExtendedConfigCacheEntry {
 	if entry, ok := a.cache.Load(path); ok {
 		return entry
 	}
-	entry := parse()
+	entry := tsoptions.ParseExtendedConfig(fileName, path, resolutionStack, host, a)
 	a.cache.Store(path, entry)
 	return entry
 }
@@ -616,7 +616,7 @@ func buildWithConfig(projectPath string, printErrors bool, configFile string, re
 
 	extendedConfigCache := collections.SyncMap[tspath.Path, *tsoptions.ExtendedConfigCacheEntry]{}
 	cacheAdapter := &extendedConfigCacheAdapter{cache: &extendedConfigCache}
-	configParseResult, parseErrors := tsoptions.GetParsedCommandLineOfConfigFile(configFileName, compilerOptions, sys, cacheAdapter)
+	configParseResult, parseErrors := tsoptions.GetParsedCommandLineOfConfigFile(configFileName, compilerOptions, nil, sys, cacheAdapter)
 
 	if len(parseErrors) != 0 {
 		return &BridgeResult{
