@@ -11,8 +11,12 @@ primary_region = 'sjc'
 [env]
 AWS_ENDPOINT_URL_S3 = "https://t3.storage.dev"
 AWS_REGION = "auto"
-CACHE_SIZE = "67108864"                        # 64MB
+DISK_CACHE_PATH = "/data/cache"
 S3_BUCKET = "fly-tsgo-node-modules"
+
+[[mounts]]
+destination = "/data/cache"
+source = "cache_data"
 
 [http_service]
 internal_port = 8080

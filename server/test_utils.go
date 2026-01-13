@@ -23,9 +23,84 @@ type MockS3Client struct {
 }
 
 func NewMockS3Client() *MockS3Client {
-	return &MockS3Client{
+	m := &MockS3Client{
 		files: make(map[string]string),
 	}
+	// Pre-populate with auto-generated package files so ListObjectsV2 returns them
+	m.prePopulatePackages("0.0.4")
+	return m
+}
+
+// prePopulatePackages adds standard mock package files for a version
+func (m *MockS3Client) prePopulatePackages(version string) {
+	prefix := version + "/node_modules/"
+
+	// @crayonnow/core package
+	m.files[prefix+"@crayonnow/core/package.json"] = `{
+		"name": "@crayonnow/core",
+		"version": "1.0.0",
+		"main": "index.js",
+		"types": "index.d.ts",
+		"exports": {
+			".": {
+				"types": "./index.d.ts",
+				"default": "./index.js"
+			},
+			"./jsx-runtime": {
+				"types": "./jsx-runtime.d.ts",
+				"default": "./jsx-runtime.js"
+			}
+		}
+	}`
+	m.files[prefix+"@crayonnow/core/index.js"] = `exports.Flex = function(props) { return {type: 'Flex', props}; };
+exports.Button = function(props) { return {type: 'Button', props}; };
+exports.Text = function(props) { return {type: 'Text', props}; };
+exports.Picker = function(props) { return {type: 'Picker', props}; };`
+	m.files[prefix+"@crayonnow/core/index.d.ts"] = `
+export interface FlexProps {
+	style?: any;
+	children?: any;
+}
+export declare function Flex(props: FlexProps): any;
+
+export interface ButtonProps {
+	onClick?: () => void;
+	style?: any;
+	children?: any;
+}
+export declare function Button(props: ButtonProps): any;
+
+export interface TextProps {
+	style?: any;
+	children?: any;
+}
+export declare function Text(props: TextProps): any;`
+	m.files[prefix+"@crayonnow/core/jsx-runtime.js"] = `exports.jsx = function(type, props) { return {type, props}; };
+exports.jsxs = exports.jsx;
+exports.Fragment = function(props) { return props.children; };`
+	m.files[prefix+"@crayonnow/core/jsx-runtime.d.ts"] = `export namespace JSX {
+	interface Element {}
+	interface IntrinsicElements {
+		[key: string]: any;
+	}
+}
+export function jsx(type: any, props: any, key?: any): any;
+export function jsxs(type: any, props: any, key?: any): any;
+export function Fragment(props: any): any;`
+
+	// react package
+	m.files[prefix+"react/package.json"] = `{
+		"name": "react",
+		"version": "18.0.0",
+		"main": "index.js",
+		"types": "index.d.ts"
+	}`
+	m.files[prefix+"react/index.js"] = `exports.useState = function(init) { return [init, function() {}]; };
+exports.useEffect = function(fn, deps) { };
+exports.createElement = function(type, props, children) { return {type, props, children}; };`
+	m.files[prefix+"react/index.d.ts"] = `export function useState<T>(init: T): [T, (value: T) => void];
+export function useEffect(fn: () => void | (() => void), deps?: any[]): void;
+export function createElement(type: any, props: any, children?: any): any;`
 }
 
 func (m *MockS3Client) AddFile(key string, content string) {

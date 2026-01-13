@@ -7,7 +7,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.31.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.87.0
 	github.com/evanw/esbuild v0.25.9
-	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/microsoft/typescript-go v0.0.0
 	github.com/prometheus/client_golang v1.23.0
 )

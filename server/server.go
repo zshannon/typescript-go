@@ -10,8 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -20,9 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/evanw/esbuild/pkg/api"
-	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/microsoft/typescript-go/internal/ast"
 	"github.com/microsoft/typescript-go/internal/bundled"
 	"github.com/microsoft/typescript-go/internal/compiler"
@@ -43,37 +39,14 @@ var (
 	serverVersion = "1.0.0"
 	startTime     = time.Now()
 	gitCommit     = "unknown" // Set at build time with -ldflags
-	
+
 	// S3 client and configuration
 	s3Client    S3ClientInterface
 	s3Bucket    string
-	
-	// LRU cache for S3 content
-	cache       *lru.Cache[string, *CacheEntry]
-	cacheMutex  sync.RWMutex
-	
-	// Cache configuration
-	cacheSize   int64
-	
-	// Cache TTL settings
-	cacheTTLSuccess   = 24 * time.Hour   // TTL for found entries
-	cacheTTLNotFound  = 60 * time.Second // TTL for not found entries
-	
-	// Pre-warming tracking
-	cachePrewarmStarted   time.Time
-	cachePrewarmCompleted time.Time
-	cachePrewarmBytes     int64
-	cachePrewarmFiles     int
-)
 
-type CacheEntry struct {
-	Exists    bool      // false if not found in S3
-	IsFile    bool      // true for file, false for directory
-	Content   []byte    // file content (only for files)
-	Files     []string  // immediate child files (only for dirs)
-	Dirs      []string  // immediate child dirs (only for dirs)
-	ExpiresAt time.Time // expiration time for this entry
-}
+	// Disk cache configuration
+	diskCachePath string
+)
 
 type TypecheckRequest struct {
 	Code    string `json:"code"`
@@ -139,35 +112,29 @@ const (
 )
 
 type HealthResponse struct {
-	Status         string            `json:"status"`
-	Version        string            `json:"version"`
-	Uptime         string            `json:"uptime"`
-	CacheSize      string            `json:"cache_size"`
-	CacheEntries   int               `json:"cache_entries"`
-	CachePrewarm   CachePrewarmStatus `json:"cache_prewarm,omitempty"`
+	DiskCachePath string `json:"disk_cache_path"`
+	Status        string `json:"status"`
+	Uptime        string `json:"uptime"`
+	Version       string `json:"version"`
 }
 
-type CachePrewarmStatus struct {
-	Status    string  `json:"status"`
-	Files     int     `json:"files"`
-	BytesMB   float64 `json:"bytes_mb"`
-	DurationS float64 `json:"duration_s,omitempty"`
-}
-
-type s3FS struct {
-	version      string
-	files        map[string]string // in-memory cache for this request
-	mu           sync.RWMutex      // protects files map
+type diskFS struct {
+	basePath     string            // e.g., "/data/cache/5.7.0"
 	hasUserFiles bool              // true if user provided multiple files (v2 mode)
+	mu           sync.RWMutex      // protects userFiles map
+	userFiles    map[string]string // user-provided files (v2 mode)
+	version      string
 }
 
-func newS3FS(version string) *s3FS {
-	return &s3FS{
-		version: version,
-		files: map[string]string{
-			"/input.ts": "",
-		},
+func newDiskFS(ctx context.Context, version string) (*diskFS, error) {
+	if err := ensureVersionSynced(ctx, version); err != nil {
+		return nil, err
 	}
+	return &diskFS{
+		basePath:  filepath.Join(diskCachePath, version),
+		userFiles: make(map[string]string),
+		version:   version,
+	}, nil
 }
 
 // normalizeAndValidatePath ensures paths are absolute and prevents security issues
@@ -220,654 +187,174 @@ func validateV2Files(files map[string]string) error {
 	return nil
 }
 
-// getFromCache retrieves an entry from cache or fetches from S3
-func getFromCache(ctx context.Context, version, path string) *CacheEntry {
+// ensureVersionSynced checks if version dir exists on disk, syncs from S3 if not
+func ensureVersionSynced(ctx context.Context, version string) error {
+	versionPath := filepath.Join(diskCachePath, version)
+
+	// If directory exists, we're done
+	if _, err := os.Stat(versionPath); err == nil {
+		return nil
+	}
+
+	log.Printf("[SYNC] Starting sync for version %s", version)
 	start := time.Now()
-	defer func() {
-		if duration := time.Since(start); duration > 10*time.Millisecond {
-			log.Printf("[PERF] getFromCache slow: %v for path=%s", duration, path)
-		}
-	}()
-	
-	// Normalize version - ensure it ends with exactly one slash
-	if !strings.HasSuffix(version, "/") {
-		version = version + "/"
-	}
-	cacheKey := fmt.Sprintf("%s%s", version, strings.TrimPrefix(path, "/"))
-	
-	// Check cache first
-	cacheMutex.RLock()
-	if cached, ok := cache.Get(cacheKey); ok {
-		// Check if entry has expired
-		if time.Now().Before(cached.ExpiresAt) {
-			cacheMutex.RUnlock()
-			s3CacheHits.Inc()
-			// Log important cache hits
-			if strings.Contains(path, "react") && strings.Contains(path, ".d.ts") {
-				log.Printf("[CACHE HIT] Found in cache: %s", cacheKey)
-			}
-			return cached
-		}
-		// Entry expired, will refetch
-		cacheMutex.RUnlock()
-		// Remove expired entry
-		cacheMutex.Lock()
-		cache.Remove(cacheKey)
-		cacheMutex.Unlock()
-	} else {
-		cacheMutex.RUnlock()
-	}
-	
-	// Before hitting S3, check if parent directory is cached
-	// If so, we can determine if this file doesn't exist without S3
-	dirPath := filepath.Dir(strings.TrimPrefix(path, "/"))
-	if dirPath != "." && dirPath != "" {
-		dirCacheKey := fmt.Sprintf("%s%s", version, dirPath)
-		cacheMutex.RLock()
-		if dirEntry, ok := cache.Get(dirCacheKey); ok && time.Now().Before(dirEntry.ExpiresAt) {
-			cacheMutex.RUnlock()
-			if dirEntry.Exists && !dirEntry.IsFile {
-				// Parent directory is cached, check if file is in the list
-				filename := filepath.Base(path)
-				fileFound := false
-				for _, f := range dirEntry.Files {
-					if f == filename {
-						fileFound = true
-						break
-					}
-				}
-				if !fileFound {
-					// File not in parent directory's file list, so it doesn't exist
-					s3CacheHits.Inc() // This is still a cache hit - we used cached dir info
-					entry := &CacheEntry{
-						Exists:    false,
-						ExpiresAt: time.Now().Add(cacheTTLNotFound),
-					}
-					cacheMutex.Lock()
-					cache.Add(cacheKey, entry)
-					cacheMutex.Unlock()
-					return entry
-				}
-				// File is in directory listing, continue to fetch it from S3 or cache
-			}
-		} else {
-			cacheMutex.RUnlock()
-		}
-	}
-	
-	s3CacheMisses.Inc()
-	
-	// Try to fetch as a file first
-	s3FetchStart := time.Now()
-	// Create timeout context for S3 operation (1 second timeout)
-	s3Ctx, s3Cancel := context.WithTimeout(ctx, 1*time.Second)
-	defer s3Cancel()
-	result, err := s3Client.GetObject(s3Ctx, &s3.GetObjectInput{
-		Bucket: aws.String(s3Bucket),
-		Key:    aws.String(cacheKey),
-	})
-	s3FetchDuration.Observe(time.Since(s3FetchStart).Seconds())
-	if duration := time.Since(s3FetchStart); duration > 10*time.Millisecond {
-		log.Printf("[PERF] S3 GetObject: %v for key=%s", duration, cacheKey)
-	}
-	
-	if err == nil {
-		defer result.Body.Close()
-		content, err := io.ReadAll(result.Body)
-		if err == nil {
-			// Log important files being loaded
-			if strings.Contains(cacheKey, "react") && strings.Contains(cacheKey, ".d.ts") {
-				log.Printf("[S3 FETCH] Loading type definitions: %s (%d bytes)", cacheKey, len(content))
-			}
-			entry := &CacheEntry{
-				Exists:    true,
-				IsFile:    true,
-				Content:   content,
-				ExpiresAt: time.Now().Add(cacheTTLSuccess),
-			}
-			cacheMutex.Lock()
-			cache.Add(cacheKey, entry)
-			cacheMutex.Unlock()
-			return entry
-		} else {
-			// log.Printf("[getFromCache] S3 file read error for %s: %v", cacheKey, err)
-		}
-	} else {
-		// log.Printf("[getFromCache] S3 file fetch error for %s: %v", cacheKey, err)
-	}
-	
-	// Not a file, try as directory
-	prefix := cacheKey
-	if !strings.HasSuffix(prefix, "/") {
-		prefix += "/"
-	}
-	
-	s3ListStart := time.Now()
-	// Create timeout context for S3 list operation (5 second timeout)
-	listCtx, listCancel := context.WithTimeout(ctx, 5*time.Second)
-	defer listCancel()
-	listResult, err := s3Client.ListObjectsV2(listCtx, &s3.ListObjectsV2Input{
-		Bucket:    aws.String(s3Bucket),
-		Prefix:    aws.String(prefix),
-		Delimiter: aws.String("/"),
-	})
-	s3ListDuration.Observe(time.Since(s3ListStart).Seconds())
-	if duration := time.Since(s3ListStart); duration > 10*time.Millisecond {
-		log.Printf("[PERF] S3 ListObjectsV2: %v for prefix=%s", duration, prefix)
-	}
-	
-	if err != nil {
-		s3ListErrors.Inc()
-		// log.Printf("[getFromCache] S3 list error for key %s: %v", cacheKey, err)
-		// Cache as non-existent with shorter TTL
-		entry := &CacheEntry{
-			Exists:    false,
-			ExpiresAt: time.Now().Add(cacheTTLNotFound),
-		}
-		cacheMutex.Lock()
-		cache.Add(cacheKey, entry)
-		cacheMutex.Unlock()
-		return entry
-	}
-	
-	// Build directory entry
-	entry := &CacheEntry{
-		Exists: false,
-		IsFile: false,
-		Files:  []string{},
-		Dirs:   []string{},
-	}
-	
-	// Add files
-	for _, obj := range listResult.Contents {
-		if obj.Key != nil {
-			relativePath := strings.TrimPrefix(*obj.Key, prefix)
-			if relativePath != "" && !strings.Contains(relativePath, "/") {
-				entry.Files = append(entry.Files, relativePath)
-				entry.Exists = true
-			}
-		}
-	}
-	
-	// Add directories
-	for _, commonPrefix := range listResult.CommonPrefixes {
-		if commonPrefix.Prefix != nil {
-			dirName := strings.TrimPrefix(*commonPrefix.Prefix, prefix)
-			dirName = strings.TrimSuffix(dirName, "/")
-			if dirName != "" {
-				entry.Dirs = append(entry.Dirs, dirName)
-				entry.Exists = true
-			}
-		}
-	}
-	
-	// Set expiration based on whether entry was found
-	if entry.Exists {
-		entry.ExpiresAt = time.Now().Add(cacheTTLSuccess)
-	} else {
-		entry.ExpiresAt = time.Now().Add(cacheTTLNotFound)
-	}
-	
-	// Cache the result
-	cacheMutex.Lock()
-	cache.Add(cacheKey, entry)
-	cacheMutex.Unlock()
-	
-	return entry
-}
 
-// compareVersions compares two semantic versions
-// Returns true if v1 > v2
-func compareVersions(v1, v2 string) bool {
-	// Remove 'v' prefix if present
-	v1 = strings.TrimPrefix(v1, "v")
-	v2 = strings.TrimPrefix(v2, "v")
-	
-	// Handle pre-release versions (e.g., 5.7.0-beta)
-	v1Base := v1
-	v2Base := v2
-	v1Pre := ""
-	v2Pre := ""
-	
-	if idx := strings.IndexAny(v1, "-+"); idx != -1 {
-		v1Base = v1[:idx]
-		v1Pre = v1[idx:]
-	}
-	if idx := strings.IndexAny(v2, "-+"); idx != -1 {
-		v2Base = v2[:idx]
-		v2Pre = v2[idx:]
-	}
-	
-	// Split base version into parts
-	parts1 := strings.Split(v1Base, ".")
-	parts2 := strings.Split(v2Base, ".")
-	
-	// Compare each numeric part
-	maxParts := len(parts1)
-	if len(parts2) > maxParts {
-		maxParts = len(parts2)
-	}
-	
-	for i := 0; i < maxParts; i++ {
-		var num1, num2 int
-		
-		if i < len(parts1) {
-			num1, _ = strconv.Atoi(parts1[i])
+	// List all objects with prefix "{version}/"
+	var keys []string
+	var continuationToken *string
+	for {
+		input := &s3.ListObjectsV2Input{
+			Bucket: aws.String(s3Bucket),
+			Prefix: aws.String(version + "/"),
 		}
-		if i < len(parts2) {
-			num2, _ = strconv.Atoi(parts2[i])
+		if continuationToken != nil {
+			input.ContinuationToken = continuationToken
 		}
-		
-		if num1 != num2 {
-			return num1 > num2
-		}
-	}
-	
-	// If base versions are equal, compare pre-release versions
-	// No pre-release > has pre-release (5.7.0 > 5.7.0-beta)
-	if v1Pre == "" && v2Pre != "" {
-		return true
-	}
-	if v1Pre != "" && v2Pre == "" {
-		return false
-	}
-	
-	// Both have pre-release, compare lexically
-	return v1Pre > v2Pre
-}
 
-// prewarmCache loads S3 files into cache on startup
-func prewarmCache(ctx context.Context) {
-	cachePrewarmStarted = time.Now()
-	log.Printf("Starting cache pre-warm...")
-	
-	// Track bytes loaded to prevent overflow
-	var bytesLoadedMutex sync.Mutex
-	var bytesLoaded int64
-	var filesLoaded int
-	targetBytes := cacheSize // Use 100% of cache
-	
-	// List all versions (sorted newest first) with timeout
-	listVersionsCtx, listVersionsCancel := context.WithTimeout(ctx, 5*time.Second)
-	versionsResult, err := s3Client.ListObjectsV2(listVersionsCtx, &s3.ListObjectsV2Input{
-		Bucket:    aws.String(s3Bucket),
-		Delimiter: aws.String("/"),
-	})
-	listVersionsCancel()
-	if err != nil {
-		log.Printf("Failed to list S3 versions for pre-warm: %v", err)
-		return
-	}
-	
-	// Extract version prefixes and sort (newest first)
-	var versions []string
-	for _, prefix := range versionsResult.CommonPrefixes {
-		if prefix.Prefix != nil {
-			version := strings.TrimSuffix(*prefix.Prefix, "/")
-			versions = append(versions, version)
+		page, err := s3Client.ListObjectsV2(ctx, input)
+		if err != nil {
+			return fmt.Errorf("failed to list S3 objects: %w", err)
 		}
+		for _, obj := range page.Contents {
+			if obj.Key != nil {
+				keys = append(keys, *obj.Key)
+			}
+		}
+
+		if page.IsTruncated == nil || !*page.IsTruncated {
+			break
+		}
+		continuationToken = page.NextContinuationToken
 	}
-	
-	// Sort versions in reverse order using semantic versioning
-	sort.Slice(versions, func(i, j int) bool {
-		return compareVersions(versions[i], versions[j])
-	})
-	
-	// Create a worker pool for parallel loading
-	const numWorkers = 10
-	type loadJob struct {
-		version string
-		obj     types.Object
+
+	if len(keys) == 0 {
+		return fmt.Errorf("version %s not found in S3", version)
 	}
-	
-	jobsChan := make(chan loadJob, 100)
-	resultsChan := make(chan int64, 100)
+
+	log.Printf("[SYNC] Found %d files to download for version %s", len(keys), version)
+
+	// Download files in parallel (20 workers)
+	const numWorkers = 20
+	keysChan := make(chan string, len(keys))
 	var wg sync.WaitGroup
-	
-	// Start workers
+	var downloadErrors int64
+	var errorsMu sync.Mutex
+
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for job := range jobsChan {
-				// Check context cancellation
-				select {
-				case <-ctx.Done():
-					return
-				default:
+			for key := range keysChan {
+				localPath := filepath.Join(diskCachePath, key)
+				if err := downloadFile(ctx, key, localPath); err != nil {
+					log.Printf("[SYNC] Failed to download %s: %v", key, err)
+					errorsMu.Lock()
+					downloadErrors++
+					errorsMu.Unlock()
 				}
-				
-				// Extract path from key (remove version prefix)
-				path := "/" + strings.TrimPrefix(*job.obj.Key, job.version+"/")
-				
-				// Check if already cached
-				cacheKey := fmt.Sprintf("%s/%s", job.version, strings.TrimPrefix(path, "/"))
-				cacheMutex.RLock()
-				_, exists := cache.Get(cacheKey)
-				cacheMutex.RUnlock()
-				if exists {
-					resultsChan <- 0
-					continue
-				}
-				
-				// Create timeout context for S3 operation (1 second timeout)
-				s3Ctx, s3Cancel := context.WithTimeout(ctx, 1*time.Second)
-				
-				// Fetch and cache the file
-				result, err := s3Client.GetObject(s3Ctx, &s3.GetObjectInput{
-					Bucket: aws.String(s3Bucket),
-					Key:    job.obj.Key,
-				})
-				if err != nil {
-					s3Cancel()
-					resultsChan <- 0
-					continue
-				}
-				
-				content, err := io.ReadAll(result.Body)
-				result.Body.Close()
-				s3Cancel()
-				if err != nil {
-					resultsChan <- 0
-					continue
-				}
-				
-				// Add to cache
-				entry := &CacheEntry{
-					Exists:    true,
-					IsFile:    true,
-					Content:   content,
-					ExpiresAt: time.Now().Add(cacheTTLSuccess),
-				}
-				
-				cacheMutex.Lock()
-				cache.Add(cacheKey, entry)
-				cacheMutex.Unlock()
-				
-				resultsChan <- *job.obj.Size
 			}
 		}()
 	}
-	
-	// Start a goroutine to collect results
-	var resultsWg sync.WaitGroup
-	resultsWg.Add(1)
-	go func() {
-		defer resultsWg.Done()
-		for size := range resultsChan {
-			if size > 0 {
-				bytesLoadedMutex.Lock()
-				bytesLoaded += size
-				filesLoaded++
-				currentBytes := bytesLoaded
-				currentFiles := filesLoaded
-				bytesLoadedMutex.Unlock()
-				
-				// Log progress every 50 files
-				if currentFiles%50 == 0 {
-					log.Printf("Pre-warmed %d files (%.1f MB / %.1f MB)", 
-						currentFiles, 
-						float64(currentBytes)/(1024*1024),
-						float64(targetBytes)/(1024*1024))
-				}
-			}
-		}
-	}()
-	
-	// Load files from each version
-	outerLoop:
-	for _, version := range versions {
-		// Check context cancellation
-		select {
-		case <-ctx.Done():
-			log.Printf("Cache pre-warm cancelled")
-			break outerLoop
-		default:
-		}
-		
-		bytesLoadedMutex.Lock()
-		currentBytes := bytesLoaded
-		bytesLoadedMutex.Unlock()
-		if currentBytes >= targetBytes {
-			break
-		}
-		
-		// First, collect all unique directories from the file paths
-		allDirs := make(map[string]bool)
-		
-		// List all files in this version with pagination
-		var continuationToken *string
-		allFiles := []types.Object{}
-		for {
-			listInput := &s3.ListObjectsV2Input{
-				Bucket: aws.String(s3Bucket),
-				Prefix: aws.String(version + "/"),
-			}
-			if continuationToken != nil {
-				listInput.ContinuationToken = continuationToken
-			}
-			
-			// Create timeout context for listing objects (5 second timeout)
-			listCtx, listCancel := context.WithTimeout(ctx, 5*time.Second)
-			listResult, err := s3Client.ListObjectsV2(listCtx, listInput)
-			listCancel()
-			if err != nil {
-				log.Printf("Failed to list objects for version %s: %v", version, err)
-				break
-			}
-			
-			// Collect all files and track directories
-			for _, obj := range listResult.Contents {
-				if obj.Key != nil {
-					allFiles = append(allFiles, obj)
-					// Extract all parent directories
-					path := strings.TrimPrefix(*obj.Key, version+"/")
-					dir := filepath.Dir(path)
-					for dir != "." && dir != "" {
-						allDirs[dir] = true
-						dir = filepath.Dir(dir)
-					}
-				}
-			}
-			
-			// Queue files for loading
-			for _, obj := range listResult.Contents {
-			if obj.Key == nil || obj.Size == nil {
-				continue
-			}
-			
-			// Skip large TypeScript compiler files
-			if strings.Contains(*obj.Key, "typescript/lib/") && 
-			   (strings.HasSuffix(*obj.Key, "typescript.js") || 
-			    strings.HasSuffix(*obj.Key, "_tsc.js") ||
-			    *obj.Size > 1024*1024) { // Skip files over 1MB in typescript/lib
-				continue
-			}
-			
-				// Check if we have space
-				bytesLoadedMutex.Lock()
-				currentBytes := bytesLoaded
-				bytesLoadedMutex.Unlock()
-				if currentBytes + *obj.Size > targetBytes {
-					break outerLoop
-				}
-			
-				// Send to workers
-				select {
-				case jobsChan <- loadJob{version: version, obj: obj}:
-				case <-ctx.Done():
-					break outerLoop
-				}
-			}
-			
-			// Check if there are more pages
-			if listResult.IsTruncated != nil && *listResult.IsTruncated {
-				continuationToken = listResult.NextContinuationToken
-			} else {
-				break
-			}
-		}
-		
-		// Cache each directory by doing a ListObjectsV2 with delimiter
-		dirCount := 0
-		for dir := range allDirs {
-			prefix := version + "/" + dir + "/"
-			
-			// List this specific directory
-			listCtx, listCancel := context.WithTimeout(ctx, 2*time.Second)
-			listResult, err := s3Client.ListObjectsV2(listCtx, &s3.ListObjectsV2Input{
-				Bucket:    aws.String(s3Bucket),
-				Prefix:    aws.String(prefix),
-				Delimiter: aws.String("/"),
-			})
-			listCancel()
-			
-			if err != nil {
-				continue
-			}
-			
-			// Build the directory entry
-			entry := &CacheEntry{
-				Exists: true,
-				IsFile: false,
-				Files:  []string{},
-				Dirs:   []string{},
-				ExpiresAt: time.Now().Add(cacheTTLSuccess),
-			}
-			
-			// Add immediate files
-			for _, obj := range listResult.Contents {
-				if obj.Key != nil {
-					relativePath := strings.TrimPrefix(*obj.Key, prefix)
-					if relativePath != "" && !strings.Contains(relativePath, "/") {
-						entry.Files = append(entry.Files, relativePath)
-					}
-				}
-			}
-			
-			// Add immediate subdirectories
-			for _, commonPrefix := range listResult.CommonPrefixes {
-				if commonPrefix.Prefix != nil {
-					dirName := strings.TrimPrefix(*commonPrefix.Prefix, prefix)
-					dirName = strings.TrimSuffix(dirName, "/")
-					if dirName != "" {
-						entry.Dirs = append(entry.Dirs, dirName)
-					}
-				}
-			}
-			
-			// Cache the directory
-			cacheKey := version + "/" + dir
-			cacheMutex.Lock()
-			cache.Add(cacheKey, entry)
-			cacheMutex.Unlock()
-			dirCount++
-		}
-		
-		log.Printf("Cached %d directories for version %s", dirCount, version)
+
+	// Send all keys to workers
+	for _, key := range keys {
+		keysChan <- key
 	}
-	
-	// Close jobs channel and wait for workers to finish
-	close(jobsChan)
+	close(keysChan)
 	wg.Wait()
-	close(resultsChan)
-	
-	// Wait for results collector to finish
-	resultsWg.Wait()
-	
-	cachePrewarmCompleted = time.Now()
-	bytesLoadedMutex.Lock()
-	cachePrewarmBytes = bytesLoaded
-	cachePrewarmFiles = filesLoaded
-	bytesLoadedMutex.Unlock()
-	
-	duration := cachePrewarmCompleted.Sub(cachePrewarmStarted)
-	log.Printf("Cache pre-warm completed: %d files (%.1f MB) loaded in %v",
-		filesLoaded, float64(bytesLoaded)/(1024*1024), duration.Round(time.Millisecond))
-	
-	// Set Prometheus metrics
-	cachePrewarmDuration.Set(duration.Seconds())
-	cachePrewarmFilesLoaded.Set(float64(filesLoaded))
-	cachePrewarmBytesLoaded.Set(float64(bytesLoaded))
+
+	duration := time.Since(start)
+	log.Printf("[SYNC] Completed sync for version %s: %d files in %v (%d errors)",
+		version, len(keys), duration, downloadErrors)
+
+	return nil
+}
+
+// downloadFile downloads a single file from S3 to local disk
+func downloadFile(ctx context.Context, key, localPath string) error {
+	if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
+		return err
+	}
+
+	result, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s3Bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return err
+	}
+	defer result.Body.Close()
+
+	f, err := os.Create(localPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = io.Copy(f, result.Body)
+	return err
 }
 
 
-func (fs *s3FS) UseCaseSensitiveFileNames() bool { return true }
+func (fs *diskFS) UseCaseSensitiveFileNames() bool { return true }
 
-func (fs *s3FS) FileExists(path string) bool {
-	// Check in-memory cache first
+func (fs *diskFS) FileExists(path string) bool {
+	// Check user files first
 	fs.mu.RLock()
-	_, ok := fs.files[path]
+	_, ok := fs.userFiles[path]
 	fs.mu.RUnlock()
 	if ok {
 		return true
 	}
-	
-	// Skip input file
-	if strings.HasPrefix(path, "/input.") {
-		return false
-	}
-	
-	// Check S3 cache
-	ctx := context.Background()
-	entry := getFromCache(ctx, fs.version, path)
-	return entry.Exists && entry.IsFile
+
+	// Check disk
+	fullPath := filepath.Join(fs.basePath, path)
+	info, err := os.Stat(fullPath)
+	return err == nil && !info.IsDir()
 }
 
-func (fs *s3FS) ReadFile(path string) (string, bool) {
-	// Check in-memory cache first
+func (fs *diskFS) ReadFile(path string) (string, bool) {
+	// Check user files first
 	fs.mu.RLock()
-	content, ok := fs.files[path]
-	fs.mu.RUnlock()
-	if ok {
+	if content, ok := fs.userFiles[path]; ok {
+		fs.mu.RUnlock()
 		return content, true
 	}
-	
-	// Skip input file
-	if strings.HasPrefix(path, "/input.") {
+	fs.mu.RUnlock()
+
+	// Read from disk
+	fullPath := filepath.Join(fs.basePath, path)
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
 		return "", false
 	}
-	
-	// Check S3 cache
-	ctx := context.Background()
-	entry := getFromCache(ctx, fs.version, path)
-	if !entry.Exists || !entry.IsFile {
-		return "", false
-	}
-	
-	contentStr := string(entry.Content)
-	fs.mu.Lock()
-	fs.files[path] = contentStr // Cache locally for this request
-	fs.mu.Unlock()
-	return contentStr, true
+	return string(data), true
 }
 
-func (fs *s3FS) WriteFile(path string, data string, _ bool) error {
+func (fs *diskFS) WriteFile(path string, data string, _ bool) error {
 	fs.mu.Lock()
-	fs.files[path] = data
+	fs.userFiles[path] = data
 	fs.mu.Unlock()
 	return nil
 }
 
-func (fs *s3FS) Remove(path string) error {
+func (fs *diskFS) Remove(path string) error {
 	fs.mu.Lock()
-	delete(fs.files, path)
+	delete(fs.userFiles, path)
 	fs.mu.Unlock()
 	return nil
 }
 
-func (fs *s3FS) Chtimes(path string, aTime time.Time, mTime time.Time) error {
-	// S3-backed file system doesn't support changing file times
-	// This is a no-op implementation for compatibility
+func (fs *diskFS) Chtimes(path string, aTime time.Time, mTime time.Time) error {
 	return nil
 }
 
-func (fs *s3FS) DirectoryExists(path string) bool {
+func (fs *diskFS) DirectoryExists(path string) bool {
 	if path == "/" || path == "" {
 		return true
 	}
 
-	// Only check in-memory files for v2 mode (multi-file requests)
+	// Check user files for v2 mode
 	fs.mu.RLock()
 	hasUserFiles := fs.hasUserFiles
 	if hasUserFiles {
@@ -875,7 +362,7 @@ func (fs *s3FS) DirectoryExists(path string) bool {
 		if !strings.HasSuffix(prefix, "/") {
 			prefix += "/"
 		}
-		for filePath := range fs.files {
+		for filePath := range fs.userFiles {
 			if strings.HasPrefix(filePath, prefix) {
 				fs.mu.RUnlock()
 				return true
@@ -884,17 +371,17 @@ func (fs *s3FS) DirectoryExists(path string) bool {
 	}
 	fs.mu.RUnlock()
 
-	// Check S3 cache
-	ctx := context.Background()
-	entry := getFromCache(ctx, fs.version, path)
-	return entry.Exists && !entry.IsFile
+	// Check disk
+	fullPath := filepath.Join(fs.basePath, path)
+	info, err := os.Stat(fullPath)
+	return err == nil && info.IsDir()
 }
 
-func (fs *s3FS) GetAccessibleEntries(path string) vfs.Entries {
+func (fs *diskFS) GetAccessibleEntries(path string) vfs.Entries {
 	filesSet := make(map[string]struct{})
 	dirsSet := make(map[string]struct{})
 
-	// Only scan in-memory files for v2 mode (multi-file requests)
+	// Scan user files for v2 mode
 	fs.mu.RLock()
 	hasUserFiles := fs.hasUserFiles
 	if hasUserFiles {
@@ -907,7 +394,7 @@ func (fs *s3FS) GetAccessibleEntries(path string) vfs.Entries {
 			prefix = "/"
 		}
 
-		for filePath := range fs.files {
+		for filePath := range fs.userFiles {
 			var relativePath string
 			if prefix == "/" {
 				relativePath = strings.TrimPrefix(filePath, "/")
@@ -924,38 +411,24 @@ func (fs *s3FS) GetAccessibleEntries(path string) vfs.Entries {
 
 			parts := strings.SplitN(relativePath, "/", 2)
 			if len(parts) == 1 {
-				// Direct file in this directory
 				filesSet[parts[0]] = struct{}{}
 			} else if len(parts) > 1 && parts[0] != "" {
-				// Subdirectory
 				dirsSet[parts[0]] = struct{}{}
 			}
 		}
 	}
 	fs.mu.RUnlock()
 
-	// Get S3 entries
-	ctx := context.Background()
-	entry := getFromCache(ctx, fs.version, path)
-
-	// If no user files (v1 mode), return S3 entries directly (original behavior)
-	if !hasUserFiles {
-		if !entry.Exists || entry.IsFile {
-			return vfs.Entries{Files: []string{}, Directories: []string{}}
-		}
-		return vfs.Entries{
-			Files:       entry.Files,
-			Directories: entry.Dirs,
-		}
-	}
-
-	// v2 mode: merge with S3 entries
-	if entry.Exists && !entry.IsFile {
-		for _, f := range entry.Files {
-			filesSet[f] = struct{}{}
-		}
-		for _, d := range entry.Dirs {
-			dirsSet[d] = struct{}{}
+	// Read from disk
+	fullPath := filepath.Join(fs.basePath, path)
+	entries, err := os.ReadDir(fullPath)
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				dirsSet[entry.Name()] = struct{}{}
+			} else {
+				filesSet[entry.Name()] = struct{}{}
+			}
 		}
 	}
 
@@ -971,14 +444,14 @@ func (fs *s3FS) GetAccessibleEntries(path string) vfs.Entries {
 	}
 
 	return vfs.Entries{
-		Files:       files,
 		Directories: dirs,
+		Files:       files,
 	}
 }
 
-func (fs *s3FS) Stat(path string) vfs.FileInfo { return nil }
-func (fs *s3FS) WalkDir(root string, walkFn vfs.WalkDirFunc) error { return nil }
-func (fs *s3FS) Realpath(path string) string { return path }
+func (fs *diskFS) Stat(path string) vfs.FileInfo { return nil }
+func (fs *diskFS) WalkDir(root string, walkFn vfs.WalkDirFunc) error { return nil }
+func (fs *diskFS) Realpath(path string) string { return path }
 
 func calculateLineColumn(text string, pos int) (int, int) {
 	if pos < 0 || pos >= len(text) {
@@ -1004,14 +477,18 @@ func typecheckTypeScript(code string, version string) TypecheckResponse {
 		typecheckDuration.Observe(duration.Seconds())
 		log.Printf("[PERF] typecheckTypeScript total: %v", duration)
 	}()
-	
-	// Create S3-backed filesystem for this version
-	fs := newS3FS(version)
-	
+
+	// Create disk-backed filesystem for this version
+	ctx := context.Background()
+	fs, err := newDiskFS(ctx, version)
+	if err != nil {
+		return TypecheckResponse{Errors: []DiagnosticError{{Message: "failed to sync version: " + err.Error()}}}
+	}
+
 	// Always use .tsx to support JSX
 	fileName := "/input.tsx"
-	
-	fs.files[fileName] = code
+
+	fs.userFiles[fileName] = code
 	
 	wrappedFS := bundled.WrapFS(fs)
 	
@@ -1059,9 +536,7 @@ func typecheckTypeScript(code string, version string) TypecheckResponse {
 		Host:             host,
 		JSDocParsingMode: ast.JSDocParsingModeParseForTypeErrors,
 	})
-	
-	ctx := context.Background()
-	
+
 	// Get diagnostics
 	diagnostics := program.GetSyntacticDiagnostics(ctx, nil)
 	if len(diagnostics) == 0 {
@@ -1097,16 +572,20 @@ func buildTypeScript(code string, version string) BuildResponse {
 		compileDuration.Observe(duration.Seconds())
 		log.Printf("[PERF] buildTypeScript total: %v", duration)
 	}()
-	
-	// Create S3-backed filesystem for this version
+
+	// Create disk-backed filesystem for this version
 	fsStart := time.Now()
-	fs := newS3FS(version)
-	log.Printf("[PERF] newS3FS: %v", time.Since(fsStart))
-	
+	ctx := context.Background()
+	fs, err := newDiskFS(ctx, version)
+	if err != nil {
+		return BuildResponse{Errors: []DiagnosticError{{Message: "failed to sync version: " + err.Error()}}}
+	}
+	log.Printf("[PERF] newDiskFS: %v", time.Since(fsStart))
+
 	// Always use .tsx to support JSX
 	fileName := "/input.tsx"
-	
-	fs.files[fileName] = code
+
+	fs.userFiles[fileName] = code
 	
 	// Create virtual file resolver for esbuild
 	resolverCalls := 0
@@ -1360,40 +839,13 @@ func (lrw *loggingResponseWriter) WriteHeader(code int) {
 
 
 func health(w http.ResponseWriter, req *http.Request) {
-	uptime := time.Since(startTime)
-	
-	var cacheEntries int
-	cacheMutex.RLock()
-	if cache != nil {
-		cacheEntries = cache.Len()
-	}
-	cacheMutex.RUnlock()
-	
 	response := HealthResponse{
-		Status:       "healthy",
-		Version:      serverVersion,
-		Uptime:       fmt.Sprintf("%v", uptime.Round(time.Second)),
-		CacheSize:    fmt.Sprintf("%d MB", cacheSize/(1024*1024)),
-		CacheEntries: cacheEntries,
+		DiskCachePath: diskCachePath,
+		Status:        "healthy",
+		Uptime:        fmt.Sprintf("%v", time.Since(startTime).Round(time.Second)),
+		Version:       serverVersion,
 	}
-	
-	// Add pre-warm status
-	if !cachePrewarmStarted.IsZero() {
-		prewarmStatus := CachePrewarmStatus{
-			Files:   cachePrewarmFiles,
-			BytesMB: float64(cachePrewarmBytes) / (1024 * 1024),
-		}
-		
-		if cachePrewarmCompleted.IsZero() {
-			prewarmStatus.Status = "in_progress"
-		} else {
-			prewarmStatus.Status = "completed"
-			prewarmStatus.DurationS = cachePrewarmCompleted.Sub(cachePrewarmStarted).Seconds()
-		}
-		
-		response.CachePrewarm = prewarmStatus
-	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
@@ -1481,33 +933,32 @@ func build(w http.ResponseWriter, req *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-func flushCache(w http.ResponseWriter, req *http.Request) {
+func syncVersion(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Get cache metrics before flush
-	var entriesBefore int
-	cacheMutex.RLock()
-	if cache != nil {
-		entriesBefore = cache.Len()
+	version := req.URL.Query().Get("version")
+	if version == "" {
+		http.Error(w, "version parameter required", http.StatusBadRequest)
+		return
 	}
-	cacheMutex.RUnlock()
 
-	// Flush the cache
-	cacheMutex.Lock()
-	if cache != nil {
-		cache.Purge()
+	// Delete existing version directory and re-sync
+	versionPath := filepath.Join(diskCachePath, version)
+	if err := os.RemoveAll(versionPath); err != nil {
+		log.Printf("[SYNC] Warning: failed to remove %s: %v", versionPath, err)
 	}
-	cacheMutex.Unlock()
 
-	// Return flush summary
-	response := map[string]interface{}{
-		"status":          "success",
-		"message":         "Cache flushed successfully",
-		"entries_cleared": entriesBefore,
-		"timestamp":       time.Now().Unix(),
+	if err := ensureVersionSynced(req.Context(), version); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]string{
+		"status":  "synced",
+		"version": version,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1553,8 +1004,12 @@ func typecheckTypeScriptV2(files map[string]string, entryPoints []string, versio
 		log.Printf("[PERF] typecheckTypeScriptV2 total: %v (%d files)", duration, len(files))
 	}()
 
-	// Create S3-backed filesystem for this version
-	fs := newS3FS(version)
+	// Create disk-backed filesystem for this version
+	ctx := context.Background()
+	fs, err := newDiskFS(ctx, version)
+	if err != nil {
+		return TypecheckV2Response{Errors: []DiagnosticErrorV2{{Message: "failed to sync version: " + err.Error()}}}
+	}
 	fs.hasUserFiles = true // Enable v2 mode for directory resolution
 
 	// Populate with all user files and collect TypeScript entry points
@@ -1571,7 +1026,7 @@ func typecheckTypeScriptV2(files map[string]string, entryPoints []string, versio
 		}
 
 		fs.mu.Lock()
-		fs.files[normalized] = content
+		fs.userFiles[normalized] = content
 		fs.mu.Unlock()
 
 		// Collect .ts and .tsx files as potential entry points
@@ -1645,8 +1100,6 @@ func typecheckTypeScriptV2(files map[string]string, entryPoints []string, versio
 		Host:             host,
 		JSDocParsingMode: ast.JSDocParsingModeParseForTypeErrors,
 	})
-
-	ctx := context.Background()
 
 	// Get diagnostics
 	diagnostics := program.GetSyntacticDiagnostics(ctx, nil)
@@ -1738,8 +1191,12 @@ func buildTypeScriptV2(files map[string]string, entryPoint string, version strin
 		log.Printf("[PERF] buildTypeScriptV2 total: %v (%d files)", duration, len(files))
 	}()
 
-	// Create S3-backed filesystem for this version
-	fs := newS3FS(version)
+	// Create disk-backed filesystem for this version
+	ctx := context.Background()
+	fs, err := newDiskFS(ctx, version)
+	if err != nil {
+		return BuildV2Response{Errors: []DiagnosticErrorV2{{Message: "failed to sync version: " + err.Error()}}}
+	}
 	fs.hasUserFiles = true // Enable v2 mode for directory resolution
 
 	// Populate with all user files
@@ -1755,7 +1212,7 @@ func buildTypeScriptV2(files map[string]string, entryPoint string, version strin
 		}
 
 		fs.mu.Lock()
-		fs.files[normalized] = content
+		fs.userFiles[normalized] = content
 		fs.mu.Unlock()
 	}
 
@@ -1772,7 +1229,7 @@ func buildTypeScriptV2(files map[string]string, entryPoint string, version strin
 
 	// Verify entry point exists in provided files
 	fs.mu.RLock()
-	_, entryExists := fs.files[normalizedEntryPoint]
+	_, entryExists := fs.userFiles[normalizedEntryPoint]
 	fs.mu.RUnlock()
 	if !entryExists {
 		return BuildV2Response{
@@ -1984,32 +1441,29 @@ func buildTypeScriptV2(files map[string]string, entryPoint string, version strin
 
 func main() {
 	log.Printf("TypeScript Go Server v%s starting...", serverVersion)
-	
+
 	// Initialize S3 configuration from environment
 	s3Bucket = os.Getenv("S3_BUCKET")
 	if s3Bucket == "" {
 		log.Fatal("S3_BUCKET environment variable is required")
 	}
-	
-	// Parse cache size
-	cacheSizeStr := os.Getenv("CACHE_SIZE")
-	if cacheSizeStr == "" {
-		cacheSize = 32 * 1024 * 1024 // Default 32MB
-	} else {
-		parsed, err := strconv.ParseInt(cacheSizeStr, 10, 64)
-		if err != nil {
-			log.Fatalf("Invalid CACHE_SIZE: %v", err)
-		}
-		cacheSize = parsed
+
+	// Initialize disk cache path
+	diskCachePath = os.Getenv("DISK_CACHE_PATH")
+	if diskCachePath == "" {
+		diskCachePath = "/data/cache"
 	}
-	
+	if err := os.MkdirAll(diskCachePath, 0755); err != nil {
+		log.Fatalf("Failed to create disk cache directory %s: %v", diskCachePath, err)
+	}
+
 	// Initialize AWS SDK
 	ctx := context.Background()
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		log.Fatalf("Failed to load AWS config: %v", err)
 	}
-	
+
 	// Override endpoint if specified
 	if endpoint := os.Getenv("AWS_ENDPOINT_URL_S3"); endpoint != "" {
 		s3Client = s3.NewFromConfig(cfg, func(o *s3.Options) {
@@ -2019,77 +1473,53 @@ func main() {
 	} else {
 		s3Client = s3.NewFromConfig(cfg)
 	}
-	
-	// Initialize LRU cache
-	// Estimate average entry size for capacity calculation
-	avgEntrySize := int64(4096) // 4KB average
-	capacity := int(cacheSize / avgEntrySize)
-	
-	cache, err = lru.New[string, *CacheEntry](capacity)
-	if err != nil {
-		log.Fatalf("Failed to create cache: %v", err)
-	}
-	
-	log.Printf("Initialized with S3 bucket: %s, cache size: %d MB", s3Bucket, cacheSize/(1024*1024))
-	
-	// Create a cancellable context for graceful shutdown
-	mainCtx, mainCancel := context.WithCancel(ctx)
-	defer mainCancel()
-	
+
+	log.Printf("Initialized with S3 bucket: %s, disk cache: %s", s3Bucket, diskCachePath)
+
 	// Handle graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	
-	// Create a cancellable context for pre-warming
-	prewarmCtx, prewarmCancel := context.WithCancel(mainCtx)
-	defer prewarmCancel()
-	
-	// Start cache pre-warming in background
-	go prewarmCache(prewarmCtx)
-	
+
 	// Set up routes with logging middleware
-	http.HandleFunc("/health", loggingMiddleware(health))
-	http.HandleFunc("/typecheck", loggingMiddleware(typecheck))
-	http.HandleFunc("/build", loggingMiddleware(build))
-	http.HandleFunc("/flush-cache", loggingMiddleware(flushCache))
-	http.HandleFunc("/v2/typecheck", loggingMiddleware(typecheckV2))
-	http.HandleFunc("/v2/build", loggingMiddleware(buildV2))
 	http.HandleFunc("/", loggingMiddleware(hello))
-	
+	http.HandleFunc("/build", loggingMiddleware(build))
+	http.HandleFunc("/health", loggingMiddleware(health))
+	http.HandleFunc("/sync", loggingMiddleware(syncVersion))
+	http.HandleFunc("/typecheck", loggingMiddleware(typecheck))
+	http.HandleFunc("/v2/build", loggingMiddleware(buildV2))
+	http.HandleFunc("/v2/typecheck", loggingMiddleware(typecheckV2))
+
 	// Start Prometheus metrics server on port 9091
 	go startMetricsServer()
-	
+
 	// Create HTTP server with graceful shutdown support
 	srv := &http.Server{
 		Addr:    ":8080",
 		Handler: nil, // Use default ServeMux
 	}
-	
+
 	// Start server in goroutine
 	go func() {
 		log.Printf("Server ready! Listening on :8080...")
-		log.Printf("Endpoints: /, /health, /typecheck, /build, /flush-cache, /v2/typecheck, /v2/build")
+		log.Printf("Endpoints: /, /build, /health, /sync, /typecheck, /v2/build, /v2/typecheck")
 		log.Printf("Metrics available at :9091/metrics")
-		
+
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed to start: %v", err)
 		}
 	}()
-	
+
 	// Wait for shutdown signal
 	sig := <-sigChan
 	log.Printf("Received signal %v, shutting down gracefully...", sig)
-	
-	// Cancel pre-warming first
-	prewarmCancel()
-	
+
 	// Give ongoing requests 30 seconds to complete
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
-	
+
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Printf("Server shutdown error: %v", err)
 	}
-	
+
 	log.Printf("Server shutdown complete")
 }
