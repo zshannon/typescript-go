@@ -217,6 +217,8 @@ func parseCompilerOptions(key string, value any, allOptions *core.CompilerOption
 		allOptions.Composite = ParseTristate(value)
 	case "declarationDir":
 		allOptions.DeclarationDir = ParseString(value)
+	case "deduplicatePackages":
+		allOptions.DeduplicatePackages = ParseTristate(value)
 	case "diagnostics":
 		allOptions.Diagnostics = ParseTristate(value)
 	case "disableSizeLimit":
@@ -528,6 +530,8 @@ func ParseBuildOptions(key string, value any, allOptions *core.BuildOptions) []*
 		allOptions.Dry = ParseTristate(value)
 	case "force":
 		allOptions.Force = ParseTristate(value)
+	case "builders":
+		allOptions.Builders = parseNumber(value)
 	case "stopBuildOnErrors":
 		allOptions.StopBuildOnErrors = ParseTristate(value)
 	case "verbose":
@@ -548,7 +552,8 @@ func mergeCompilerOptions(targetOptions, sourceOptions *core.CompilerOptions, ra
 	// Collect explicitly null field names from raw JSON
 	var explicitNullFields collections.Set[string]
 	if rawSource != nil {
-		if rawMap, ok := rawSource.(*collections.OrderedMap[string, any]); ok {
+		if rawMap, ok := rawSource.(*collections.OrderedMap[string, any]); ok && rawMap != nil {
+			// Options are nested under "compilerOptions" in both tsconfig.json and wrapped command line options
 			if compilerOptionsRaw, exists := rawMap.Get("compilerOptions"); exists {
 				if compilerOptionsMap, ok := compilerOptionsRaw.(*collections.OrderedMap[string, any]); ok {
 					for key, value := range compilerOptionsMap.Entries() {

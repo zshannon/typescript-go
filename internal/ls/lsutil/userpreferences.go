@@ -4,9 +4,11 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dlclark/regexp2"
 	"github.com/microsoft/typescript-go/internal/core"
 	"github.com/microsoft/typescript-go/internal/modulespecifiers"
 	"github.com/microsoft/typescript-go/internal/tsoptions"
+	"github.com/microsoft/typescript-go/internal/vfs"
 )
 
 func NewDefaultUserPreferences() *UserPreferences {
@@ -14,7 +16,7 @@ func NewDefaultUserPreferences() *UserPreferences {
 		IncludeCompletionsForModuleExports:    core.TSTrue,
 		IncludeCompletionsForImportStatements: core.TSTrue,
 
-		AllowRenameOfImportPath:            true,
+		AllowRenameOfImportPath:            core.TSTrue,
 		ProvideRefactorNotApplicableReason: true,
 		IncludeCompletionsWithSnippetText:  core.TSTrue,
 		DisplayPartsForJSDoc:               true,
@@ -62,13 +64,13 @@ type UserPreferences struct {
 
 	// ------- AutoImports --------
 
-	ImportModuleSpecifierPreference modulespecifiers.ImportModuleSpecifierPreference // !!!
+	ImportModuleSpecifierPreference modulespecifiers.ImportModuleSpecifierPreference
 	// Determines whether we import `foo/index.ts` as "foo", "foo/index", or "foo/index.js"
-	ImportModuleSpecifierEnding       modulespecifiers.ImportModuleSpecifierEndingPreference // !!!
-	IncludePackageJsonAutoImports     IncludePackageJsonAutoImports                          // !!!
-	AutoImportSpecifierExcludeRegexes []string                                               // !!!
-	AutoImportFileExcludePatterns     []string                                               // !!!
-	PreferTypeOnlyAutoImports         bool                                                   // !!!
+	ImportModuleSpecifierEnding       modulespecifiers.ImportModuleSpecifierEndingPreference
+	IncludePackageJsonAutoImports     IncludePackageJsonAutoImports
+	AutoImportSpecifierExcludeRegexes []string
+	AutoImportFileExcludePatterns     []string
+	PreferTypeOnlyAutoImports         core.Tristate
 
 	// ------- OrganizeImports -------
 
@@ -128,7 +130,7 @@ type UserPreferences struct {
 
 	// renamed from `providePrefixAndSuffixTextForRename`
 	UseAliasesForRename     core.Tristate
-	AllowRenameOfImportPath bool // !!!
+	AllowRenameOfImportPath core.Tristate
 
 	// ------- CodeFixes/Refactors -------
 
@@ -136,14 +138,11 @@ type UserPreferences struct {
 
 	// ------- InlayHints -------
 
-	IncludeInlayParameterNameHints                        IncludeInlayParameterNameHints
-	IncludeInlayParameterNameHintsWhenArgumentMatchesName bool
-	IncludeInlayFunctionParameterTypeHints                bool
-	IncludeInlayVariableTypeHints                         bool
-	IncludeInlayVariableTypeHintsWhenTypeMatchesName      bool
-	IncludeInlayPropertyDeclarationTypeHints              bool
-	IncludeInlayFunctionLikeReturnTypeHints               bool
-	IncludeInlayEnumMemberValueHints                      bool
+	InlayHints InlayHintsPreferences
+
+	// ------- CodeLens -------
+
+	CodeLens CodeLensUserPreferences
 
 	// ------- Symbols -------
 
@@ -155,6 +154,25 @@ type UserPreferences struct {
 	DisableLineTextInReferences bool // !!!
 	DisplayPartsForJSDoc        bool // !!!
 	ReportStyleChecksAsWarnings bool // !!! If this changes, we need to ask the client to recompute diagnostics
+}
+
+type InlayHintsPreferences struct {
+	IncludeInlayParameterNameHints                        IncludeInlayParameterNameHints
+	IncludeInlayParameterNameHintsWhenArgumentMatchesName bool
+	IncludeInlayFunctionParameterTypeHints                bool
+	IncludeInlayVariableTypeHints                         bool
+	IncludeInlayVariableTypeHintsWhenTypeMatchesName      bool
+	IncludeInlayPropertyDeclarationTypeHints              bool
+	IncludeInlayFunctionLikeReturnTypeHints               bool
+	IncludeInlayEnumMemberValueHints                      bool
+}
+
+type CodeLensUserPreferences struct {
+	ReferencesCodeLensEnabled                     bool
+	ImplementationsCodeLensEnabled                bool
+	ReferencesCodeLensShowOnAllFunctions          bool
+	ImplementationsCodeLensShowOnInterfaceMethods bool
+	ImplementationsCodeLensShowOnAllClassMethods  bool
 }
 
 type JsxAttributeCompletionStyle string
@@ -346,6 +364,13 @@ func (p *UserPreferences) CopyOrDefault() *UserPreferences {
 	return p.Copy()
 }
 
+func (p *UserPreferences) OrDefault() *UserPreferences {
+	if p == nil {
+		return NewDefaultUserPreferences()
+	}
+	return p
+}
+
 func (p *UserPreferences) ModuleSpecifierPreferences() modulespecifiers.UserPreferences {
 	return modulespecifiers.UserPreferences{
 		ImportModuleSpecifierPreference:   p.ImportModuleSpecifierPreference,
@@ -381,6 +406,10 @@ func (p *UserPreferences) parseWorker(config map[string]any) {
 			continue
 		case "inlayHints":
 			p.parseInlayHints(values)
+		case "referencesCodeLens":
+			p.parseReferencesCodeLens(values)
+		case "implementationsCodeLens":
+			p.parseImplementationsCodeLens(values)
 		case "suggest":
 			p.parseSuggest(values)
 		case "preferences":
@@ -424,22 +453,54 @@ func (p *UserPreferences) parseInlayHints(prefs any) {
 				if enabled, ok := v["enabled"]; ok {
 					p.set("includeInlayParameterNameHints", enabled)
 				}
-				p.IncludeInlayParameterNameHintsWhenArgumentMatchesName = parseSupress(v, "supressWhenArgumentMatchesName")
+				p.InlayHints.IncludeInlayParameterNameHintsWhenArgumentMatchesName = parseSuppress(v, "suppressWhenArgumentMatchesName")
 			case "parameterTypes":
-				p.IncludeInlayFunctionParameterTypeHints = parseEnabledBool(v)
+				p.InlayHints.IncludeInlayFunctionParameterTypeHints = parseEnabledBool(v)
 			case "variableTypes":
-				p.IncludeInlayVariableTypeHints = parseEnabledBool(v)
-				p.IncludeInlayVariableTypeHintsWhenTypeMatchesName = parseSupress(v, "supressWhenTypeMatchesName")
+				p.InlayHints.IncludeInlayVariableTypeHints = parseEnabledBool(v)
+				p.InlayHints.IncludeInlayVariableTypeHintsWhenTypeMatchesName = parseSuppress(v, "suppressWhenTypeMatchesName")
 			case "propertyDeclarationTypes":
-				p.IncludeInlayPropertyDeclarationTypeHints = parseEnabledBool(v)
+				p.InlayHints.IncludeInlayPropertyDeclarationTypeHints = parseEnabledBool(v)
 			case "functionLikeReturnTypes":
-				p.IncludeInlayFunctionLikeReturnTypeHints = parseEnabledBool(v)
+				p.InlayHints.IncludeInlayFunctionLikeReturnTypeHints = parseEnabledBool(v)
 			case "enumMemberValues":
-				p.IncludeInlayEnumMemberValueHints = parseEnabledBool(v)
+				p.InlayHints.IncludeInlayEnumMemberValueHints = parseEnabledBool(v)
 			}
 		} else {
 			// non-vscode case
 			p.set(name, v)
+		}
+	}
+}
+
+func (p *UserPreferences) parseReferencesCodeLens(prefs any) {
+	referencesCodeLens, ok := prefs.(map[string]any)
+	if !ok {
+		return
+	}
+	for name, value := range referencesCodeLens {
+		switch name {
+		case "enabled":
+			p.set("referencesCodeLensEnabled", value)
+		case "showOnAllFunctions":
+			p.set("referencesCodeLensShowOnAllFunctions", value)
+		}
+	}
+}
+
+func (p *UserPreferences) parseImplementationsCodeLens(prefs any) {
+	implementationsCodeLens, ok := prefs.(map[string]any)
+	if !ok {
+		return
+	}
+	for name, value := range implementationsCodeLens {
+		switch name {
+		case "enabled":
+			p.set("implementationsCodeLensEnabled", value)
+		case "showOnInterfaceMethods":
+			p.set("implementationsCodeLensShowOnInterfaceMethods", value)
+		case "showOnAllClassMethods":
+			p.set("implementationsCodeLensShowOnAllClassMethods", value)
 		}
 	}
 }
@@ -549,7 +610,7 @@ func parseEnabledBool(v map[string]any) bool {
 	return false
 }
 
-func parseSupress(v map[string]any, name string) bool {
+func parseSuppress(v map[string]any, name string) bool {
 	// vscode nested option
 	if val, ok := v[name]; ok {
 		if suppress, ok := val.(bool); ok {
@@ -606,7 +667,7 @@ func (p *UserPreferences) set(name string, value any) {
 	case "autoimportfileexcludepatterns":
 		p.AutoImportFileExcludePatterns = tsoptions.ParseStringArray(value)
 	case "prefertypeonlyautoimports":
-		p.PreferTypeOnlyAutoImports = parseBoolWithDefault(value, false)
+		p.PreferTypeOnlyAutoImports = tsoptions.ParseTristate(value)
 	case "organizeimportsignorecase":
 		p.OrganizeImportsIgnoreCase = tsoptions.ParseTristate(value)
 	case "organizeimportscollation":
@@ -626,25 +687,25 @@ func (p *UserPreferences) set(name string, value any) {
 	case "usealiasesforrename", "provideprefixandsuffixtextforrename":
 		p.UseAliasesForRename = tsoptions.ParseTristate(value)
 	case "allowrenameofimportpath":
-		p.AllowRenameOfImportPath = parseBoolWithDefault(value, true)
+		p.AllowRenameOfImportPath = tsoptions.ParseTristate(value)
 	case "providerefactornotapplicablereason":
 		p.ProvideRefactorNotApplicableReason = parseBoolWithDefault(value, true)
 	case "includeinlayparameternamehints":
-		p.IncludeInlayParameterNameHints = parseInlayParameterNameHints(value)
+		p.InlayHints.IncludeInlayParameterNameHints = parseInlayParameterNameHints(value)
 	case "includeinlayparameternamehintswhenargumentmatchesname":
-		p.IncludeInlayParameterNameHintsWhenArgumentMatchesName = parseBoolWithDefault(value, false)
-	case "includeinlayfunctionparametertypeHints":
-		p.IncludeInlayFunctionParameterTypeHints = parseBoolWithDefault(value, false)
+		p.InlayHints.IncludeInlayParameterNameHintsWhenArgumentMatchesName = parseBoolWithDefault(value, false)
+	case "includeinlayfunctionparametertypehints":
+		p.InlayHints.IncludeInlayFunctionParameterTypeHints = parseBoolWithDefault(value, false)
 	case "includeinlayvariabletypehints":
-		p.IncludeInlayVariableTypeHints = parseBoolWithDefault(value, false)
+		p.InlayHints.IncludeInlayVariableTypeHints = parseBoolWithDefault(value, false)
 	case "includeinlayvariabletypehintswhentypematchesname":
-		p.IncludeInlayVariableTypeHintsWhenTypeMatchesName = parseBoolWithDefault(value, false)
+		p.InlayHints.IncludeInlayVariableTypeHintsWhenTypeMatchesName = parseBoolWithDefault(value, false)
 	case "includeinlaypropertydeclarationtypehints":
-		p.IncludeInlayPropertyDeclarationTypeHints = parseBoolWithDefault(value, false)
+		p.InlayHints.IncludeInlayPropertyDeclarationTypeHints = parseBoolWithDefault(value, false)
 	case "includeinlayfunctionlikereturntypehints":
-		p.IncludeInlayFunctionLikeReturnTypeHints = parseBoolWithDefault(value, false)
+		p.InlayHints.IncludeInlayFunctionLikeReturnTypeHints = parseBoolWithDefault(value, false)
 	case "includeinlayenummembervaluehints":
-		p.IncludeInlayEnumMemberValueHints = parseBoolWithDefault(value, false)
+		p.InlayHints.IncludeInlayEnumMemberValueHints = parseBoolWithDefault(value, false)
 	case "excludelibrarysymbolsinnavto":
 		p.ExcludeLibrarySymbolsInNavTo = parseBoolWithDefault(value, true)
 	case "disablesuggestions":
@@ -655,5 +716,38 @@ func (p *UserPreferences) set(name string, value any) {
 		p.DisplayPartsForJSDoc = parseBoolWithDefault(value, true)
 	case "reportstylechecksaswarnings":
 		p.ReportStyleChecksAsWarnings = parseBoolWithDefault(value, true)
+	case "referencescodelensenabled":
+		p.CodeLens.ReferencesCodeLensEnabled = parseBoolWithDefault(value, false)
+	case "implementationscodelensenabled":
+		p.CodeLens.ImplementationsCodeLensEnabled = parseBoolWithDefault(value, false)
+	case "referencescodelensshowonallfunctions":
+		p.CodeLens.ReferencesCodeLensShowOnAllFunctions = parseBoolWithDefault(value, false)
+	case "implementationscodelensshowoninterfacemethods":
+		p.CodeLens.ImplementationsCodeLensShowOnInterfaceMethods = parseBoolWithDefault(value, false)
+	case "implementationscodelensshowonallclassmethods":
+		p.CodeLens.ImplementationsCodeLensShowOnAllClassMethods = parseBoolWithDefault(value, false)
 	}
+}
+
+func (p *UserPreferences) ParsedAutoImportFileExcludePatterns(useCaseSensitiveFileNames bool) []*regexp2.Regexp {
+	if len(p.AutoImportFileExcludePatterns) == 0 {
+		return nil
+	}
+	var patterns []*regexp2.Regexp
+	for _, spec := range p.AutoImportFileExcludePatterns {
+		pattern := vfs.GetSubPatternFromSpec(spec, "", vfs.UsageExclude, vfs.WildcardMatcher{})
+		if pattern != "" {
+			if re := vfs.GetRegexFromPattern(pattern, useCaseSensitiveFileNames); re != nil {
+				patterns = append(patterns, re)
+			}
+		}
+	}
+	return patterns
+}
+
+func (p *UserPreferences) IsModuleSpecifierExcluded(moduleSpecifier string) bool {
+	if modulespecifiers.IsExcludedByRegex(moduleSpecifier, p.AutoImportSpecifierExcludeRegexes) {
+		return true
+	}
+	return false
 }

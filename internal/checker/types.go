@@ -146,12 +146,10 @@ type DeferredSymbolLinks struct {
 // Links for alias symbols
 
 type AliasSymbolLinks struct {
-	immediateTarget             *ast.Symbol // Immediate target of an alias. May be another alias. Do not access directly, use `checker.getImmediateAliasedSymbol` instead.
-	aliasTarget                 *ast.Symbol // Resolved (non-alias) target of an alias
-	referenced                  bool        // True if alias symbol has been referenced as a value that can be emitted
-	typeOnlyDeclarationResolved bool        // True when typeOnlyDeclaration resolution in process
-	typeOnlyDeclaration         *ast.Node   // First resolved alias declaration that makes the symbol only usable in type constructs
-	typeOnlyExportStarName      string      // Set to the name of the symbol re-exported by an 'export type *' declaration, when different from the symbol name
+	immediateTarget     *ast.Symbol // Immediate target of an alias. May be another alias. Do not access directly, use `checker.getImmediateAliasedSymbol` instead.
+	aliasTarget         *ast.Symbol // Resolved (non-alias) target of an alias
+	referenced          bool        // True if alias symbol has been referenced as a value that can be emitted
+	typeOnlyDeclaration *ast.Node   // First resolved alias declaration that makes the symbol only usable in type constructs
 }
 
 // Links for module symbols
@@ -185,8 +183,8 @@ type ExportTypeLinks struct {
 
 type TypeAliasLinks struct {
 	declaredType                  *Type
-	typeParameters                []*Type          // Type parameters of type alias (undefined if non-generic)
-	instantiations                map[string]*Type // Instantiations of generic type alias (undefined if non-generic)
+	typeParameters                []*Type                // Type parameters of type alias (undefined if non-generic)
+	instantiations                map[CacheHashKey]*Type // Instantiations of generic type alias (undefined if non-generic)
 	isConstructorDeclaredProperty bool
 }
 
@@ -263,7 +261,7 @@ const (
 )
 
 type IndexSymbolLinks struct {
-	filteredIndexSymbolCache map[string]*ast.Symbol // Symbol with applicable declarations
+	filteredIndexSymbolCache map[CacheHashKey]*ast.Symbol // Symbol with applicable declarations
 }
 
 type MarkedAssignmentSymbolLinks struct {
@@ -339,7 +337,8 @@ type NodeLinks struct {
 }
 
 type SymbolNodeLinks struct {
-	resolvedSymbol *ast.Symbol // Resolved symbol associated with node
+	resolvedSymbol              *ast.Symbol // Resolved symbol associated with node
+	resolvedSymbolNoDiagnostics *ast.Symbol // Resolved symbol associated with node, generated without producing diagnostics for an API call
 }
 
 type TypeNodeLinks struct {
@@ -851,9 +850,9 @@ func (t *StructuredType) Properties() []*ast.Symbol {
 
 type ObjectType struct {
 	StructuredType
-	target         *Type            // Target of instantiated type
-	mapper         *TypeMapper      // Type mapper for instantiated type
-	instantiations map[string]*Type // Map of type instantiations
+	target         *Type                  // Target of instantiated type
+	mapper         *TypeMapper            // Type mapper for instantiated type
+	instantiations map[CacheHashKey]*Type // Map of type instantiations
 }
 
 func (t *ObjectType) AsObjectType() *ObjectType { return t }
@@ -1083,7 +1082,7 @@ type ConditionalRoot struct {
 	isDistributive      bool
 	inferTypeParameters []*Type
 	outerTypeParameters []*Type
-	instantiations      map[string]*Type
+	instantiations      map[CacheHashKey]*Type
 	alias               *TypeAlias
 }
 

@@ -5,7 +5,6 @@ import (
 	"iter"
 	"slices"
 	"strings"
-	"unicode"
 
 	"github.com/microsoft/typescript-go/internal/ast"
 	"github.com/microsoft/typescript-go/internal/astnav"
@@ -19,7 +18,6 @@ import (
 	"github.com/microsoft/typescript-go/internal/lsp/lsproto"
 	"github.com/microsoft/typescript-go/internal/scanner"
 	"github.com/microsoft/typescript-go/internal/stringutil"
-	"github.com/microsoft/typescript-go/internal/tspath"
 )
 
 var quoteReplacer = strings.NewReplacer("'", `\'`, `\"`, `"`)
@@ -42,37 +40,6 @@ func IsInString(sourceFile *ast.SourceFile, position int, previousToken *ast.Nod
 		}
 	}
 	return false
-}
-
-func importFromModuleSpecifier(node *ast.Node) *ast.Node {
-	if result := tryGetImportFromModuleSpecifier(node); result != nil {
-		return result
-	}
-	debug.FailBadSyntaxKind(node.Parent)
-	return nil
-}
-
-func tryGetImportFromModuleSpecifier(node *ast.StringLiteralLike) *ast.Node {
-	switch node.Parent.Kind {
-	case ast.KindImportDeclaration, ast.KindJSImportDeclaration, ast.KindExportDeclaration:
-		return node.Parent
-	case ast.KindExternalModuleReference:
-		return node.Parent.Parent
-	case ast.KindCallExpression:
-		if ast.IsImportCall(node.Parent) || ast.IsRequireCall(node.Parent, false /*requireStringLiteralLikeArgument*/) {
-			return node.Parent
-		}
-		return nil
-	case ast.KindLiteralType:
-		if !ast.IsStringLiteral(node) {
-			return nil
-		}
-		if ast.IsImportTypeNode(node.Parent.Parent) {
-			return node.Parent.Parent
-		}
-		return nil
-	}
-	return nil
 }
 
 func isModuleSpecifierLike(node *ast.Node) bool {
@@ -98,45 +65,6 @@ func getNonModuleSymbolOfMergedModuleSymbol(symbol *ast.Symbol) *ast.Symbol {
 		return decl.Symbol()
 	}
 	return nil
-}
-
-func moduleSymbolToValidIdentifier(moduleSymbol *ast.Symbol, target core.ScriptTarget, forceCapitalize bool) string {
-	return moduleSpecifierToValidIdentifier(stringutil.StripQuotes(moduleSymbol.Name), target, forceCapitalize)
-}
-
-func moduleSpecifierToValidIdentifier(moduleSpecifier string, target core.ScriptTarget, forceCapitalize bool) string {
-	baseName := tspath.GetBaseFileName(strings.TrimSuffix(tspath.RemoveFileExtension(moduleSpecifier), "/index"))
-	res := []rune{}
-	lastCharWasValid := true
-	baseNameRunes := []rune(baseName)
-	if len(baseNameRunes) > 0 && scanner.IsIdentifierStart(baseNameRunes[0]) {
-		if forceCapitalize {
-			res = append(res, unicode.ToUpper(baseNameRunes[0]))
-		} else {
-			res = append(res, baseNameRunes[0])
-		}
-	} else {
-		lastCharWasValid = false
-	}
-
-	for i := 1; i < len(baseNameRunes); i++ {
-		isValid := scanner.IsIdentifierPart(baseNameRunes[i])
-		if isValid {
-			if !lastCharWasValid {
-				res = append(res, unicode.ToUpper(baseNameRunes[i]))
-			} else {
-				res = append(res, baseNameRunes[i])
-			}
-		}
-		lastCharWasValid = isValid
-	}
-
-	// Need `"_"` to ensure result isn't empty.
-	resString := string(res)
-	if resString != "" && !isNonContextualKeyword(scanner.StringToToken(resString)) {
-		return resString
-	}
-	return "_" + resString
 }
 
 func getLocalSymbolForExportSpecifier(referenceLocation *ast.Identifier, referenceSymbol *ast.Symbol, exportSpecifier *ast.ExportSpecifier, ch *checker.Checker) *ast.Symbol {
@@ -166,62 +94,7 @@ func isInComment(file *ast.SourceFile, position int, tokenAtPosition *ast.Node) 
 }
 
 func hasChildOfKind(containingNode *ast.Node, kind ast.Kind, sourceFile *ast.SourceFile) bool {
-	return findChildOfKind(containingNode, kind, sourceFile) != nil
-}
-
-func findChildOfKind(containingNode *ast.Node, kind ast.Kind, sourceFile *ast.SourceFile) *ast.Node {
-	lastNodePos := containingNode.Pos()
-	scanner := scanner.GetScannerForSourceFile(sourceFile, lastNodePos)
-
-	var foundChild *ast.Node
-	visitNode := func(node *ast.Node) bool {
-		if node == nil || node.Flags&ast.NodeFlagsReparsed != 0 {
-			return false
-		}
-		// Look for child in preceding tokens.
-		startPos := lastNodePos
-		for startPos < node.Pos() {
-			tokenKind := scanner.Token()
-			tokenFullStart := scanner.TokenFullStart()
-			tokenEnd := scanner.TokenEnd()
-			token := sourceFile.GetOrCreateToken(tokenKind, tokenFullStart, tokenEnd, containingNode)
-			if tokenKind == kind {
-				foundChild = token
-				return true
-			}
-			startPos = tokenEnd
-			scanner.Scan()
-		}
-		if node.Kind == kind {
-			foundChild = node
-			return true
-		}
-
-		lastNodePos = node.End()
-		scanner.ResetPos(lastNodePos)
-		return false
-	}
-
-	ast.ForEachChildAndJSDoc(containingNode, sourceFile, visitNode)
-
-	if foundChild != nil {
-		return foundChild
-	}
-
-	// Look for child in trailing tokens.
-	startPos := lastNodePos
-	for startPos < containingNode.End() {
-		tokenKind := scanner.Token()
-		tokenFullStart := scanner.TokenFullStart()
-		tokenEnd := scanner.TokenEnd()
-		token := sourceFile.GetOrCreateToken(tokenKind, tokenFullStart, tokenEnd, containingNode)
-		if tokenKind == kind {
-			return token
-		}
-		startPos = tokenEnd
-		scanner.Scan()
-	}
-	return nil
+	return astnav.FindChildOfKind(containingNode, kind, sourceFile) != nil
 }
 
 type PossibleTypeArgumentInfo struct {
@@ -433,47 +306,12 @@ func (l *LanguageService) createLspPosition(position int, file *ast.SourceFile) 
 
 func quote(file *ast.SourceFile, preferences *lsutil.UserPreferences, text string) string {
 	// Editors can pass in undefined or empty string - we want to infer the preference in those cases.
-	quotePreference := getQuotePreference(file, preferences)
+	quotePreference := lsutil.GetQuotePreference(file, preferences)
 	quoted, _ := core.StringifyJson(text, "" /*prefix*/, "" /*indent*/)
-	if quotePreference == quotePreferenceSingle {
+	if quotePreference == lsutil.QuotePreferenceSingle {
 		quoted = quoteReplacer.Replace(stringutil.StripQuotes(quoted))
 	}
 	return quoted
-}
-
-type quotePreference int
-
-const (
-	quotePreferenceSingle quotePreference = iota
-	quotePreferenceDouble
-)
-
-func quotePreferenceFromString(str *ast.StringLiteral) quotePreference {
-	if str.TokenFlags&ast.TokenFlagsSingleQuote != 0 {
-		return quotePreferenceSingle
-	}
-	return quotePreferenceDouble
-}
-
-func getQuotePreference(sourceFile *ast.SourceFile, preferences *lsutil.UserPreferences) quotePreference {
-	if preferences.QuotePreference != "" && preferences.QuotePreference != "auto" {
-		if preferences.QuotePreference == "single" {
-			return quotePreferenceSingle
-		}
-		return quotePreferenceDouble
-	}
-	// ignore synthetic import added when importHelpers: true
-	firstModuleSpecifier := core.Find(sourceFile.Imports(), func(n *ast.Node) bool {
-		return ast.IsStringLiteral(n) && !ast.NodeIsSynthesized(n.Parent)
-	})
-	if firstModuleSpecifier != nil {
-		return quotePreferenceFromString(firstModuleSpecifier.AsStringLiteral())
-	}
-	return quotePreferenceDouble
-}
-
-func isNonContextualKeyword(token ast.Kind) bool {
-	return ast.IsKeywordKind(token) && !ast.IsContextualKeyword(token)
 }
 
 var typeKeywords *collections.Set[ast.Kind] = collections.NewSetFromItems(
@@ -507,47 +345,6 @@ func isSeparator(node *ast.Node, candidate *ast.Node) bool {
 	return candidate != nil && node.Parent != nil && (candidate.Kind == ast.KindCommaToken || (candidate.Kind == ast.KindSemicolonToken && node.Parent.Kind == ast.KindObjectLiteralExpression))
 }
 
-// Returns a map of all names in the file to their positions.
-// !!! cache this
-func getNameTable(file *ast.SourceFile) map[string]int {
-	nameTable := make(map[string]int)
-	var walk func(node *ast.Node) bool
-
-	walk = func(node *ast.Node) bool {
-		if ast.IsIdentifier(node) && !isTagName(node) && node.Text() != "" ||
-			ast.IsStringOrNumericLiteralLike(node) && literalIsName(node) ||
-			ast.IsPrivateIdentifier(node) {
-			text := node.Text()
-			if _, ok := nameTable[text]; ok {
-				nameTable[text] = -1
-			} else {
-				nameTable[text] = node.Pos()
-			}
-		}
-
-		node.ForEachChild(walk)
-		jsdocNodes := node.JSDoc(file)
-		for _, jsdoc := range jsdocNodes {
-			jsdoc.ForEachChild(walk)
-		}
-		return false
-	}
-
-	file.ForEachChild(walk)
-	return nameTable
-}
-
-// We want to store any numbers/strings if they were a name that could be
-// related to a declaration.  So, if we have 'import x = require("something")'
-// then we want 'something' to be in the name table.  Similarly, if we have
-// "a['propname']" then we want to store "propname" in the name table.
-func literalIsName(node *ast.NumericOrStringLikeLiteral) bool {
-	return ast.IsDeclarationName(node) ||
-		node.Parent.Kind == ast.KindExternalModuleReference ||
-		isArgumentOfElementAccessExpression(node) ||
-		ast.IsLiteralComputedPropertyDeclarationName(node)
-}
-
 func isLiteralNameOfPropertyDeclarationOrIndexAccess(node *ast.Node) bool {
 	// utilities
 	switch node.Parent.Kind {
@@ -577,12 +374,6 @@ func isObjectBindingElementWithoutPropertyName(bindingElement *ast.Node) bool {
 		bindingElement.Parent.Kind == ast.KindObjectBindingPattern &&
 		bindingElement.Name().Kind == ast.KindIdentifier &&
 		bindingElement.PropertyName() == nil
-}
-
-func isArgumentOfElementAccessExpression(node *ast.Node) bool {
-	return node != nil && node.Parent != nil &&
-		node.Parent.Kind == ast.KindElementAccessExpression &&
-		node.Parent.AsElementAccessExpression().ArgumentExpression == node
 }
 
 func isRightSideOfPropertyAccess(node *ast.Node) bool {
@@ -635,10 +426,6 @@ func isLabelOfLabeledStatement(node *ast.Node) bool {
 
 func findReferenceInPosition(refs []*ast.FileReference, pos int) *ast.FileReference {
 	return core.Find(refs, func(ref *ast.FileReference) bool { return ref.TextRange.ContainsInclusive(pos) })
-}
-
-func isTagName(node *ast.Node) bool {
-	return node.Parent != nil && ast.IsJSDocTag(node.Parent) && node.Parent.TagName() == node
 }
 
 // Assumes `candidate.pos <= position` holds.
@@ -807,7 +594,7 @@ func nodeEndsWith(n *ast.Node, expectedLastToken ast.Kind, sourceFile *ast.Sourc
 		tokenKind := scanner.Token()
 		tokenFullStart := scanner.TokenFullStart()
 		tokenEnd := scanner.TokenEnd()
-		token := sourceFile.GetOrCreateToken(tokenKind, tokenFullStart, tokenEnd, n)
+		token := sourceFile.GetOrCreateToken(tokenKind, tokenFullStart, tokenEnd, n, scanner.TokenFlags())
 		lastNodeAndTokens = append(lastNodeAndTokens, token)
 		startPos = tokenEnd
 		scanner.Scan()
@@ -1095,10 +882,10 @@ func getAdjustedLocationForDeclaration(node *ast.Node, forRename bool, sourceFil
 		return core.Find(node.ModifierNodes(), func(*ast.Node) bool { return node.Kind == ast.KindDefaultKeyword })
 	case ast.KindClassExpression:
 		// for class expressions, use the `class` keyword when the class is unnamed
-		return findChildOfKind(node, ast.KindClassKeyword, sourceFile)
+		return astnav.FindChildOfKind(node, ast.KindClassKeyword, sourceFile)
 	case ast.KindFunctionExpression:
 		// for function expressions, use the `function` keyword when the function is unnamed
-		return findChildOfKind(node, ast.KindFunctionKeyword, sourceFile)
+		return astnav.FindChildOfKind(node, ast.KindFunctionKeyword, sourceFile)
 	case ast.KindConstructor:
 		return node
 	}
@@ -1626,7 +1413,7 @@ func getChildrenFromNonJSDocNode(node *ast.Node, sourceFile *ast.SourceFile) []*
 			token := scanner.Token()
 			tokenFullStart := scanner.TokenFullStart()
 			tokenEnd := scanner.TokenEnd()
-			children = append(children, sourceFile.GetOrCreateToken(token, tokenFullStart, tokenEnd, node))
+			children = append(children, sourceFile.GetOrCreateToken(token, tokenFullStart, tokenEnd, node, scanner.TokenFlags()))
 			pos = tokenEnd
 			scanner.Scan()
 		}
@@ -1638,7 +1425,7 @@ func getChildrenFromNonJSDocNode(node *ast.Node, sourceFile *ast.SourceFile) []*
 		token := scanner.Token()
 		tokenFullStart := scanner.TokenFullStart()
 		tokenEnd := scanner.TokenEnd()
-		children = append(children, sourceFile.GetOrCreateToken(token, tokenFullStart, tokenEnd, node))
+		children = append(children, sourceFile.GetOrCreateToken(token, tokenFullStart, tokenEnd, node, scanner.TokenFlags()))
 		pos = tokenEnd
 		scanner.Scan()
 	}
@@ -1695,4 +1482,8 @@ func toContextRange(textRange *core.TextRange, contextFile *ast.SourceFile, cont
 		return &contextRange
 	}
 	return nil
+}
+
+func ptrTo[T any](v T) *T {
+	return &v
 }

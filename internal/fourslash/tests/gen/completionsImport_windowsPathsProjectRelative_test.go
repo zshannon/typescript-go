@@ -11,8 +11,8 @@ import (
 )
 
 func TestCompletionsImport_windowsPathsProjectRelative(t *testing.T) {
+	fourslash.SkipIfFailing(t)
 	t.Parallel()
-	t.Skip()
 	defer testutil.RecoverAndFail(t, "Panic on fourslash test")
 	const content = `// @Filename: c:/project/tsconfig.json
 {
@@ -33,7 +33,8 @@ export const myFunctionB = () => {};
 export * from './b';
 // @Filename: c:/project/src/reproduction/1.ts
 myFunction/**/`
-	f := fourslash.NewFourslash(t, nil /*capabilities*/, content)
+	f, done := fourslash.NewFourslash(t, nil /*capabilities*/, content)
+	defer done()
 	f.GoToMarker(t, "")
 	f.VerifyCompletions(t, nil, &fourslash.CompletionsExpectedList{
 		IsIncomplete: false,
@@ -46,7 +47,7 @@ myFunction/**/`
 				&lsproto.CompletionItem{
 					Label: "myFunctionA",
 					Data: &lsproto.CompletionItemData{
-						AutoImport: &lsproto.AutoImportData{
+						AutoImport: &lsproto.AutoImportFix{
 							ModuleSpecifier: "~/noIndex/a",
 						},
 					},
@@ -56,7 +57,7 @@ myFunction/**/`
 				&lsproto.CompletionItem{
 					Label: "myFunctionB",
 					Data: &lsproto.CompletionItemData{
-						AutoImport: &lsproto.AutoImportData{
+						AutoImport: &lsproto.AutoImportFix{
 							ModuleSpecifier: "~/withIndex",
 						},
 					},
@@ -77,7 +78,7 @@ myFunction/**/`
 				&lsproto.CompletionItem{
 					Label: "myFunctionA",
 					Data: &lsproto.CompletionItemData{
-						AutoImport: &lsproto.AutoImportData{
+						AutoImport: &lsproto.AutoImportFix{
 							ModuleSpecifier: "../noIndex/a",
 						},
 					},
@@ -87,7 +88,7 @@ myFunction/**/`
 				&lsproto.CompletionItem{
 					Label: "myFunctionB",
 					Data: &lsproto.CompletionItemData{
-						AutoImport: &lsproto.AutoImportData{
+						AutoImport: &lsproto.AutoImportFix{
 							ModuleSpecifier: "../withIndex",
 						},
 					},
@@ -108,7 +109,7 @@ myFunction/**/`
 				&lsproto.CompletionItem{
 					Label: "myFunctionA",
 					Data: &lsproto.CompletionItemData{
-						AutoImport: &lsproto.AutoImportData{
+						AutoImport: &lsproto.AutoImportFix{
 							ModuleSpecifier: "../noIndex/a",
 						},
 					},
@@ -118,7 +119,7 @@ myFunction/**/`
 				&lsproto.CompletionItem{
 					Label: "myFunctionB",
 					Data: &lsproto.CompletionItemData{
-						AutoImport: &lsproto.AutoImportData{
+						AutoImport: &lsproto.AutoImportFix{
 							ModuleSpecifier: "../withIndex",
 						},
 					},

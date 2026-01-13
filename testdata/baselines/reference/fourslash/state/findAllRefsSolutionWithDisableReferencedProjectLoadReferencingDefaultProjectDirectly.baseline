@@ -318,7 +318,7 @@ Config File Names::
       "character": 9
     },
     "context": {
-      "includeDeclaration": false
+      "includeDeclaration": true
     }
   }
 }
@@ -332,7 +332,7 @@ Config File Names::
 
 // === /myproject/src/main.ts ===
 // import { [|foo|] } from './helpers/functions';
-// export { /*FIND ALL REFS*/foo };
+// export { /*FIND ALL REFS*/[|foo|] };
 {
   "method": "textDocument/didClose",
   "params": {
@@ -391,7 +391,7 @@ Config File Names::
       "character": 9
     },
     "context": {
-      "includeDeclaration": false
+      "includeDeclaration": true
     }
   }
 }
@@ -419,4 +419,4 @@ Config::
 
 // === /myproject/src/main.ts ===
 // import { [|foo|] } from './helpers/functions';
-// export { foo };
+// export { [|foo|] };

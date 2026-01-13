@@ -6,6 +6,7 @@ import path from "node:path";
 import url from "node:url";
 import which from "which";
 import type {
+    Enumeration,
     MetaModel,
     Notification,
     OrType,
@@ -40,53 +41,40 @@ const customStructures: Structure[] = [
                 optional: true,
                 documentation: "DisablePushDiagnostics disables automatic pushing of diagnostics to the client.",
             },
+            {
+                name: "codeLensShowLocationsCommandName",
+                type: { kind: "base", name: "string" },
+                optional: true,
+                documentation: "The client-side command name that resolved references/implementations `CodeLens` should trigger. Arguments passed will be `(DocumentUri, Position, Location[])`.",
+            },
         ],
         documentation: "InitializationOptions contains user-provided initialization options.",
     },
     {
-        name: "ExportInfoMapKey",
+        name: "AutoImportFix",
         properties: [
             {
-                name: "symbolName",
+                name: "kind",
+                type: { kind: "reference", name: "AutoImportFixKind" },
+                omitzeroValue: true,
+            },
+            {
+                name: "name",
                 type: { kind: "base", name: "string" },
-                documentation: "The symbol name.",
                 omitzeroValue: true,
             },
             {
-                name: "symbolId",
-                type: { kind: "reference", name: "uint64" },
-                documentation: "The symbol ID.",
+                name: "importKind",
+                type: { kind: "reference", name: "ImportKind" },
+            },
+            {
+                name: "useRequire",
+                type: { kind: "base", name: "boolean" },
                 omitzeroValue: true,
             },
             {
-                name: "ambientModuleName",
-                type: { kind: "base", name: "string" },
-                documentation: "The ambient module name.",
-                omitzeroValue: true,
-            },
-            {
-                name: "moduleFile",
-                type: { kind: "base", name: "string" },
-                documentation: "The module file path.",
-                omitzeroValue: true,
-            },
-        ],
-        documentation: "ExportInfoMapKey uniquely identifies an export for auto-import purposes.",
-    },
-    {
-        name: "AutoImportData",
-        properties: [
-            {
-                name: "exportName",
-                type: { kind: "base", name: "string" },
-                documentation: "The name of the property or export in the module's symbol table. Differs from the completion name in the case of InternalSymbolName.ExportEquals and InternalSymbolName.Default.",
-                omitzeroValue: true,
-            },
-            {
-                name: "exportMapKey",
-                type: { kind: "reference", name: "ExportInfoMapKey" },
-                documentation: "The export map key for this auto-import.",
-                omitzeroValue: true,
+                name: "addAsTypeOnly",
+                type: { kind: "reference", name: "AddAsTypeOnly" },
             },
             {
                 name: "moduleSpecifier",
@@ -95,25 +83,22 @@ const customStructures: Structure[] = [
                 omitzeroValue: true,
             },
             {
-                name: "fileName",
-                type: { kind: "base", name: "string" },
-                documentation: "The file name declaring the export's module symbol, if it was an external module.",
-                omitzeroValue: true,
+                name: "importIndex",
+                type: { kind: "base", name: "integer" },
+                documentation: "Index of the import to modify when adding to an existing import declaration.",
             },
             {
-                name: "ambientModuleName",
-                type: { kind: "base", name: "string" },
-                documentation: "The module name (with quotes stripped) of the export's module symbol, if it was an ambient module.",
-                omitzeroValue: true,
+                name: "usagePosition",
+                type: { kind: "reference", name: "Position" },
+                optional: true,
             },
             {
-                name: "isPackageJsonImport",
-                type: { kind: "base", name: "boolean" },
-                documentation: "True if the export was found in the package.json AutoImportProvider.",
+                name: "namespacePrefix",
+                type: { kind: "base", name: "string" },
                 omitzeroValue: true,
             },
         ],
-        documentation: "AutoImportData contains information about an auto-import suggestion.",
+        documentation: "AutoImportFix contains information about an auto-import suggestion.",
     },
     {
         name: "CompletionItemData",
@@ -144,14 +129,173 @@ const customStructures: Structure[] = [
             },
             {
                 name: "autoImport",
-                type: { kind: "reference", name: "AutoImportData" },
+                type: { kind: "reference", name: "AutoImportFix" },
                 optional: true,
                 documentation: "Auto-import data for this completion item.",
             },
         ],
         documentation: "CompletionItemData is preserved on a CompletionItem between CompletionRequest and CompletionResolveRequest.",
     },
+    {
+        name: "CodeLensData",
+        properties: [
+            {
+                name: "kind",
+                type: { kind: "reference", name: "CodeLensKind" },
+                documentation: `The kind of the code lens ("references" or "implementations").`,
+            },
+            {
+                name: "uri",
+                type: { kind: "base", name: "DocumentUri" },
+                documentation: `The document in which the code lens and its range are located.`,
+            },
+        ],
+    },
+    {
+        // Longer-term, we may just want to use TextEdit.
+        name: "CustomClosingTagCompletion",
+        properties: [
+            {
+                name: "newText",
+                type: { kind: "base", name: "string" },
+                documentation: "The text to insert at the closing tag position.",
+            },
+        ],
+        documentation: "CustomClosingTagCompletion is the response for the custom/textDocument/closingTagCompletion request.",
+    },
 ];
+
+const customEnumerations: Enumeration[] = [
+    {
+        name: "CodeLensKind",
+        type: {
+            kind: "base",
+            name: "string",
+        },
+        values: [
+            {
+                name: "References",
+                value: "references",
+            },
+            {
+                name: "Implementations",
+                value: "implementations",
+            },
+        ],
+    },
+    {
+        name: "AutoImportFixKind",
+        type: { kind: "base", name: "integer" },
+        values: [
+            { name: "UseNamespace", value: 0, documentation: "Augment an existing namespace import." },
+            { name: "JsdocTypeImport", value: 1, documentation: "Add a JSDoc-only type import." },
+            { name: "AddToExisting", value: 2, documentation: "Insert into an existing import declaration." },
+            { name: "AddNew", value: 3, documentation: "Create a fresh import statement." },
+            { name: "PromoteTypeOnly", value: 4, documentation: "Promote a type-only import when necessary." },
+        ],
+    },
+    {
+        name: "ImportKind",
+        type: { kind: "base", name: "integer" },
+        values: [
+            { name: "Named", value: 0, documentation: "Adds a named import." },
+            { name: "Default", value: 1, documentation: "Adds a default import." },
+            { name: "Namespace", value: 2, documentation: "Adds a namespace import." },
+            { name: "CommonJS", value: 3, documentation: "Adds a CommonJS import assignment." },
+        ],
+    },
+    {
+        name: "AddAsTypeOnly",
+        type: { kind: "base", name: "integer" },
+        values: [
+            { name: "Allowed", value: 1, documentation: "Import may be marked type-only if needed." },
+            { name: "Required", value: 2, documentation: "Import must be marked type-only." },
+            { name: "NotAllowed", value: 4, documentation: "Import cannot be marked type-only." },
+        ],
+    },
+];
+
+// Custom requests to add to the model (tsgo-specific)
+const customRequests: Request[] = [
+    {
+        method: "custom/textDocument/closingTagCompletion",
+        typeName: "CustomClosingTagCompletionRequest",
+        params: { kind: "reference", name: "TextDocumentPositionParams" },
+        result: {
+            kind: "or",
+            items: [
+                { kind: "reference", name: "CustomClosingTagCompletion" },
+                { kind: "base", name: "null" },
+            ],
+        },
+        messageDirection: "clientToServer",
+        documentation: "Request to get the closing tag completion at a given position.",
+    },
+    {
+        method: "custom/runGC",
+        typeName: "RunGCRequest",
+        messageDirection: "clientToServer",
+        result: { kind: "base", name: "null" },
+        documentation: "Triggers garbage collection in the language server.",
+    },
+    {
+        method: "custom/saveHeapProfile",
+        typeName: "SaveHeapProfileRequest",
+        params: { kind: "reference", name: "ProfileParams" },
+        messageDirection: "clientToServer",
+        result: { kind: "reference", name: "ProfileResult" },
+        documentation: "Saves a heap profile to the specified directory.",
+    },
+    {
+        method: "custom/saveAllocProfile",
+        typeName: "SaveAllocProfileRequest",
+        params: { kind: "reference", name: "ProfileParams" },
+        messageDirection: "clientToServer",
+        result: { kind: "reference", name: "ProfileResult" },
+        documentation: "Saves an allocation profile to the specified directory.",
+    },
+    {
+        method: "custom/startCPUProfile",
+        typeName: "StartCPUProfileRequest",
+        params: { kind: "reference", name: "ProfileParams" },
+        messageDirection: "clientToServer",
+        result: { kind: "base", name: "null" },
+        documentation: "Starts CPU profiling, writing to the specified directory when stopped.",
+    },
+    {
+        method: "custom/stopCPUProfile",
+        typeName: "StopCPUProfileRequest",
+        messageDirection: "clientToServer",
+        result: { kind: "reference", name: "ProfileResult" },
+        documentation: "Stops CPU profiling and saves the profile.",
+    },
+];
+
+// Custom structures for profiling requests/responses
+customStructures.push(
+    {
+        name: "ProfileParams",
+        properties: [
+            {
+                name: "dir",
+                type: { kind: "base", name: "string" },
+                documentation: "The directory path where the profile should be saved.",
+            },
+        ],
+        documentation: "Parameters for profiling requests.",
+    },
+    {
+        name: "ProfileResult",
+        properties: [
+            {
+                name: "file",
+                type: { kind: "base", name: "string" },
+                documentation: "The file path where the profile was saved.",
+            },
+        ],
+        documentation: "Result of a profiling request.",
+    },
+);
 
 // Track which custom Data structures were declared explicitly
 const explicitDataStructures = new Set(customStructures.map(s => s.name));
@@ -251,8 +395,10 @@ function patchAndPreprocessModel() {
         });
     }
 
-    // Add custom structures and synthetic structures to the model
+    // Add custom enumerations, custom structures, custom requests, and synthetic structures to the model
+    model.enumerations.push(...customEnumerations);
     model.structures.push(...customStructures, ...syntheticStructures);
+    model.requests.push(...customRequests);
 
     // Build structure map for preprocessing
     const structureMap = new Map<string, Structure>();
@@ -306,6 +452,29 @@ function patchAndPreprocessModel() {
 
     // Remove _InitializeParams structure after flattening (it was only needed for inheritance)
     model.structures = model.structures.filter(s => s.name !== "_InitializeParams");
+
+    // Merge LSPErrorCodes into ErrorCodes and remove LSPErrorCodes
+    const errorCodesEnum = model.enumerations.find(e => e.name === "ErrorCodes");
+    const lspErrorCodesEnum = model.enumerations.find(e => e.name === "LSPErrorCodes");
+    if (errorCodesEnum && lspErrorCodesEnum) {
+        // Merge LSPErrorCodes values into ErrorCodes
+        errorCodesEnum.values.push(...lspErrorCodesEnum.values);
+        // Remove LSPErrorCodes from the model
+        model.enumerations = model.enumerations.filter(e => e.name !== "LSPErrorCodes");
+    }
+
+    // Singularize plural enum names (e.g., "ErrorCodes" -> "ErrorCode")
+    for (const enumeration of model.enumerations) {
+        if (enumeration.name.endsWith("Codes")) {
+            enumeration.name = enumeration.name.slice(0, -1); // "Codes" -> "Code"
+        }
+        else if (enumeration.name.endsWith("Modifiers")) {
+            enumeration.name = enumeration.name.slice(0, -1); // "Modifiers" -> "Modifier"
+        }
+        else if (enumeration.name.endsWith("Types")) {
+            enumeration.name = enumeration.name.slice(0, -1); // "Types" -> "Type"
+        }
+    }
 }
 
 patchAndPreprocessModel();
@@ -937,6 +1106,18 @@ function generateCode() {
             }
         }
 
+        const locationUriProperty = getLocationUriProperty(structure);
+        if (locationUriProperty) {
+            // Generate Location method
+            writeLine(`func (s ${structure.name}) GetLocation() Location {`);
+            writeLine(`\treturn Location{`);
+            writeLine(`\t\tUri:   s.${locationUriProperty},`);
+            writeLine(`\t\tRange: s.${locationUriProperty.replace(/Uri$/, "Range")},`);
+            writeLine(`\t}`);
+            writeLine(`}`);
+            writeLine("");
+        }
+
         // Generate UnmarshalJSONFrom method for structure validation
         // Skip properties marked with omitzeroValue since they're optional by nature
         const requiredProps = structure.properties?.filter(p => {
@@ -1051,7 +1232,7 @@ function generateCode() {
             value: String(value.value),
             numericValue: Number(value.value),
             name: value.name,
-            identifier: `${enumeration.name}${value.name}`,
+            identifier: `${enumeration.name}${titleCase(value.name)}`,
             documentation: value.documentation,
             deprecated: value.deprecated,
         }));
@@ -1264,6 +1445,14 @@ function generateCode() {
                 }
             }
         }
+
+        // Generate Error() method for ErrorCode to implement the error interface
+        if (enumeration.name === "ErrorCode") {
+            writeLine(`func (e ${enumeration.name}) Error() string {`);
+            writeLine(`\treturn e.String()`);
+            writeLine(`}`);
+            writeLine("");
+        }
     }
 
     const requestsAndNotifications: (Request | Notification)[] = [...model.requests, ...model.notifications];
@@ -1400,6 +1589,7 @@ function generateCode() {
         writeLine(`type ${name} struct {`);
         const uniqueTypeFields = new Map(); // Maps type name -> field name
 
+        let hasLocations = false;
         for (const member of members) {
             const type = resolveType(member.type);
             const memberType = type.name;
@@ -1409,6 +1599,9 @@ function generateCode() {
                 const fieldName = titleCase(member.name);
                 uniqueTypeFields.set(memberType, fieldName);
                 writeLine(`\t${fieldName} *${memberType}`);
+                if (fieldName === "Locations" && memberType === "[]Location") {
+                    hasLocations = true;
+                }
             }
         }
 
@@ -1491,6 +1684,14 @@ function generateCode() {
         writeLine(`\treturn fmt.Errorf("invalid ${name}: %s", data)`);
         writeLine(`}`);
         writeLine("");
+
+        // Generate GetLocations method
+        if (hasLocations) {
+            writeLine(`func (o ${name}) GetLocations() *[]Location {`);
+            writeLine(`\treturn o.Locations`);
+            writeLine(`}`);
+            writeLine("");
+        }
     }
 
     // Generate literal types
@@ -1586,6 +1787,26 @@ function hasTextDocumentURI(structure: Structure) {
 
 function hasTextDocumentPosition(structure: Structure) {
     return hasSomeProp(structure, "position", "Position");
+}
+
+function getLocationUriProperty(structure: Structure) {
+    const prop = structure.properties?.find(p =>
+        !p.optional &&
+        titleCase(p.name).endsWith("Uri") &&
+        p.type.kind === "base" &&
+        p.type.name === "DocumentUri"
+    );
+    if (
+        prop &&
+        structure.properties.some(p =>
+            !p.optional &&
+            titleCase(p.name) === titleCase(prop.name).replace(/Uri$/, "Range") &&
+            p.type.kind === "reference" &&
+            p.type.name === "Range"
+        )
+    ) {
+        return titleCase(prop.name);
+    }
 }
 
 /**

@@ -109,6 +109,13 @@ type Location struct {
 	Range Range `json:"range"`
 }
 
+func (s Location) GetLocation() Location {
+	return Location{
+		Uri:   s.Uri,
+		Range: s.Range,
+	}
+}
+
 var _ json.UnmarshalerFrom = (*Location)(nil)
 
 func (s *Location) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
@@ -1809,6 +1816,13 @@ type CallHierarchyItem struct {
 	// A data entry field that is preserved between a call hierarchy prepare and
 	// incoming calls or outgoing calls requests.
 	Data *CallHierarchyItemData `json:"data,omitzero"`
+}
+
+func (s CallHierarchyItem) GetLocation() Location {
+	return Location{
+		Uri:   s.Uri,
+		Range: s.Range,
+	}
 }
 
 var _ json.UnmarshalerFrom = (*CallHierarchyItem)(nil)
@@ -3770,6 +3784,13 @@ type TypeHierarchyItem struct {
 	// type hierarchy in the server, helping improve the performance on
 	// resolving supertypes and subtypes.
 	Data *TypeHierarchyItemData `json:"data,omitzero"`
+}
+
+func (s TypeHierarchyItem) GetLocation() Location {
+	return Location{
+		Uri:   s.Uri,
+		Range: s.Range,
+	}
 }
 
 var _ json.UnmarshalerFrom = (*TypeHierarchyItem)(nil)
@@ -10832,14 +10853,14 @@ func (s *DocumentOnTypeFormattingRegistrationOptions) UnmarshalJSONFrom(dec *jso
 
 // The parameters of a RenameRequest.
 type RenameParams struct {
-	// An optional token that a server can use to report work done progress.
-	WorkDoneToken *IntegerOrString `json:"workDoneToken,omitzero"`
-
-	// The document to rename.
+	// The text document.
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
 
-	// The position at which this request was sent.
+	// The position inside the text document.
 	Position Position `json:"position"`
+
+	// An optional token that a server can use to report work done progress.
+	WorkDoneToken *IntegerOrString `json:"workDoneToken,omitzero"`
 
 	// The new name of the symbol. If the given name is not valid the
 	// request must return a ResponseError with an
@@ -10879,10 +10900,6 @@ func (s *RenameParams) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 			return err
 		}
 		switch string(name) {
-		case `"workDoneToken"`:
-			if err := json.UnmarshalDecode(dec, &s.WorkDoneToken); err != nil {
-				return err
-			}
 		case `"textDocument"`:
 			missing &^= missingTextDocument
 			if err := json.UnmarshalDecode(dec, &s.TextDocument); err != nil {
@@ -10891,6 +10908,10 @@ func (s *RenameParams) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 		case `"position"`:
 			missing &^= missingPosition
 			if err := json.UnmarshalDecode(dec, &s.Position); err != nil {
+				return err
+			}
+		case `"workDoneToken"`:
+			if err := json.UnmarshalDecode(dec, &s.WorkDoneToken); err != nil {
 				return err
 			}
 		case `"newName"`:
@@ -11914,6 +11935,13 @@ type LocationLink struct {
 	// The range that should be selected and revealed when this link is being followed, e.g the name of a function.
 	// Must be contained by the `targetRange`. See also `DocumentSymbol#range`
 	TargetSelectionRange Range `json:"targetSelectionRange"`
+}
+
+func (s LocationLink) GetLocation() Location {
+	return Location{
+		Uri:   s.TargetUri,
+		Range: s.TargetRange,
+	}
 }
 
 var _ json.UnmarshalerFrom = (*LocationLink)(nil)
@@ -21595,42 +21623,121 @@ type ClientSemanticTokensRequestFullDelta struct {
 type InitializationOptions struct {
 	// DisablePushDiagnostics disables automatic pushing of diagnostics to the client.
 	DisablePushDiagnostics *bool `json:"disablePushDiagnostics,omitzero"`
+
+	// The client-side command name that resolved references/implementations `CodeLens` should trigger. Arguments passed will be `(DocumentUri, Position, Location[])`.
+	CodeLensShowLocationsCommandName *string `json:"codeLensShowLocationsCommandName,omitzero"`
 }
 
-// ExportInfoMapKey uniquely identifies an export for auto-import purposes.
-type ExportInfoMapKey struct {
-	// The symbol name.
-	SymbolName string `json:"symbolName,omitzero"`
+// AutoImportFix contains information about an auto-import suggestion.
+type AutoImportFix struct {
+	Kind AutoImportFixKind `json:"kind,omitzero"`
 
-	// The symbol ID.
-	SymbolId uint64 `json:"symbolId,omitzero"`
+	Name string `json:"name,omitzero"`
 
-	// The ambient module name.
-	AmbientModuleName string `json:"ambientModuleName,omitzero"`
+	ImportKind ImportKind `json:"importKind"`
 
-	// The module file path.
-	ModuleFile string `json:"moduleFile,omitzero"`
-}
+	UseRequire bool `json:"useRequire,omitzero"`
 
-// AutoImportData contains information about an auto-import suggestion.
-type AutoImportData struct {
-	// The name of the property or export in the module's symbol table. Differs from the completion name in the case of InternalSymbolName.ExportEquals and InternalSymbolName.Default.
-	ExportName string `json:"exportName,omitzero"`
-
-	// The export map key for this auto-import.
-	ExportMapKey ExportInfoMapKey `json:"exportMapKey,omitzero"`
+	AddAsTypeOnly AddAsTypeOnly `json:"addAsTypeOnly"`
 
 	// The module specifier for this auto-import.
 	ModuleSpecifier string `json:"moduleSpecifier,omitzero"`
 
-	// The file name declaring the export's module symbol, if it was an external module.
-	FileName string `json:"fileName,omitzero"`
+	// Index of the import to modify when adding to an existing import declaration.
+	ImportIndex int32 `json:"importIndex"`
 
-	// The module name (with quotes stripped) of the export's module symbol, if it was an ambient module.
-	AmbientModuleName string `json:"ambientModuleName,omitzero"`
+	UsagePosition *Position `json:"usagePosition,omitzero"`
 
-	// True if the export was found in the package.json AutoImportProvider.
-	IsPackageJsonImport bool `json:"isPackageJsonImport,omitzero"`
+	NamespacePrefix string `json:"namespacePrefix,omitzero"`
+}
+
+var _ json.UnmarshalerFrom = (*AutoImportFix)(nil)
+
+func (s *AutoImportFix) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+	const (
+		missingImportKind uint = 1 << iota
+		missingAddAsTypeOnly
+		missingImportIndex
+		_missingLast
+	)
+	missing := _missingLast - 1
+
+	if k := dec.PeekKind(); k != '{' {
+		return fmt.Errorf("expected object start, but encountered %v", k)
+	}
+	if _, err := dec.ReadToken(); err != nil {
+		return err
+	}
+
+	for dec.PeekKind() != '}' {
+		name, err := dec.ReadValue()
+		if err != nil {
+			return err
+		}
+		switch string(name) {
+		case `"kind"`:
+			if err := json.UnmarshalDecode(dec, &s.Kind); err != nil {
+				return err
+			}
+		case `"name"`:
+			if err := json.UnmarshalDecode(dec, &s.Name); err != nil {
+				return err
+			}
+		case `"importKind"`:
+			missing &^= missingImportKind
+			if err := json.UnmarshalDecode(dec, &s.ImportKind); err != nil {
+				return err
+			}
+		case `"useRequire"`:
+			if err := json.UnmarshalDecode(dec, &s.UseRequire); err != nil {
+				return err
+			}
+		case `"addAsTypeOnly"`:
+			missing &^= missingAddAsTypeOnly
+			if err := json.UnmarshalDecode(dec, &s.AddAsTypeOnly); err != nil {
+				return err
+			}
+		case `"moduleSpecifier"`:
+			if err := json.UnmarshalDecode(dec, &s.ModuleSpecifier); err != nil {
+				return err
+			}
+		case `"importIndex"`:
+			missing &^= missingImportIndex
+			if err := json.UnmarshalDecode(dec, &s.ImportIndex); err != nil {
+				return err
+			}
+		case `"usagePosition"`:
+			if err := json.UnmarshalDecode(dec, &s.UsagePosition); err != nil {
+				return err
+			}
+		case `"namespacePrefix"`:
+			if err := json.UnmarshalDecode(dec, &s.NamespacePrefix); err != nil {
+				return err
+			}
+		default:
+			// Ignore unknown properties.
+		}
+	}
+
+	if _, err := dec.ReadToken(); err != nil {
+		return err
+	}
+
+	if missing != 0 {
+		var missingProps []string
+		if missing&missingImportKind != 0 {
+			missingProps = append(missingProps, "importKind")
+		}
+		if missing&missingAddAsTypeOnly != 0 {
+			missingProps = append(missingProps, "addAsTypeOnly")
+		}
+		if missing&missingImportIndex != 0 {
+			missingProps = append(missingProps, "importIndex")
+		}
+		return fmt.Errorf("missing required properties: %s", strings.Join(missingProps, ", "))
+	}
+
+	return nil
 }
 
 // CompletionItemData is preserved on a CompletionItem between CompletionRequest and CompletionResolveRequest.
@@ -21648,7 +21755,230 @@ type CompletionItemData struct {
 	Name string `json:"name,omitzero"`
 
 	// Auto-import data for this completion item.
-	AutoImport *AutoImportData `json:"autoImport,omitzero"`
+	AutoImport *AutoImportFix `json:"autoImport,omitzero"`
+}
+
+type CodeLensData struct {
+	// The kind of the code lens ("references" or "implementations").
+	Kind CodeLensKind `json:"kind"`
+
+	// The document in which the code lens and its range are located.
+	Uri DocumentUri `json:"uri"`
+}
+
+var _ json.UnmarshalerFrom = (*CodeLensData)(nil)
+
+func (s *CodeLensData) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+	const (
+		missingKind uint = 1 << iota
+		missingUri
+		_missingLast
+	)
+	missing := _missingLast - 1
+
+	if k := dec.PeekKind(); k != '{' {
+		return fmt.Errorf("expected object start, but encountered %v", k)
+	}
+	if _, err := dec.ReadToken(); err != nil {
+		return err
+	}
+
+	for dec.PeekKind() != '}' {
+		name, err := dec.ReadValue()
+		if err != nil {
+			return err
+		}
+		switch string(name) {
+		case `"kind"`:
+			missing &^= missingKind
+			if err := json.UnmarshalDecode(dec, &s.Kind); err != nil {
+				return err
+			}
+		case `"uri"`:
+			missing &^= missingUri
+			if err := json.UnmarshalDecode(dec, &s.Uri); err != nil {
+				return err
+			}
+		default:
+			// Ignore unknown properties.
+		}
+	}
+
+	if _, err := dec.ReadToken(); err != nil {
+		return err
+	}
+
+	if missing != 0 {
+		var missingProps []string
+		if missing&missingKind != 0 {
+			missingProps = append(missingProps, "kind")
+		}
+		if missing&missingUri != 0 {
+			missingProps = append(missingProps, "uri")
+		}
+		return fmt.Errorf("missing required properties: %s", strings.Join(missingProps, ", "))
+	}
+
+	return nil
+}
+
+// CustomClosingTagCompletion is the response for the custom/textDocument/closingTagCompletion request.
+type CustomClosingTagCompletion struct {
+	// The text to insert at the closing tag position.
+	NewText string `json:"newText"`
+}
+
+var _ json.UnmarshalerFrom = (*CustomClosingTagCompletion)(nil)
+
+func (s *CustomClosingTagCompletion) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+	const (
+		missingNewText uint = 1 << iota
+		_missingLast
+	)
+	missing := _missingLast - 1
+
+	if k := dec.PeekKind(); k != '{' {
+		return fmt.Errorf("expected object start, but encountered %v", k)
+	}
+	if _, err := dec.ReadToken(); err != nil {
+		return err
+	}
+
+	for dec.PeekKind() != '}' {
+		name, err := dec.ReadValue()
+		if err != nil {
+			return err
+		}
+		switch string(name) {
+		case `"newText"`:
+			missing &^= missingNewText
+			if err := json.UnmarshalDecode(dec, &s.NewText); err != nil {
+				return err
+			}
+		default:
+			// Ignore unknown properties.
+		}
+	}
+
+	if _, err := dec.ReadToken(); err != nil {
+		return err
+	}
+
+	if missing != 0 {
+		var missingProps []string
+		if missing&missingNewText != 0 {
+			missingProps = append(missingProps, "newText")
+		}
+		return fmt.Errorf("missing required properties: %s", strings.Join(missingProps, ", "))
+	}
+
+	return nil
+}
+
+// Parameters for profiling requests.
+type ProfileParams struct {
+	// The directory path where the profile should be saved.
+	Dir string `json:"dir"`
+}
+
+var _ json.UnmarshalerFrom = (*ProfileParams)(nil)
+
+func (s *ProfileParams) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+	const (
+		missingDir uint = 1 << iota
+		_missingLast
+	)
+	missing := _missingLast - 1
+
+	if k := dec.PeekKind(); k != '{' {
+		return fmt.Errorf("expected object start, but encountered %v", k)
+	}
+	if _, err := dec.ReadToken(); err != nil {
+		return err
+	}
+
+	for dec.PeekKind() != '}' {
+		name, err := dec.ReadValue()
+		if err != nil {
+			return err
+		}
+		switch string(name) {
+		case `"dir"`:
+			missing &^= missingDir
+			if err := json.UnmarshalDecode(dec, &s.Dir); err != nil {
+				return err
+			}
+		default:
+			// Ignore unknown properties.
+		}
+	}
+
+	if _, err := dec.ReadToken(); err != nil {
+		return err
+	}
+
+	if missing != 0 {
+		var missingProps []string
+		if missing&missingDir != 0 {
+			missingProps = append(missingProps, "dir")
+		}
+		return fmt.Errorf("missing required properties: %s", strings.Join(missingProps, ", "))
+	}
+
+	return nil
+}
+
+// Result of a profiling request.
+type ProfileResult struct {
+	// The file path where the profile was saved.
+	File string `json:"file"`
+}
+
+var _ json.UnmarshalerFrom = (*ProfileResult)(nil)
+
+func (s *ProfileResult) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+	const (
+		missingFile uint = 1 << iota
+		_missingLast
+	)
+	missing := _missingLast - 1
+
+	if k := dec.PeekKind(); k != '{' {
+		return fmt.Errorf("expected object start, but encountered %v", k)
+	}
+	if _, err := dec.ReadToken(); err != nil {
+		return err
+	}
+
+	for dec.PeekKind() != '}' {
+		name, err := dec.ReadValue()
+		if err != nil {
+			return err
+		}
+		switch string(name) {
+		case `"file"`:
+			missing &^= missingFile
+			if err := json.UnmarshalDecode(dec, &s.File); err != nil {
+				return err
+			}
+		default:
+			// Ignore unknown properties.
+		}
+	}
+
+	if _, err := dec.ReadToken(); err != nil {
+		return err
+	}
+
+	if missing != 0 {
+		var missingProps []string
+		if missing&missingFile != 0 {
+			missingProps = append(missingProps, "file")
+		}
+		return fmt.Errorf("missing required properties: %s", strings.Join(missingProps, ", "))
+	}
+
+	return nil
 }
 
 // CallHierarchyItemData is a placeholder for custom data preserved on a CallHierarchyItem.
@@ -21665,9 +21995,6 @@ type CodeActionData struct{}
 
 // WorkspaceSymbolData is a placeholder for custom data preserved on a WorkspaceSymbol.
 type WorkspaceSymbolData struct{}
-
-// CodeLensData is a placeholder for custom data preserved on a CodeLens.
-type CodeLensData struct{}
 
 // DocumentLinkData is a placeholder for custom data preserved on a DocumentLink.
 type DocumentLinkData struct{}
@@ -21745,37 +22072,37 @@ func (s *ColorPresentationRegistrationOptions) UnmarshalJSONFrom(dec *jsontext.D
 // corresponding client capabilities.
 //
 // Since: 3.16.0
-type SemanticTokenTypes string
+type SemanticTokenType string
 
 const (
-	SemanticTokenTypesnamespace SemanticTokenTypes = "namespace"
+	SemanticTokenTypeNamespace SemanticTokenType = "namespace"
 	// Represents a generic type. Acts as a fallback for types which can't be mapped to
 	// a specific type like class or enum.
-	SemanticTokenTypestype          SemanticTokenTypes = "type"
-	SemanticTokenTypesclass         SemanticTokenTypes = "class"
-	SemanticTokenTypesenum          SemanticTokenTypes = "enum"
-	SemanticTokenTypesinterface     SemanticTokenTypes = "interface"
-	SemanticTokenTypesstruct        SemanticTokenTypes = "struct"
-	SemanticTokenTypestypeParameter SemanticTokenTypes = "typeParameter"
-	SemanticTokenTypesparameter     SemanticTokenTypes = "parameter"
-	SemanticTokenTypesvariable      SemanticTokenTypes = "variable"
-	SemanticTokenTypesproperty      SemanticTokenTypes = "property"
-	SemanticTokenTypesenumMember    SemanticTokenTypes = "enumMember"
-	SemanticTokenTypesevent         SemanticTokenTypes = "event"
-	SemanticTokenTypesfunction      SemanticTokenTypes = "function"
-	SemanticTokenTypesmethod        SemanticTokenTypes = "method"
-	SemanticTokenTypesmacro         SemanticTokenTypes = "macro"
-	SemanticTokenTypeskeyword       SemanticTokenTypes = "keyword"
-	SemanticTokenTypesmodifier      SemanticTokenTypes = "modifier"
-	SemanticTokenTypescomment       SemanticTokenTypes = "comment"
-	SemanticTokenTypesstring        SemanticTokenTypes = "string"
-	SemanticTokenTypesnumber        SemanticTokenTypes = "number"
-	SemanticTokenTypesregexp        SemanticTokenTypes = "regexp"
-	SemanticTokenTypesoperator      SemanticTokenTypes = "operator"
+	SemanticTokenTypeType          SemanticTokenType = "type"
+	SemanticTokenTypeClass         SemanticTokenType = "class"
+	SemanticTokenTypeEnum          SemanticTokenType = "enum"
+	SemanticTokenTypeInterface     SemanticTokenType = "interface"
+	SemanticTokenTypeStruct        SemanticTokenType = "struct"
+	SemanticTokenTypeTypeParameter SemanticTokenType = "typeParameter"
+	SemanticTokenTypeParameter     SemanticTokenType = "parameter"
+	SemanticTokenTypeVariable      SemanticTokenType = "variable"
+	SemanticTokenTypeProperty      SemanticTokenType = "property"
+	SemanticTokenTypeEnumMember    SemanticTokenType = "enumMember"
+	SemanticTokenTypeEvent         SemanticTokenType = "event"
+	SemanticTokenTypeFunction      SemanticTokenType = "function"
+	SemanticTokenTypeMethod        SemanticTokenType = "method"
+	SemanticTokenTypeMacro         SemanticTokenType = "macro"
+	SemanticTokenTypeKeyword       SemanticTokenType = "keyword"
+	SemanticTokenTypeModifier      SemanticTokenType = "modifier"
+	SemanticTokenTypeComment       SemanticTokenType = "comment"
+	SemanticTokenTypeString        SemanticTokenType = "string"
+	SemanticTokenTypeNumber        SemanticTokenType = "number"
+	SemanticTokenTypeRegexp        SemanticTokenType = "regexp"
+	SemanticTokenTypeOperator      SemanticTokenType = "operator"
 	// Since: 3.17.0
-	SemanticTokenTypesdecorator SemanticTokenTypes = "decorator"
+	SemanticTokenTypeDecorator SemanticTokenType = "decorator"
 	// Since: 3.18.0
-	SemanticTokenTypeslabel SemanticTokenTypes = "label"
+	SemanticTokenTypeLabel SemanticTokenType = "label"
 )
 
 // A set of predefined token modifiers. This set is not fixed
@@ -21783,19 +22110,19 @@ const (
 // corresponding client capabilities.
 //
 // Since: 3.16.0
-type SemanticTokenModifiers string
+type SemanticTokenModifier string
 
 const (
-	SemanticTokenModifiersdeclaration    SemanticTokenModifiers = "declaration"
-	SemanticTokenModifiersdefinition     SemanticTokenModifiers = "definition"
-	SemanticTokenModifiersreadonly       SemanticTokenModifiers = "readonly"
-	SemanticTokenModifiersstatic         SemanticTokenModifiers = "static"
-	SemanticTokenModifiersdeprecated     SemanticTokenModifiers = "deprecated"
-	SemanticTokenModifiersabstract       SemanticTokenModifiers = "abstract"
-	SemanticTokenModifiersasync          SemanticTokenModifiers = "async"
-	SemanticTokenModifiersmodification   SemanticTokenModifiers = "modification"
-	SemanticTokenModifiersdocumentation  SemanticTokenModifiers = "documentation"
-	SemanticTokenModifiersdefaultLibrary SemanticTokenModifiers = "defaultLibrary"
+	SemanticTokenModifierDeclaration    SemanticTokenModifier = "declaration"
+	SemanticTokenModifierDefinition     SemanticTokenModifier = "definition"
+	SemanticTokenModifierReadonly       SemanticTokenModifier = "readonly"
+	SemanticTokenModifierStatic         SemanticTokenModifier = "static"
+	SemanticTokenModifierDeprecated     SemanticTokenModifier = "deprecated"
+	SemanticTokenModifierAbstract       SemanticTokenModifier = "abstract"
+	SemanticTokenModifierAsync          SemanticTokenModifier = "async"
+	SemanticTokenModifierModification   SemanticTokenModifier = "modification"
+	SemanticTokenModifierDocumentation  SemanticTokenModifier = "documentation"
+	SemanticTokenModifierDefaultLibrary SemanticTokenModifier = "defaultLibrary"
 )
 
 // The document diagnostic report kinds.
@@ -21813,59 +22140,31 @@ const (
 )
 
 // Predefined error codes.
-type ErrorCodes int32
+type ErrorCode int32
 
 const (
-	ErrorCodesParseError     ErrorCodes = -32700
-	ErrorCodesInvalidRequest ErrorCodes = -32600
-	ErrorCodesMethodNotFound ErrorCodes = -32601
-	ErrorCodesInvalidParams  ErrorCodes = -32602
-	ErrorCodesInternalError  ErrorCodes = -32603
+	ErrorCodeParseError     ErrorCode = -32700
+	ErrorCodeInvalidRequest ErrorCode = -32600
+	ErrorCodeMethodNotFound ErrorCode = -32601
+	ErrorCodeInvalidParams  ErrorCode = -32602
+	ErrorCodeInternalError  ErrorCode = -32603
 	// Error code indicating that a server received a notification or
 	// request before the server has received the `initialize` request.
-	ErrorCodesServerNotInitialized ErrorCodes = -32002
-	ErrorCodesUnknownErrorCode     ErrorCodes = -32001
-)
-
-const _ErrorCodes_name = "ParseErrorInternalErrorInvalidParamsMethodNotFoundInvalidRequestServerNotInitializedUnknownErrorCode"
-
-var (
-	_ErrorCodes_index_0 = [...]uint16{0, 10}
-	_ErrorCodes_index_1 = [...]uint16{0, 13, 26, 40, 54}
-	_ErrorCodes_index_2 = [...]uint16{0, 20, 36}
-)
-
-func (e ErrorCodes) String() string {
-	switch {
-	case e == -32700:
-		return _ErrorCodes_name[0:10]
-	case -32603 <= e && e <= -32600:
-		i := int(e) - -32603
-		return _ErrorCodes_name[10+_ErrorCodes_index_1[i] : 10+_ErrorCodes_index_1[i+1]]
-	case -32002 <= e && e <= -32001:
-		i := int(e) - -32002
-		return _ErrorCodes_name[64+_ErrorCodes_index_2[i] : 64+_ErrorCodes_index_2[i+1]]
-	default:
-		return fmt.Sprintf("ErrorCodes(%d)", e)
-	}
-}
-
-type LSPErrorCodes int32
-
-const (
+	ErrorCodeServerNotInitialized ErrorCode = -32002
+	ErrorCodeUnknownErrorCode     ErrorCode = -32001
 	// A request failed but it was syntactically correct, e.g the
 	// method name was known and the parameters were valid. The error
 	// message should contain human readable information about why
 	// the request failed.
 	//
 	// Since: 3.17.0
-	LSPErrorCodesRequestFailed LSPErrorCodes = -32803
+	ErrorCodeRequestFailed ErrorCode = -32803
 	// The server cancelled the request. This error code should
 	// only be used for requests that explicitly support being
 	// server cancellable.
 	//
 	// Since: 3.17.0
-	LSPErrorCodesServerCancelled LSPErrorCodes = -32802
+	ErrorCodeServerCancelled ErrorCode = -32802
 	// The server detected that the content of a document got
 	// modified outside normal conditions. A server should
 	// NOT send this error code if it detects a content change
@@ -21874,22 +22173,41 @@ const (
 	//
 	// If a client decides that a result is not of any use anymore
 	// the client should cancel the request.
-	LSPErrorCodesContentModified LSPErrorCodes = -32801
+	ErrorCodeContentModified ErrorCode = -32801
 	// The client has canceled a request and a server has detected
 	// the cancel.
-	LSPErrorCodesRequestCancelled LSPErrorCodes = -32800
+	ErrorCodeRequestCancelled ErrorCode = -32800
 )
 
-const _LSPErrorCodes_name = "RequestFailedServerCancelledContentModifiedRequestCancelled"
+const _ErrorCode_name = "RequestFailedServerCancelledContentModifiedRequestCancelledParseErrorInternalErrorInvalidParamsMethodNotFoundInvalidRequestServerNotInitializedUnknownErrorCode"
 
-var _LSPErrorCodes_index = [...]uint16{0, 13, 28, 43, 59}
+var (
+	_ErrorCode_index_0 = [...]uint16{0, 13, 28, 43, 59}
+	_ErrorCode_index_1 = [...]uint16{0, 10}
+	_ErrorCode_index_2 = [...]uint16{0, 13, 26, 40, 54}
+	_ErrorCode_index_3 = [...]uint16{0, 20, 36}
+)
 
-func (e LSPErrorCodes) String() string {
-	i := int(e) - -32803
-	if i < 0 || i >= len(_LSPErrorCodes_index)-1 {
-		return fmt.Sprintf("LSPErrorCodes(%d)", e)
+func (e ErrorCode) String() string {
+	switch {
+	case -32803 <= e && e <= -32800:
+		i := int(e) - -32803
+		return _ErrorCode_name[0+_ErrorCode_index_0[i] : 0+_ErrorCode_index_0[i+1]]
+	case e == -32700:
+		return _ErrorCode_name[59:69]
+	case -32603 <= e && e <= -32600:
+		i := int(e) - -32603
+		return _ErrorCode_name[69+_ErrorCode_index_2[i] : 69+_ErrorCode_index_2[i+1]]
+	case -32002 <= e && e <= -32001:
+		i := int(e) - -32002
+		return _ErrorCode_name[123+_ErrorCode_index_3[i] : 123+_ErrorCode_index_3[i+1]]
+	default:
+		return fmt.Sprintf("ErrorCode(%d)", e)
 	}
-	return _LSPErrorCodes_name[_LSPErrorCodes_index[i]:_LSPErrorCodes_index[i+1]]
+}
+
+func (e ErrorCode) Error() string {
+	return e.String()
 }
 
 // A set of predefined range kinds.
@@ -21977,15 +22295,15 @@ type UniquenessLevel string
 
 const (
 	// The moniker is only unique inside a document
-	UniquenessLeveldocument UniquenessLevel = "document"
+	UniquenessLevelDocument UniquenessLevel = "document"
 	// The moniker is unique inside a project for which a dump got created
-	UniquenessLevelproject UniquenessLevel = "project"
+	UniquenessLevelProject UniquenessLevel = "project"
 	// The moniker is unique inside the group to which a project belongs
-	UniquenessLevelgroup UniquenessLevel = "group"
+	UniquenessLevelGroup UniquenessLevel = "group"
 	// The moniker is unique inside the moniker scheme.
-	UniquenessLevelscheme UniquenessLevel = "scheme"
+	UniquenessLevelScheme UniquenessLevel = "scheme"
 	// The moniker is globally unique
-	UniquenessLevelglobal UniquenessLevel = "global"
+	UniquenessLevelGlobal UniquenessLevel = "global"
 )
 
 // The moniker kind.
@@ -21995,12 +22313,12 @@ type MonikerKind string
 
 const (
 	// The moniker represent a symbol that is imported into a project
-	MonikerKindimport MonikerKind = "import"
+	MonikerKindImport MonikerKind = "import"
 	// The moniker represents a symbol that is exported from a project
-	MonikerKindexport MonikerKind = "export"
+	MonikerKindExport MonikerKind = "export"
 	// The moniker represents a symbol that is local to a project (e.g. a local
 	// variable of a function, a class not visible outside the project, ...)
-	MonikerKindlocal MonikerKind = "local"
+	MonikerKindLocal MonikerKind = "local"
 )
 
 // Inlay hint kinds.
@@ -22220,7 +22538,7 @@ const (
 	// inserted using the indentation defined in the string value.
 	// The client will not apply any kind of adjustments to the
 	// string.
-	InsertTextModeasIs InsertTextMode = 1
+	InsertTextModeAsIs InsertTextMode = 1
 	// The editor adjusts leading whitespace of new lines so that
 	// they match the indentation up to the cursor of the line for
 	// which the item is accepted.
@@ -22228,7 +22546,7 @@ const (
 	// Consider a line like this: <2tabs><cursor><3tabs>foo. Accepting a
 	// multi line completion item is indented using 2 tabs and all
 	// following lines inserted will be indented using 2 tabs as well.
-	InsertTextModeadjustIndentation InsertTextMode = 2
+	InsertTextModeAdjustIndentation InsertTextMode = 2
 )
 
 const _InsertTextMode_name = "asIsadjustIndentation"
@@ -22742,9 +23060,9 @@ type FileOperationPatternKind string
 
 const (
 	// The pattern matches a file only.
-	FileOperationPatternKindfile FileOperationPatternKind = "file"
+	FileOperationPatternKindFile FileOperationPatternKind = "file"
 	// The pattern matches a folder only.
-	FileOperationPatternKindfolder FileOperationPatternKind = "folder"
+	FileOperationPatternKindFolder FileOperationPatternKind = "folder"
 )
 
 // A notebook cell kind.
@@ -22825,6 +23143,95 @@ type TokenFormat string
 const (
 	TokenFormatRelative TokenFormat = "relative"
 )
+
+type CodeLensKind string
+
+const (
+	CodeLensKindReferences      CodeLensKind = "references"
+	CodeLensKindImplementations CodeLensKind = "implementations"
+)
+
+type AutoImportFixKind int32
+
+const (
+	// Augment an existing namespace import.
+	AutoImportFixKindUseNamespace AutoImportFixKind = 0
+	// Add a JSDoc-only type import.
+	AutoImportFixKindJsdocTypeImport AutoImportFixKind = 1
+	// Insert into an existing import declaration.
+	AutoImportFixKindAddToExisting AutoImportFixKind = 2
+	// Create a fresh import statement.
+	AutoImportFixKindAddNew AutoImportFixKind = 3
+	// Promote a type-only import when necessary.
+	AutoImportFixKindPromoteTypeOnly AutoImportFixKind = 4
+)
+
+const _AutoImportFixKind_name = "UseNamespaceJsdocTypeImportAddToExistingAddNewPromoteTypeOnly"
+
+var _AutoImportFixKind_index = [...]uint16{0, 12, 27, 40, 46, 61}
+
+func (e AutoImportFixKind) String() string {
+	i := int(e) - 0
+	if i < 0 || i >= len(_AutoImportFixKind_index)-1 {
+		return fmt.Sprintf("AutoImportFixKind(%d)", e)
+	}
+	return _AutoImportFixKind_name[_AutoImportFixKind_index[i]:_AutoImportFixKind_index[i+1]]
+}
+
+type ImportKind int32
+
+const (
+	// Adds a named import.
+	ImportKindNamed ImportKind = 0
+	// Adds a default import.
+	ImportKindDefault ImportKind = 1
+	// Adds a namespace import.
+	ImportKindNamespace ImportKind = 2
+	// Adds a CommonJS import assignment.
+	ImportKindCommonJS ImportKind = 3
+)
+
+const _ImportKind_name = "NamedDefaultNamespaceCommonJS"
+
+var _ImportKind_index = [...]uint16{0, 5, 12, 21, 29}
+
+func (e ImportKind) String() string {
+	i := int(e) - 0
+	if i < 0 || i >= len(_ImportKind_index)-1 {
+		return fmt.Sprintf("ImportKind(%d)", e)
+	}
+	return _ImportKind_name[_ImportKind_index[i]:_ImportKind_index[i+1]]
+}
+
+type AddAsTypeOnly int32
+
+const (
+	// Import may be marked type-only if needed.
+	AddAsTypeOnlyAllowed AddAsTypeOnly = 1
+	// Import must be marked type-only.
+	AddAsTypeOnlyRequired AddAsTypeOnly = 2
+	// Import cannot be marked type-only.
+	AddAsTypeOnlyNotAllowed AddAsTypeOnly = 4
+)
+
+const _AddAsTypeOnly_name = "AllowedRequiredNotAllowed"
+
+var (
+	_AddAsTypeOnly_index_0 = [...]uint16{0, 7, 15}
+	_AddAsTypeOnly_index_1 = [...]uint16{0, 10}
+)
+
+func (e AddAsTypeOnly) String() string {
+	switch {
+	case 1 <= e && e <= 2:
+		i := int(e) - 1
+		return _AddAsTypeOnly_name[0+_AddAsTypeOnly_index_0[i] : 0+_AddAsTypeOnly_index_0[i+1]]
+	case e == 4:
+		return _AddAsTypeOnly_name[15:25]
+	default:
+		return fmt.Sprintf("AddAsTypeOnly(%d)", e)
+	}
+}
 
 func unmarshalParams(method Method, data []byte) (any, error) {
 	switch method {
@@ -22966,6 +23373,18 @@ func unmarshalParams(method Method, data []byte) (any, error) {
 		return unmarshalPtrTo[ExecuteCommandParams](data)
 	case MethodWorkspaceApplyEdit:
 		return unmarshalPtrTo[ApplyWorkspaceEditParams](data)
+	case MethodCustomTextDocumentClosingTagCompletion:
+		return unmarshalPtrTo[TextDocumentPositionParams](data)
+	case MethodCustomRunGC:
+		return unmarshalEmpty(data)
+	case MethodCustomSaveHeapProfile:
+		return unmarshalPtrTo[ProfileParams](data)
+	case MethodCustomSaveAllocProfile:
+		return unmarshalPtrTo[ProfileParams](data)
+	case MethodCustomStartCPUProfile:
+		return unmarshalPtrTo[ProfileParams](data)
+	case MethodCustomStopCPUProfile:
+		return unmarshalEmpty(data)
 	case MethodWorkspaceDidChangeWorkspaceFolders:
 		return unmarshalPtrTo[DidChangeWorkspaceFoldersParams](data)
 	case MethodWindowWorkDoneProgressCancel:
@@ -23163,6 +23582,18 @@ func unmarshalResult(method Method, data []byte) (any, error) {
 		return unmarshalValue[ExecuteCommandResponse](data)
 	case MethodWorkspaceApplyEdit:
 		return unmarshalValue[ApplyWorkspaceEditResponse](data)
+	case MethodCustomTextDocumentClosingTagCompletion:
+		return unmarshalValue[CustomClosingTagCompletionResponse](data)
+	case MethodCustomRunGC:
+		return unmarshalValue[RunGCResponse](data)
+	case MethodCustomSaveHeapProfile:
+		return unmarshalValue[SaveHeapProfileResponse](data)
+	case MethodCustomSaveAllocProfile:
+		return unmarshalValue[SaveAllocProfileResponse](data)
+	case MethodCustomStartCPUProfile:
+		return unmarshalValue[StartCPUProfileResponse](data)
+	case MethodCustomStopCPUProfile:
+		return unmarshalValue[StopCPUProfileResponse](data)
 	default:
 		return unmarshalAny(data)
 	}
@@ -23467,6 +23898,18 @@ const (
 	MethodWorkspaceExecuteCommand Method = "workspace/executeCommand"
 	// A request sent from the server to the client to modified certain resources.
 	MethodWorkspaceApplyEdit Method = "workspace/applyEdit"
+	// Request to get the closing tag completion at a given position.
+	MethodCustomTextDocumentClosingTagCompletion Method = "custom/textDocument/closingTagCompletion"
+	// Triggers garbage collection in the language server.
+	MethodCustomRunGC Method = "custom/runGC"
+	// Saves a heap profile to the specified directory.
+	MethodCustomSaveHeapProfile Method = "custom/saveHeapProfile"
+	// Saves an allocation profile to the specified directory.
+	MethodCustomSaveAllocProfile Method = "custom/saveAllocProfile"
+	// Starts CPU profiling, writing to the specified directory when stopped.
+	MethodCustomStartCPUProfile Method = "custom/startCPUProfile"
+	// Stops CPU profiling and saves the profile.
+	MethodCustomStopCPUProfile Method = "custom/stopCPUProfile"
 	// The `workspace/didChangeWorkspaceFolders` notification is sent from the client to the server when the workspace
 	// folder configuration changes.
 	MethodWorkspaceDidChangeWorkspaceFolders Method = "workspace/didChangeWorkspaceFolders"
@@ -23974,6 +24417,42 @@ type ApplyWorkspaceEditResponse = *ApplyWorkspaceEditResult
 
 // Type mapping info for `workspace/applyEdit`
 var WorkspaceApplyEditInfo = RequestInfo[*ApplyWorkspaceEditParams, ApplyWorkspaceEditResponse]{Method: MethodWorkspaceApplyEdit}
+
+// Response type for `custom/textDocument/closingTagCompletion`
+type CustomClosingTagCompletionResponse = CustomClosingTagCompletionOrNull
+
+// Type mapping info for `custom/textDocument/closingTagCompletion`
+var CustomTextDocumentClosingTagCompletionInfo = RequestInfo[*TextDocumentPositionParams, CustomClosingTagCompletionResponse]{Method: MethodCustomTextDocumentClosingTagCompletion}
+
+// Response type for `custom/runGC`
+type RunGCResponse = Null
+
+// Type mapping info for `custom/runGC`
+var CustomRunGCInfo = RequestInfo[any, RunGCResponse]{Method: MethodCustomRunGC}
+
+// Response type for `custom/saveHeapProfile`
+type SaveHeapProfileResponse = *ProfileResult
+
+// Type mapping info for `custom/saveHeapProfile`
+var CustomSaveHeapProfileInfo = RequestInfo[*ProfileParams, SaveHeapProfileResponse]{Method: MethodCustomSaveHeapProfile}
+
+// Response type for `custom/saveAllocProfile`
+type SaveAllocProfileResponse = *ProfileResult
+
+// Type mapping info for `custom/saveAllocProfile`
+var CustomSaveAllocProfileInfo = RequestInfo[*ProfileParams, SaveAllocProfileResponse]{Method: MethodCustomSaveAllocProfile}
+
+// Response type for `custom/startCPUProfile`
+type StartCPUProfileResponse = Null
+
+// Type mapping info for `custom/startCPUProfile`
+var CustomStartCPUProfileInfo = RequestInfo[*ProfileParams, StartCPUProfileResponse]{Method: MethodCustomStartCPUProfile}
+
+// Response type for `custom/stopCPUProfile`
+type StopCPUProfileResponse = *ProfileResult
+
+// Type mapping info for `custom/stopCPUProfile`
+var CustomStopCPUProfileInfo = RequestInfo[any, StopCPUProfileResponse]{Method: MethodCustomStopCPUProfile}
 
 // Type mapping info for `workspace/didChangeWorkspaceFolders`
 var WorkspaceDidChangeWorkspaceFoldersInfo = NotificationInfo[*DidChangeWorkspaceFoldersParams]{Method: MethodWorkspaceDidChangeWorkspaceFolders}
@@ -27011,6 +27490,10 @@ func (o *LocationOrLocationsOrDefinitionLinksOrNull) UnmarshalJSONFrom(dec *json
 	return fmt.Errorf("invalid LocationOrLocationsOrDefinitionLinksOrNull: %s", data)
 }
 
+func (o LocationOrLocationsOrDefinitionLinksOrNull) GetLocations() *[]Location {
+	return o.Locations
+}
+
 type FoldingRangesOrNull struct {
 	FoldingRanges *[]*FoldingRange
 }
@@ -27099,6 +27582,10 @@ func (o *LocationOrLocationsOrDeclarationLinksOrNull) UnmarshalJSONFrom(dec *jso
 		return nil
 	}
 	return fmt.Errorf("invalid LocationOrLocationsOrDeclarationLinksOrNull: %s", data)
+}
+
+func (o LocationOrLocationsOrDeclarationLinksOrNull) GetLocations() *[]Location {
+	return o.Locations
 }
 
 type SelectionRangesOrNull struct {
@@ -27853,6 +28340,10 @@ func (o *LocationsOrNull) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 	return fmt.Errorf("invalid LocationsOrNull: %s", data)
 }
 
+func (o LocationsOrNull) GetLocations() *[]Location {
+	return o.Locations
+}
+
 type DocumentHighlightsOrNull struct {
 	DocumentHighlights *[]*DocumentHighlight
 }
@@ -28216,6 +28707,42 @@ func (o *LSPAnyOrNull) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 		return nil
 	}
 	return fmt.Errorf("invalid LSPAnyOrNull: %s", data)
+}
+
+type CustomClosingTagCompletionOrNull struct {
+	CustomClosingTagCompletion *CustomClosingTagCompletion
+}
+
+var _ json.MarshalerTo = (*CustomClosingTagCompletionOrNull)(nil)
+
+func (o *CustomClosingTagCompletionOrNull) MarshalJSONTo(enc *jsontext.Encoder) error {
+	assertAtMostOne("more than one element of CustomClosingTagCompletionOrNull is set", o.CustomClosingTagCompletion != nil)
+
+	if o.CustomClosingTagCompletion != nil {
+		return json.MarshalEncode(enc, o.CustomClosingTagCompletion)
+	}
+	return enc.WriteToken(jsontext.Null)
+}
+
+var _ json.UnmarshalerFrom = (*CustomClosingTagCompletionOrNull)(nil)
+
+func (o *CustomClosingTagCompletionOrNull) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+	*o = CustomClosingTagCompletionOrNull{}
+
+	data, err := dec.ReadValue()
+	if err != nil {
+		return err
+	}
+	if string(data) == "null" {
+		return nil
+	}
+
+	var vCustomClosingTagCompletion CustomClosingTagCompletion
+	if err := json.Unmarshal(data, &vCustomClosingTagCompletion); err == nil {
+		o.CustomClosingTagCompletion = &vCustomClosingTagCompletion
+		return nil
+	}
+	return fmt.Errorf("invalid CustomClosingTagCompletionOrNull: %s", data)
 }
 
 type TextDocumentFilterLanguageOrTextDocumentFilterSchemeOrTextDocumentFilterPatternOrNotebookCellTextDocumentFilter struct {
