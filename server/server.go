@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -239,6 +240,7 @@ func ensureVersionSynced(ctx context.Context, version string) error {
 	var wg sync.WaitGroup
 	var downloadErrors int64
 	var errorsMu sync.Mutex
+	var cleanupMu sync.Mutex // Mutex to coordinate disk cleanup across workers
 
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
@@ -246,11 +248,34 @@ func ensureVersionSynced(ctx context.Context, version string) error {
 			defer wg.Done()
 			for key := range keysChan {
 				localPath := filepath.Join(diskCachePath, key)
-				if err := downloadFile(ctx, key, localPath); err != nil {
-					log.Printf("[SYNC] Failed to download %s: %v", key, err)
-					errorsMu.Lock()
-					downloadErrors++
-					errorsMu.Unlock()
+
+				// Retry loop for disk full errors
+				for {
+					err := downloadFile(ctx, key, localPath)
+					if err == nil {
+						break // Success
+					}
+
+					if !isDiskFullError(err) {
+						log.Printf("[SYNC] Failed to download %s: %v", key, err)
+						errorsMu.Lock()
+						downloadErrors++
+						errorsMu.Unlock()
+						break // Non-disk-full error, don't retry
+					}
+
+					// Disk full - try to delete oldest version
+					cleanupMu.Lock()
+					deleted := deleteOldestVersion(version)
+					cleanupMu.Unlock()
+
+					if !deleted {
+						// No more versions to delete, crash
+						log.Fatalf("[FATAL] Disk full and no old versions to delete. Cannot continue.")
+					}
+
+					// Retry download after cleanup
+					log.Printf("[SYNC] Retrying download after cleanup: %s", key)
 				}
 			}
 		}()
@@ -268,6 +293,78 @@ func ensureVersionSynced(ctx context.Context, version string) error {
 		version, len(keys), duration, downloadErrors)
 
 	return nil
+}
+
+type versionInfo struct {
+	modTime time.Time
+	name    string
+}
+
+// getVersionsByModTime returns version directories sorted by modification time (oldest first)
+func getVersionsByModTime(cachePath string) ([]versionInfo, error) {
+	entries, err := os.ReadDir(cachePath)
+	if err != nil {
+		return nil, err
+	}
+
+	var versions []versionInfo
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		versions = append(versions, versionInfo{
+			modTime: info.ModTime(),
+			name:    entry.Name(),
+		})
+	}
+
+	// Sort oldest first
+	sort.Slice(versions, func(i, j int) bool {
+		return versions[i].modTime.Before(versions[j].modTime)
+	})
+
+	return versions, nil
+}
+
+// deleteOldestVersion finds and deletes the oldest version directory (excluding keepVersion)
+// Returns true if a version was deleted, false if none available to delete
+func deleteOldestVersion(keepVersion string) bool {
+	versions, err := getVersionsByModTime(diskCachePath)
+	if err != nil {
+		log.Printf("[CLEANUP] Failed to list versions: %v", err)
+		return false
+	}
+
+	for _, v := range versions {
+		if v.name == keepVersion {
+			continue
+		}
+
+		versionPath := filepath.Join(diskCachePath, v.name)
+		log.Printf("[CLEANUP] Disk full - removing oldest version %s", v.name)
+
+		if err := os.RemoveAll(versionPath); err != nil {
+			log.Printf("[CLEANUP] Failed to remove %s: %v", v.name, err)
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// isDiskFullError checks if an error is a disk full error
+func isDiskFullError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "no space left on device") ||
+		strings.Contains(err.Error(), "disk quota exceeded")
 }
 
 // downloadFile downloads a single file from S3 to local disk
