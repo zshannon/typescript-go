@@ -3,7 +3,7 @@ module github.com/microsoft/typescript-go/cbridge
 go 1.26
 
 require (
-	github.com/evanw/esbuild v0.27.2
+	github.com/evanw/esbuild v0.27.4
 	github.com/microsoft/typescript-go v0.0.0
 )
 
