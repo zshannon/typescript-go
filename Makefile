@@ -190,7 +190,11 @@ bench-prod: bench-gen-fixtures
 		-n "V2 Build: Medium Component" \
 			"curl -s -X POST $(BENCH_PROD_URL)/v2/build -H 'Content-Type: application/json' -d @server/fixtures/v2/build-medium.json > /dev/null" \
 		-n "V2 Build: Multi-File (5 files)" \
-			"curl -s -X POST $(BENCH_PROD_URL)/v2/build -H 'Content-Type: application/json' -d @server/fixtures/v2/build-multifile.json > /dev/null"
+			"curl -s -X POST $(BENCH_PROD_URL)/v2/build -H 'Content-Type: application/json' -d @server/fixtures/v2/build-multifile.json > /dev/null" \
+		-n "V2 Typecheck+Build: Medium Component" \
+			"curl -s -X POST '$(BENCH_PROD_URL)/v2/build?validate_types=true' -H 'Content-Type: application/json' -d @server/fixtures/v2/build-medium.json > /dev/null" \
+		-n "V2 Typecheck+Build: Multi-File (5 files)" \
+			"curl -s -X POST '$(BENCH_PROD_URL)/v2/build?validate_types=true' -H 'Content-Type: application/json' -d @server/fixtures/v2/build-multifile.json > /dev/null"
 	@echo ""
 	@echo "$(GREEN)Results saved to:$(NC)"
 	@echo "  $(BENCH_DIR)/$(BENCH_TIMESTAMP)-prod.md"

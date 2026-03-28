@@ -105,6 +105,41 @@ func BenchmarkV2Build(b *testing.B) {
 	}
 }
 
+// Typecheck + Build — calls typecheckTypeScriptV2 then buildTypeScriptV2 (the validate_types=true path)
+func BenchmarkV2TypecheckAndBuild(b *testing.B) {
+	setupBenchServer(b)
+
+	cases := []struct {
+		name       string
+		files      map[string]string
+		entryPoint string
+	}{
+		{"Trivial", singleFileFixture(fixtureTrivial), "/index.tsx"},
+		{"SmallComponent", singleFileFixture(fixtureSmallComponent), "/index.tsx"},
+		{"MediumComponent", singleFileFixture(fixtureMediumComponent), "/index.tsx"},
+		{"MultiFile", fixtureMultiFile, "/index.tsx"},
+	}
+
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			var lastOutputBytes int
+			for i := 0; i < b.N; i++ {
+				tcResp := typecheckTypeScriptV2(tc.files, []string{tc.entryPoint}, benchVersion)
+				if len(tcResp.Errors) > 0 && tcResp.Errors[0].Message == "failed to sync version" {
+					b.Fatalf("Unexpected sync error: %s", tcResp.Errors[0].Message)
+				}
+				buildResp := buildTypeScriptV2(tc.files, tc.entryPoint, benchVersion)
+				if len(buildResp.Errors) > 0 && buildResp.Errors[0].Message == "failed to sync version" {
+					b.Fatalf("Unexpected sync error: %s", buildResp.Errors[0].Message)
+				}
+				lastOutputBytes = len(buildResp.Code)
+			}
+			b.ReportMetric(float64(lastOutputBytes), "output_bytes/op")
+		})
+	}
+}
+
 // Layer 3: HTTP Handler — full request path through typecheckV2/buildV2 handlers
 func BenchmarkV2HTTP(b *testing.B) {
 	setupBenchServer(b)
@@ -144,6 +179,8 @@ func BenchmarkV2HTTP(b *testing.B) {
 		{"Typecheck/MultiFile", "POST", "/v2/typecheck", typecheckV2, multiFileTypecheckBody},
 		{"Build/MediumComponent", "POST", "/v2/build", buildV2, mediumBuildBody},
 		{"Build/MultiFile", "POST", "/v2/build", buildV2, multiFileBuildBody},
+		{"TypecheckAndBuild/MediumComponent", "POST", "/v2/build?validate_types=true", buildV2, mediumBuildBody},
+		{"TypecheckAndBuild/MultiFile", "POST", "/v2/build?validate_types=true", buildV2, multiFileBuildBody},
 	}
 
 	for _, tc := range cases {
