@@ -12,7 +12,7 @@ YELLOW = \033[1;33m
 BLUE = \033[0;34m
 NC = \033[0m # No Color
 
-.PHONY: all build build-bridge sign-bridge setup test clean clean-bridge help bench bench-local bench-prod bench-gen-fixtures
+.PHONY: all build build-bridge sign-bridge setup test clean clean-bridge help bench bench-local bench-prod bench-test bench-gen-fixtures
 
 # Default target
 all: build
@@ -196,6 +196,39 @@ bench-prod: bench-gen-fixtures
 	@echo "  $(BENCH_DIR)/$(BENCH_TIMESTAMP)-prod.md"
 	@echo "  $(BENCH_DIR)/$(BENCH_TIMESTAMP)-prod.json"
 
+# Quick smoke test: verify v2 endpoints work against production
+bench-test: bench-gen-fixtures
+	@echo "$(BLUE)=== V2 Endpoint Smoke Test ===$(NC)"
+	@echo "Endpoint: $(BENCH_PROD_URL)"
+	@echo ""
+	@PASS=0; FAIL=0; \
+	curl -sf $(BENCH_PROD_URL)/health > /dev/null 2>&1 || { echo "$(RED)Server unreachable$(NC)"; exit 1; }; \
+	echo "$(GREEN)✓$(NC) Health check"; PASS=$$((PASS+1)); \
+	\
+	for f in server/fixtures/v2/typecheck-*.json; do \
+		name=$$(basename "$$f" .json); \
+		resp=$$(curl -sf -X POST $(BENCH_PROD_URL)/v2/typecheck -H 'Content-Type: application/json' -d @"$$f" 2>&1); \
+		if [ $$? -eq 0 ] && echo "$$resp" | grep -qE '"pass"|"errors"'; then \
+			echo "$(GREEN)✓$(NC) $$name"; PASS=$$((PASS+1)); \
+		else \
+			echo "$(RED)✗$(NC) $$name: $$resp"; FAIL=$$((FAIL+1)); \
+		fi; \
+	done; \
+	\
+	for f in server/fixtures/v2/build-*.json; do \
+		name=$$(basename "$$f" .json); \
+		resp=$$(curl -sf -X POST $(BENCH_PROD_URL)/v2/build -H 'Content-Type: application/json' -d @"$$f" 2>&1); \
+		if [ $$? -eq 0 ] && echo "$$resp" | grep -q '"code"'; then \
+			echo "$(GREEN)✓$(NC) $$name"; PASS=$$((PASS+1)); \
+		else \
+			echo "$(RED)✗$(NC) $$name: $${resp:0:200}"; FAIL=$$((FAIL+1)); \
+		fi; \
+	done; \
+	\
+	echo ""; \
+	echo "Passed: $$PASS  Failed: $$FAIL"; \
+	if [ $$FAIL -gt 0 ]; then exit 1; fi
+
 # Run both local and production benchmarks
 bench: bench-local bench-prod
 
@@ -222,6 +255,7 @@ help:
 	@echo "  bench              Run local + production benchmarks"
 	@echo "  bench-local        Local Go benchmarks (no network)"
 	@echo "  bench-prod         Production benchmarks via hyperfine"
+	@echo "  bench-test         Smoke test v2 endpoints against prod"
 	@echo "  bench-gen-fixtures Generate JSON fixture files"
 	@echo ""
 	@echo "$(BLUE)Maintenance:$(NC)"
