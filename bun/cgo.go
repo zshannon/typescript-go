@@ -96,7 +96,7 @@ func (fs *InMemoryFS) ReadFile(path string) (string, bool) {
 	return content, ok
 }
 
-func (fs *InMemoryFS) WriteFile(path string, data string, _ bool) error {
+func (fs *InMemoryFS) WriteFile(path string, data string) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	fs.files[path] = data
@@ -249,8 +249,8 @@ func (h *HybridFS) ReadFile(path string) (string, bool) {
 	return "", false
 }
 
-func (h *HybridFS) WriteFile(path string, data string, bom bool) error {
-	return h.memFS.WriteFile(path, data, bom)
+func (h *HybridFS) WriteFile(path string, data string) error {
+	return h.memFS.WriteFile(path, data)
 }
 
 func (h *HybridFS) Remove(path string) error {
@@ -458,7 +458,6 @@ func typeCheckCode(code string, fileName string, options *core.CompilerOptions, 
 	program := compiler.NewProgram(compiler.ProgramOptions{
 		Config:           config,
 		Host:             host,
-		JSDocParsingMode: ast.JSDocParsingModeParseForTypeErrors,
 	})
 
 	ctx := context.Background()
@@ -786,7 +785,6 @@ func tsgo_typecheck_multiple(filesJSON *C.char, optionsJSON *C.char, projectDir 
 	program := compiler.NewProgram(compiler.ProgramOptions{
 		Config:           config,
 		Host:             host,
-		JSDocParsingMode: ast.JSDocParsingModeParseForTypeErrors,
 	})
 
 	ctx := context.Background()
