@@ -355,14 +355,14 @@ func (c *callbackVFS) ReadFile(path string) (contents string, ok bool) {
 	return contents, contents != ""
 }
 
-func (c *callbackVFS) WriteFile(path string, data string, writeByteOrderMark bool) error {
+func (c *callbackVFS) WriteFile(path string, data string) error {
 	if c.resolver.WriteFile(path, data) {
 		c.mu.Lock()
 		c.writtenFiles[path] = data
 		c.mu.Unlock()
 		return nil
 	}
-	return c.osvfs.WriteFile(path, data, writeByteOrderMark)
+	return c.osvfs.WriteFile(path, data)
 }
 
 func (c *callbackVFS) Remove(path string) error {
@@ -628,9 +628,8 @@ func buildWithConfig(projectPath string, printErrors bool, configFile string, re
 
 	host := compiler.NewCachedFSCompilerHost(sys.GetCurrentDirectory(), sys.FS(), sys.DefaultLibraryPath(), cacheAdapter, nil)
 	program := compiler.NewProgram(compiler.ProgramOptions{
-		Config:           configParseResult,
-		Host:             host,
-		JSDocParsingMode: ast.JSDocParsingModeParseForTypeErrors,
+		Config: configParseResult,
+		Host:   host,
 	})
 
 	ctx := context.Background()

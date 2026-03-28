@@ -64,11 +64,13 @@ func ProbablyUsesSemicolons(file *ast.SourceFile) bool {
 		return true
 	}
 
-	// If even 2/5 places have a semicolon, the user probably wants semicolons
+	// When both kinds of observation exist, treat the file as using semicolons when the
+	// ratio withSemicolon/withoutSemicolon exceeds 1/nStatementsToObserve (real arithmetic),
+	// implemented as an integer inequality to avoid truncation.
 	if withoutSemicolon == 0 {
 		return true
 	}
-	return withSemicolon/withoutSemicolon > 1/nStatementsToObserve
+	return withSemicolon*nStatementsToObserve > withoutSemicolon
 }
 
 func ShouldUseUriStyleNodeCoreModules(file *ast.SourceFile, program *compiler.Program) core.Tristate {
@@ -109,11 +111,11 @@ func GetQuotePreference(sourceFile *ast.SourceFile, preferences *UserPreferences
 	return QuotePreferenceDouble
 }
 
-func ModuleSymbolToValidIdentifier(moduleSymbol *ast.Symbol, target core.ScriptTarget, forceCapitalize bool) string {
-	return ModuleSpecifierToValidIdentifier(stringutil.StripQuotes(moduleSymbol.Name), target, forceCapitalize)
+func ModuleSymbolToValidIdentifier(moduleSymbol *ast.Symbol, forceCapitalize bool) string {
+	return ModuleSpecifierToValidIdentifier(stringutil.StripQuotes(moduleSymbol.Name), forceCapitalize)
 }
 
-func ModuleSpecifierToValidIdentifier(moduleSpecifier string, target core.ScriptTarget, forceCapitalize bool) string {
+func ModuleSpecifierToValidIdentifier(moduleSpecifier string, forceCapitalize bool) string {
 	baseName := tspath.GetBaseFileName(strings.TrimSuffix(tspath.RemoveFileExtension(moduleSpecifier), "/index"))
 	res := []rune{}
 	lastCharWasValid := true

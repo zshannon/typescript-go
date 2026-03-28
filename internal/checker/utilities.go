@@ -10,6 +10,7 @@ import (
 	"github.com/microsoft/typescript-go/internal/ast"
 	"github.com/microsoft/typescript-go/internal/binder"
 	"github.com/microsoft/typescript-go/internal/core"
+	"github.com/microsoft/typescript-go/internal/debug"
 	"github.com/microsoft/typescript-go/internal/diagnostics"
 	"github.com/microsoft/typescript-go/internal/jsnum"
 	"github.com/microsoft/typescript-go/internal/module"
@@ -42,10 +43,6 @@ func findInMap[K comparable, V any](m map[K]V, predicate func(V) bool) V {
 		}
 	}
 	return *new(V)
-}
-
-func isCompoundAssignment(token ast.Kind) bool {
-	return token >= ast.KindFirstCompoundAssignment && token <= ast.KindLastCompoundAssignment
 }
 
 func tokenIsIdentifierOrKeyword(token ast.Kind) bool {
@@ -280,6 +277,33 @@ func isOptionalDeclaration(declaration *ast.Node) bool {
 	return ast.HasQuestionToken(declaration)
 }
 
+func (c *Checker) isOptionalParameter(node *ast.Node) bool {
+	// !!! TODO: JSDoc support
+	if ast.IsParameter(node) && node.QuestionToken() != nil {
+		return true
+	}
+	if !ast.IsParameter(node) {
+		return false
+	}
+	if node.Initializer() != nil {
+		signature := c.getSignatureFromDeclaration(node.Parent)
+		parameterIndex := core.FindIndex(node.Parent.Parameters(), func(p *ast.ParameterDeclarationNode) bool { return p == node })
+		debug.Assert(parameterIndex >= 0)
+		// Only consider syntactic or instantiated parameters as optional, not `void` parameters as this function is used
+		// in grammar checks and checking for `void` too early results in parameter types widening too early
+		// and causes some noImplicitAny errors to be lost.
+		return parameterIndex >= c.getMinArgumentCountEx(signature, MinArgumentCountFlagsStrongArityForUntypedJS|MinArgumentCountFlagsVoidIsNonOptional)
+	}
+	iife := ast.GetImmediatelyInvokedFunctionExpression(node.Parent)
+	if iife != nil {
+		parameterIndex := core.FindIndex(node.Parent.Parameters(), func(p *ast.ParameterDeclarationNode) bool { return p == node })
+		return node.Type() == nil &&
+			node.AsParameterDeclaration().DotDotDotToken == nil &&
+			parameterIndex >= len(c.getEffectiveCallArguments(iife))
+	}
+	return false
+}
+
 func isEmptyArrayLiteral(expression *ast.Node) bool {
 	return ast.IsArrayLiteralExpression(expression) && len(expression.Elements()) == 0
 }
@@ -491,7 +515,7 @@ func CompareTypes(t1, t2 *Type) int {
 		if c := CompareTypes(t1.AsIndexType().target, t2.AsIndexType().target); c != 0 {
 			return c
 		}
-		if c := int(t1.AsIndexType().flags) - int(t2.AsIndexType().flags); c != 0 {
+		if c := int(t1.AsIndexType().indexFlags) - int(t2.AsIndexType().indexFlags); c != 0 {
 			return c
 		}
 	case t1.flags&TypeFlagsIndexedAccess != 0:
@@ -953,6 +977,11 @@ func isThisTypeParameter(t *Type) bool {
 }
 
 func isClassInstanceProperty(node *ast.Node) bool {
+	if ast.IsInJSFile(node) && ast.IsExpandoPropertyDeclaration(node) {
+		left := node.AsBinaryExpression().Left
+		return (!ast.IsBindableStaticAccessExpression(left, false /*excludeThisKeyword*/) || !ast.IsPrototypeAccess(left.Expression())) &&
+			!ast.IsBindableStaticNameExpression(left, true /*excludeThisKeyword*/)
+	}
 	return node.Parent != nil && ast.IsClassLike(node.Parent) && ast.IsPropertyDeclaration(node) && !ast.HasAccessorModifier(node)
 }
 
@@ -1027,15 +1056,6 @@ func isSuperCall(n *ast.Node) bool {
 	return ast.IsCallExpression(n) && n.Expression().Kind == ast.KindSuperKeyword
 }
 
-/**
- * Determines whether a node is a property or element access expression for `super`.
- *
- * @internal
- */
-func isSuperProperty(node *ast.Node) bool {
-	return ast.IsAccessExpression(node) && node.Expression().Kind == ast.KindSuperKeyword
-}
-
 func getMembersOfDeclaration(node *ast.Node) []*ast.Node {
 	switch node.Kind {
 	case ast.KindInterfaceDeclaration, ast.KindClassDeclaration, ast.KindClassExpression, ast.KindTypeLiteral:
@@ -1044,42 +1064,6 @@ func getMembersOfDeclaration(node *ast.Node) []*ast.Node {
 		return node.Properties()
 	}
 	return nil
-}
-
-type FunctionFlags uint32
-
-const (
-	FunctionFlagsNormal         FunctionFlags = 0
-	FunctionFlagsGenerator      FunctionFlags = 1 << 0
-	FunctionFlagsAsync          FunctionFlags = 1 << 1
-	FunctionFlagsInvalid        FunctionFlags = 1 << 2
-	FunctionFlagsAsyncGenerator FunctionFlags = FunctionFlagsAsync | FunctionFlagsGenerator
-)
-
-func getFunctionFlags(node *ast.Node) FunctionFlags {
-	if node == nil {
-		return FunctionFlagsInvalid
-	}
-	data := node.BodyData()
-	if data == nil {
-		return FunctionFlagsInvalid
-	}
-	flags := FunctionFlagsNormal
-	switch node.Kind {
-	case ast.KindFunctionDeclaration, ast.KindFunctionExpression, ast.KindMethodDeclaration:
-		if data.AsteriskToken != nil {
-			flags |= FunctionFlagsGenerator
-		}
-		fallthrough
-	case ast.KindArrowFunction:
-		if ast.HasSyntacticModifier(node, ast.ModifierFlagsAsync) {
-			flags |= FunctionFlagsAsync
-		}
-	}
-	if data.Body == nil {
-		flags |= FunctionFlagsInvalid
-	}
-	return flags
 }
 
 func isInRightSideOfImportOrExportAssignment(node *ast.EntityName) bool {
@@ -1195,16 +1179,19 @@ func getSuperContainer(node *ast.Node, stopOnFunctions bool) *ast.Node {
 	}
 }
 
-func forEachYieldExpression(body *ast.Node, visitor func(expr *ast.Node)) {
+func forEachYieldExpression(body *ast.Node, visitor func(expr *ast.Node) bool) bool {
 	var traverse func(*ast.Node) bool
 	traverse = func(node *ast.Node) bool {
 		switch node.Kind {
 		case ast.KindYieldExpression:
-			visitor(node)
-			operand := node.Expression()
-			if operand != nil {
-				traverse(operand)
+			if visitor(node) {
+				return true
 			}
+			operand := node.Expression()
+			if operand == nil {
+				return false
+			}
+			return traverse(operand)
 		case ast.KindEnumDeclaration, ast.KindInterfaceDeclaration, ast.KindModuleDeclaration, ast.KindTypeAliasDeclaration:
 			// These are not allowed inside a generator now, but eventually they may be allowed
 			// as local types. Regardless, skip them to avoid the work.
@@ -1213,17 +1200,17 @@ func forEachYieldExpression(body *ast.Node, visitor func(expr *ast.Node)) {
 				if node.Name() != nil && ast.IsComputedPropertyName(node.Name()) {
 					// Note that we will not include methods/accessors of a class because they would require
 					// first descending into the class. This is by design.
-					traverse(node.Name().Expression())
+					return traverse(node.Name().Expression())
 				}
 			} else if !ast.IsPartOfTypeNode(node) {
 				// This is the general case, which should include mostly expressions and statements.
 				// Also includes NodeArrays.
-				node.ForEachChild(traverse)
+				return node.ForEachChild(traverse)
 			}
 		}
 		return false
 	}
-	traverse(body)
+	return traverse(body)
 }
 
 func getEnclosingContainer(node *ast.Node) *ast.Node {
@@ -1257,14 +1244,6 @@ func minAndMax[T any](slice []T, getValue func(value T) int) (int, int) {
 		}
 	}
 	return minValue, maxValue
-}
-
-func getNonModifierTokenRangeOfNode(node *ast.Node) core.TextRange {
-	pos := node.Pos()
-	if last := ast.FindLastVisibleNode(node.ModifierNodes()); last != nil {
-		pos = last.Pos()
-	}
-	return scanner.GetRangeOfTokenAtPosition(ast.GetSourceFileOfNode(node), pos)
 }
 
 type FeatureMapEntry struct {
@@ -1344,6 +1323,9 @@ var getFeatureMap = sync.OnceValue(func() map[string][]FeatureMapEntry {
 			{lib: "es2018", props: []string{"dotAll"}},
 			{lib: "es2024", props: []string{"unicodeSets"}},
 		},
+		"RegExpConstructor": {
+			{lib: "es2025", props: []string{"escape"}},
+		},
 		"Reflect": {
 			{lib: "es2015", props: []string{"apply", "construct", "defineProperty", "deleteProperty", "get", "getOwnPropertyDescriptor", "getPrototypeOf", "has", "isExtensible", "ownKeys", "preventExtensions", "set", "setPrototypeOf"}},
 		},
@@ -1363,16 +1345,21 @@ var getFeatureMap = sync.OnceValue(func() map[string][]FeatureMapEntry {
 		},
 		"Math": {
 			{lib: "es2015", props: []string{"clz32", "imul", "sign", "log10", "log2", "log1p", "expm1", "cosh", "sinh", "tanh", "acosh", "asinh", "atanh", "hypot", "trunc", "fround", "cbrt"}},
+			{lib: "es2025", props: []string{"f16round"}},
 		},
 		"Map": {
 			{lib: "es2015", props: []string{"entries", "keys", "values"}},
+			{lib: "esnext", props: []string{
+				"getOrInsert",
+				"getOrInsertComputed",
+			}},
 		},
 		"MapConstructor": {
 			{lib: "es2024", props: []string{"groupBy"}},
 		},
 		"Set": {
 			{lib: "es2015", props: []string{"entries", "keys", "values"}},
-			{lib: "esnext", props: []string{
+			{lib: "es2025", props: []string{
 				"union",
 				"intersection",
 				"difference",
@@ -1387,16 +1374,21 @@ var getFeatureMap = sync.OnceValue(func() map[string][]FeatureMapEntry {
 			{lib: "es2020", props: []string{"allSettled"}},
 			{lib: "es2021", props: []string{"any"}},
 			{lib: "es2024", props: []string{"withResolvers"}},
+			{lib: "es2025", props: []string{"try"}},
 		},
 		"Symbol": {
 			{lib: "es2015", props: []string{"for", "keyFor"}},
 			{lib: "es2019", props: []string{"description"}},
 		},
 		"WeakMap": {
-			{lib: "es2015", props: []string{"entries", "keys", "values"}},
+			{lib: "es2015", props: []string{}},
+			{lib: "esnext", props: []string{
+				"getOrInsert",
+				"getOrInsertComputed",
+			}},
 		},
 		"WeakSet": {
-			{lib: "es2015", props: []string{"entries", "keys", "values"}},
+			{lib: "es2015", props: []string{}},
 		},
 		"String": {
 			{lib: "es2015", props: []string{"codePointAt", "includes", "endsWith", "normalize", "repeat", "startsWith", "anchor", "big", "blink", "bold", "fixed", "fontcolor", "fontsize", "italics", "link", "small", "strike", "sub", "sup"}},
@@ -1425,6 +1417,10 @@ var getFeatureMap = sync.OnceValue(func() map[string][]FeatureMapEntry {
 		},
 		"Intl": {
 			{lib: "es2018", props: []string{"PluralRules"}},
+			{lib: "es2020", props: []string{"RelativeTimeFormat", "Locale", "DisplayNames"}},
+			{lib: "es2021", props: []string{"ListFormat", "DateTimeFormat"}},
+			{lib: "es2022", props: []string{"Segmenter"}},
+			{lib: "es2025", props: []string{"DurationFormat"}},
 		},
 		"NumberFormat": {
 			{lib: "es2018", props: []string{"formatToParts"}},
@@ -1439,6 +1435,7 @@ var getFeatureMap = sync.OnceValue(func() map[string][]FeatureMapEntry {
 		},
 		"DataView": {
 			{lib: "es2020", props: []string{"setBigInt64", "setBigUint64", "getBigInt64", "getBigUint64"}},
+			{lib: "es2025", props: []string{"setFloat16", "getFloat16"}},
 		},
 		"BigInt": {
 			{lib: "es2020", props: []string{}},
@@ -1474,6 +1471,9 @@ var getFeatureMap = sync.OnceValue(func() map[string][]FeatureMapEntry {
 			{lib: "es2022", props: []string{"at"}},
 			{lib: "es2023", props: []string{"findLastIndex", "findLast", "toReversed", "toSorted", "toSpliced", "with"}},
 		},
+		"Float16Array": {
+			{lib: "es2025", props: []string{}},
+		},
 		"Float32Array": {
 			{lib: "es2022", props: []string{"at"}},
 			{lib: "es2023", props: []string{"findLastIndex", "findLast", "toReversed", "toSorted", "toSpliced", "with"}},
@@ -1494,6 +1494,21 @@ var getFeatureMap = sync.OnceValue(func() map[string][]FeatureMapEntry {
 		},
 		"Error": {
 			{lib: "es2022", props: []string{"cause"}},
+		},
+		"ErrorConstructor": {
+			{lib: "esnext", props: []string{"isError"}},
+		},
+		"Uint8ArrayConstructor": {
+			{lib: "esnext", props: []string{"fromBase64", "fromHex"}},
+		},
+		"DisposableStack": {
+			{lib: "esnext", props: []string{}},
+		},
+		"AsyncDisposableStack": {
+			{lib: "esnext", props: []string{}},
+		},
+		"Date": {
+			{lib: "esnext", props: []string{"toTemporalInstant"}},
 		},
 	}
 })
@@ -1520,24 +1535,6 @@ func tryGetPropertyAccessOrIdentifierToString(expr *ast.Node) string {
 		return entityNameToString(expr)
 	}
 	return ""
-}
-
-func getFirstJSDocTag(node *ast.Node, f func(*ast.Node) bool) *ast.Node {
-	for _, jsdoc := range node.JSDoc(nil) {
-		tags := jsdoc.AsJSDoc().Tags
-		if tags != nil {
-			for _, tag := range tags.Nodes {
-				if f(tag) {
-					return tag
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func getJSDocDeprecatedTag(node *ast.Node) *ast.Node {
-	return getFirstJSDocTag(node, ast.IsJSDocDeprecatedTag)
 }
 
 func allDeclarationsInSameSourceFile(symbol *ast.Symbol) bool {

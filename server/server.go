@@ -20,7 +20,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/evanw/esbuild/pkg/api"
-	"github.com/microsoft/typescript-go/internal/ast"
 	"github.com/microsoft/typescript-go/internal/bundled"
 	"github.com/microsoft/typescript-go/internal/compiler"
 	"github.com/microsoft/typescript-go/internal/core"
@@ -428,7 +427,7 @@ func (fs *diskFS) ReadFile(path string) (string, bool) {
 	return string(data), true
 }
 
-func (fs *diskFS) WriteFile(path string, data string, _ bool) error {
+func (fs *diskFS) WriteFile(path string, data string) error {
 	fs.mu.Lock()
 	fs.userFiles[path] = data
 	fs.mu.Unlock()
@@ -629,9 +628,8 @@ func typecheckTypeScript(code string, version string) TypecheckResponse {
 	
 	// Create program
 	program := compiler.NewProgram(compiler.ProgramOptions{
-		Config:           config,
-		Host:             host,
-		JSDocParsingMode: ast.JSDocParsingModeParseForTypeErrors,
+		Config: config,
+		Host:   host,
 	})
 
 	// Get diagnostics
@@ -1195,7 +1193,6 @@ func typecheckTypeScriptV2(files map[string]string, entryPoints []string, versio
 	program := compiler.NewProgram(compiler.ProgramOptions{
 		Config:           config,
 		Host:             host,
-		JSDocParsingMode: ast.JSDocParsingModeParseForTypeErrors,
 	})
 
 	// Get diagnostics

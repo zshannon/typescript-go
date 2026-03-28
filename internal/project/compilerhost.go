@@ -90,13 +90,13 @@ func (c *compilerHost) GetResolvedProjectReference(fileName string, path tspath.
 	}
 }
 
-// GetSourceFile implements compiler.CompilerHost. GetSourceFile increments
-// the ref count of source files it acquires in the parseCache. There should
-// be a corresponding release for each call made.
+// GetSourceFile implements compiler.CompilerHost. Files are cached in parseCache
+// and acquired immediately for the in-progress program.
 func (c *compilerHost) GetSourceFile(opts ast.SourceFileParseOptions) *ast.SourceFile {
 	c.ensureAlive()
 	if fh := c.sourceFS.GetFileByPath(opts.FileName, opts.Path); fh != nil {
-		return c.builder.parseCache.Acquire(NewParseCacheKey(opts, fh.Hash(), fh.Kind()), fh)
+		key := NewParseCacheKey(opts, fh.Hash(), fh.Kind())
+		return c.builder.parseCache.Acquire(key, fh)
 	}
 	return nil
 }

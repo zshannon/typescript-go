@@ -16,12 +16,10 @@ import (
 	"github.com/microsoft/typescript-go/internal/core"
 	"github.com/microsoft/typescript-go/internal/debug"
 	"github.com/microsoft/typescript-go/internal/diagnostics"
-	"github.com/microsoft/typescript-go/internal/format"
 	"github.com/microsoft/typescript-go/internal/locale"
 	"github.com/microsoft/typescript-go/internal/ls/change"
 	"github.com/microsoft/typescript-go/internal/ls/lsconv"
 	"github.com/microsoft/typescript-go/internal/ls/lsutil"
-	"github.com/microsoft/typescript-go/internal/ls/organizeimports"
 	"github.com/microsoft/typescript-go/internal/lsp/lsproto"
 	"github.com/microsoft/typescript-go/internal/modulespecifiers"
 	"github.com/microsoft/typescript-go/internal/scanner"
@@ -45,11 +43,18 @@ type Fix struct {
 	TypeOnlyAliasDeclaration *ast.Declaration
 }
 
+type addToExistingImportFix struct {
+	importClauseOrBindingPattern *ast.ImportClauseOrBindingPattern
+	// One of `defaultImport` or `namedImports` will be present
+	defaultImport *newImportBinding
+	namedImport   *newImportBinding
+}
+
 func (f *Fix) Edits(
 	ctx context.Context,
 	file *ast.SourceFile,
 	compilerOptions *core.CompilerOptions,
-	formatOptions *format.FormatCodeSettings,
+	formatOptions *lsutil.FormatCodeSettings,
 	converters *lsconv.Converters,
 	preferences *lsutil.UserPreferences,
 ) ([]*lsproto.TextEdit, string) {
@@ -57,43 +62,14 @@ func (f *Fix) Edits(
 	tracker := change.NewTracker(ctx, compilerOptions, formatOptions, converters)
 	switch f.Kind {
 	case lsproto.AutoImportFixKindUseNamespace:
-		if f.UsagePosition == nil || f.NamespacePrefix == "" {
-			panic("namespace fix requires usage position and prefix")
-		}
-		qualified := fmt.Sprintf("%s.%s", f.NamespacePrefix, f.Name)
-		tracker.InsertText(file, *f.UsagePosition, f.NamespacePrefix+".")
-		return tracker.GetChanges()[file.FileName()], diagnostics.Change_0_to_1.Localize(locale, f.Name, qualified)
+		description := addNamespaceQualifier(f, tracker, file, locale)
+		return tracker.GetChanges()[file.FileName()], description
 	case lsproto.AutoImportFixKindAddToExisting:
 		if len(file.Imports()) <= int(f.ImportIndex) {
 			panic("import index out of range")
 		}
-		moduleSpecifier := file.Imports()[f.ImportIndex]
-		importNode := ast.TryGetImportFromModuleSpecifier(moduleSpecifier)
-		if importNode == nil {
-			panic("expected import declaration")
-		}
-		var importClauseOrBindingPattern *ast.Node
-		switch importNode.Kind {
-		case ast.KindImportDeclaration:
-			importClauseOrBindingPattern = importNode.ImportClause()
-			if importClauseOrBindingPattern == nil {
-				panic("expected import clause")
-			}
-		case ast.KindCallExpression:
-			if !ast.IsVariableDeclarationInitializedToRequire(importNode.Parent) {
-				panic("expected require call expression to be in variable declaration")
-			}
-			importClauseOrBindingPattern = importNode.Parent.Name()
-			if importClauseOrBindingPattern == nil || !ast.IsObjectBindingPattern(importClauseOrBindingPattern) {
-				panic("expected object binding pattern in variable declaration")
-			}
-		default:
-			panic("expected import declaration or require call expression")
-		}
-
-		defaultImport := core.IfElse(f.ImportKind == lsproto.ImportKindDefault, &newImportBinding{kind: lsproto.ImportKindDefault, name: f.Name, addAsTypeOnly: f.AddAsTypeOnly}, nil)
-		namedImports := core.IfElse(f.ImportKind == lsproto.ImportKindNamed, []*newImportBinding{{kind: lsproto.ImportKindNamed, name: f.Name, addAsTypeOnly: f.AddAsTypeOnly}}, nil)
-		addToExistingImport(tracker, file, importClauseOrBindingPattern, defaultImport, namedImports, preferences)
+		existingFix := getAddToExistingImportFix(file, f)
+		addToExistingImport(tracker, file, existingFix.importClauseOrBindingPattern, existingFix.defaultImport, core.SingleElementSlice(existingFix.namedImport), preferences)
 		return tracker.GetChanges()[file.FileName()], diagnostics.Update_import_from_0.Localize(locale, f.ModuleSpecifier)
 	case lsproto.AutoImportFixKindAddNew:
 		var declarations []*ast.Statement
@@ -135,19 +111,70 @@ func (f *Fix) Edits(
 		moduleSpec := getModuleSpecifierText(promotedDeclaration)
 		return tracker.GetChanges()[file.FileName()], diagnostics.Remove_type_from_import_declaration_from_0.Localize(locale, moduleSpec)
 	case lsproto.AutoImportFixKindJsdocTypeImport:
-		if f.UsagePosition == nil {
-			panic("UsagePosition must be set for JSDoc type import fix")
-		}
-		quotePreference := lsutil.GetQuotePreference(file, preferences)
-		quoteChar := "\""
-		if quotePreference == lsutil.QuotePreferenceSingle {
-			quoteChar = "'"
-		}
-		importTypePrefix := fmt.Sprintf("import(%s%s%s).", quoteChar, f.ModuleSpecifier, quoteChar)
-		tracker.InsertText(file, *f.UsagePosition, importTypePrefix)
-		return tracker.GetChanges()[file.FileName()], diagnostics.Change_0_to_1.Localize(locale, f.Name, importTypePrefix+f.Name)
+		description := addImportType(f, file, preferences, tracker, locale)
+		return tracker.GetChanges()[file.FileName()], description
 	default:
 		panic("unimplemented fix edit")
+	}
+}
+
+func addImportType(f *Fix, file *ast.SourceFile, preferences *lsutil.UserPreferences, tracker *change.Tracker, locale locale.Locale) string {
+	if f.UsagePosition == nil {
+		panic("UsagePosition must be set for JSDoc type import fix")
+	}
+	quotePreference := lsutil.GetQuotePreference(file, preferences)
+	quoteChar := "\""
+	if quotePreference == lsutil.QuotePreferenceSingle {
+		quoteChar = "'"
+	}
+	importTypePrefix := fmt.Sprintf("import(%s%s%s).", quoteChar, f.ModuleSpecifier, quoteChar)
+	tracker.InsertText(file, *f.UsagePosition, importTypePrefix)
+	return diagnostics.Change_0_to_1.Localize(locale, f.Name, importTypePrefix+f.Name)
+}
+
+func addNamespaceQualifier(f *Fix, tracker *change.Tracker, file *ast.SourceFile, locale locale.Locale) string {
+	if f.UsagePosition == nil || f.NamespacePrefix == "" {
+		panic("namespace fix requires usage position and prefix")
+	}
+	qualified := fmt.Sprintf("%s.%s", f.NamespacePrefix, f.Name)
+	tracker.InsertText(file, *f.UsagePosition, f.NamespacePrefix+".")
+	return diagnostics.Change_0_to_1.Localize(locale, f.Name, qualified)
+}
+
+func getAddToExistingImportFix(file *ast.SourceFile, fix *Fix) *addToExistingImportFix {
+	if fix.Kind != lsproto.AutoImportFixKindAddToExisting {
+		panic("expected add to existing import fix")
+	}
+	moduleSpecifier := file.Imports()[fix.ImportIndex]
+	importNode := ast.TryGetImportFromModuleSpecifier(moduleSpecifier)
+	if importNode == nil {
+		panic("expected import declaration")
+	}
+	var importClauseOrBindingPattern *ast.Node
+	switch importNode.Kind {
+	case ast.KindImportDeclaration:
+		importClauseOrBindingPattern = importNode.ImportClause()
+		if importClauseOrBindingPattern == nil {
+			panic("expected import clause")
+		}
+	case ast.KindCallExpression:
+		if !ast.IsVariableDeclarationInitializedToRequire(importNode.Parent) {
+			panic("expected require call expression to be in variable declaration")
+		}
+		importClauseOrBindingPattern = importNode.Parent.Name()
+		if importClauseOrBindingPattern == nil || !ast.IsObjectBindingPattern(importClauseOrBindingPattern) {
+			panic("expected object binding pattern in variable declaration")
+		}
+	default:
+		panic("expected import declaration or require call expression")
+	}
+
+	defaultImport := core.IfElse(fix.ImportKind == lsproto.ImportKindDefault, &newImportBinding{kind: lsproto.ImportKindDefault, name: fix.Name, addAsTypeOnly: fix.AddAsTypeOnly}, nil)
+	namedImports := core.IfElse(fix.ImportKind == lsproto.ImportKindNamed, &newImportBinding{kind: lsproto.ImportKindNamed, name: fix.Name, addAsTypeOnly: fix.AddAsTypeOnly}, nil)
+	return &addToExistingImportFix{
+		importClauseOrBindingPattern: importClauseOrBindingPattern,
+		defaultImport:                defaultImport,
+		namedImport:                  namedImports,
 	}
 }
 
@@ -191,14 +218,14 @@ func addToExistingImport(
 		}
 
 		if len(namedImports) > 0 {
-			specifierComparer, isSorted := organizeimports.GetNamedImportSpecifierComparerWithDetection(importClause.Parent, file, preferences)
+			specifierComparer, isSorted := lsutil.GetNamedImportSpecifierComparerWithDetection(importClause.Parent, file, preferences)
 			newSpecifiers := core.Map(namedImports, func(namedImport *newImportBinding) *ast.Node {
 				var identifier *ast.Node
 				if namedImport.propertyName != "" {
 					identifier = ct.NodeFactory.NewIdentifier(namedImport.propertyName).AsIdentifier().AsNode()
 				}
 				return ct.NodeFactory.NewImportSpecifier(
-					shouldUseTypeOnly(namedImport.addAsTypeOnly, preferences),
+					(!importClause.IsTypeOnly() || promoteFromTypeOnly) && shouldUseTypeOnly(namedImport.addAsTypeOnly, preferences),
 					identifier,
 					ct.NodeFactory.NewIdentifier(namedImport.name),
 				)
@@ -231,25 +258,12 @@ func addToExistingImport(
 				}
 
 				for _, spec := range newSpecifiers {
-					insertionIndex := organizeimports.GetImportSpecifierInsertionIndex(specsToCompareAgainst, spec, specifierComparer)
+					insertionIndex := lsutil.GetImportSpecifierInsertionIndex(specsToCompareAgainst, spec, specifierComparer)
 					ct.InsertImportSpecifierAtIndex(file, spec, importClause.NamedBindings, insertionIndex)
 				}
-			} else if len(existingSpecifiers) > 0 && isSorted.IsTrue() {
-				// Existing specifiers are sorted, so insert each new specifier at the correct position
-				for _, spec := range newSpecifiers {
-					insertionIndex := organizeimports.GetImportSpecifierInsertionIndex(existingSpecifiers, spec, specifierComparer)
-					if insertionIndex >= len(existingSpecifiers) {
-						// Insert at the end
-						ct.InsertNodeInListAfter(file, existingSpecifiers[len(existingSpecifiers)-1], spec.AsNode(), existingSpecifiers)
-					} else {
-						// Insert before the element at insertionIndex
-						ct.InsertNodeInListAfter(file, existingSpecifiers[insertionIndex], spec.AsNode(), existingSpecifiers)
-					}
-				}
 			} else if len(existingSpecifiers) > 0 {
-				// Existing specifiers may not be sorted, append to the end
 				for _, spec := range newSpecifiers {
-					ct.InsertNodeInListAfter(file, existingSpecifiers[len(existingSpecifiers)-1], spec.AsNode(), existingSpecifiers)
+					ct.InsertNodeInListAfter(file, existingSpecifiers[len(existingSpecifiers)-1], spec.AsNode(), nil)
 				}
 			} else {
 				if len(newSpecifiers) > 0 {
@@ -306,7 +320,7 @@ func addElementToBindingPattern(
 ) {
 	element := ct.NodeFactory.NewBindingElement(nil, nil, ct.NodeFactory.NewIdentifier(name), core.IfElse(propertyName == "", nil, ct.NodeFactory.NewIdentifier(propertyName)))
 	if len(bindingPattern.Elements.Nodes) > 0 {
-		ct.InsertNodeInListAfter(file, bindingPattern.Elements.Nodes[len(bindingPattern.Elements.Nodes)-1], element, bindingPattern.Elements.Nodes)
+		ct.InsertNodeInListAfter(file, bindingPattern.Elements.Nodes[len(bindingPattern.Elements.Nodes)-1], element, bindingPattern.Elements)
 	} else {
 		ct.ReplaceNode(file, bindingPattern.AsNode(), ct.NodeFactory.NewBindingPattern(ast.KindObjectBindingPattern, ct.AsNodeFactory().NewNodeList([]*ast.Node{element})), nil)
 	}
@@ -321,10 +335,10 @@ func getNewImports(
 	namespaceLikeImport *newImportBinding, // { lsproto.importKind: lsproto.ImportKind.CommonJS | lsproto.ImportKind.Namespace; }
 	compilerOptions *core.CompilerOptions,
 	preferences *lsutil.UserPreferences,
-) []*ast.Statement {
+) []*ast.AnyImportSyntax {
 	tokenFlags := core.IfElse(quotePreference == lsutil.QuotePreferenceSingle, ast.TokenFlagsSingleQuote, ast.TokenFlagsNone)
 	moduleSpecifierStringLiteral := ct.NodeFactory.NewStringLiteral(moduleSpecifier, tokenFlags)
-	var statements []*ast.Statement // []AnyImportSyntax
+	var statements []*ast.AnyImportSyntax
 	if defaultImport != nil || len(namedImports) > 0 {
 		// `verbatimModuleSyntax` should prefer top-level `import type` -
 		// even though it's not an error, it would add unnecessary runtime emit.
@@ -442,7 +456,7 @@ func getNewRequires(
 		statements = append(statements, declaration)
 	}
 
-	debug.AssertIsDefined(statements)
+	debug.Assert(statements != nil)
 	return statements
 }
 
@@ -469,7 +483,7 @@ func createConstEqualsRequireDeclaration(changeTracker *change.Tracker, name *as
 	)
 }
 
-func insertImports(ct *change.Tracker, sourceFile *ast.SourceFile, imports []*ast.Statement, blankLineBetween bool, preferences *lsutil.UserPreferences) {
+func insertImports(ct *change.Tracker, sourceFile *ast.SourceFile, imports []*ast.AnyImportOrRequireStatement, blankLineBetween bool, preferences *lsutil.UserPreferences) {
 	var existingImportStatements []*ast.Statement
 
 	if imports[0].Kind == ast.KindVariableStatement {
@@ -477,21 +491,25 @@ func insertImports(ct *change.Tracker, sourceFile *ast.SourceFile, imports []*as
 	} else {
 		existingImportStatements = core.Filter(sourceFile.Statements.Nodes, ast.IsAnyImportSyntax)
 	}
-	comparer, isSorted := organizeimports.GetOrganizeImportsStringComparerWithDetection(existingImportStatements, preferences)
+	comparer, isSorted := lsutil.GetOrganizeImportsStringComparerWithDetection(existingImportStatements, preferences)
 	sortedNewImports := slices.Clone(imports)
 	slices.SortFunc(sortedNewImports, func(a, b *ast.Statement) int {
-		return organizeimports.CompareImportsOrRequireStatements(a, b, comparer)
+		return lsutil.CompareImportsOrRequireStatements(a, b, comparer)
 	})
 
 	if len(existingImportStatements) > 0 && isSorted {
 		// Existing imports are sorted, insert each new import at the correct position
 		for _, newImport := range sortedNewImports {
-			insertionIndex := organizeimports.GetImportDeclarationInsertIndex(existingImportStatements, newImport, func(a, b *ast.Statement) stringutil.Comparison {
-				return organizeimports.CompareImportsOrRequireStatements(a, b, comparer)
+			insertionIndex := lsutil.GetImportDeclarationInsertIndex(existingImportStatements, newImport, func(a, b *ast.Statement) stringutil.Comparison {
+				return lsutil.CompareImportsOrRequireStatements(a, b, comparer)
 			})
 			if insertionIndex == 0 {
-				// If the first import is top-of-file, insert after the leading comment which is likely the header
-				ct.InsertNodeAt(sourceFile, core.TextPos(astnav.GetStartOfNode(existingImportStatements[0], sourceFile, false)), newImport.AsNode(), change.NodeOptions{})
+				// If the first import is top-of-file, insert after the leading comment which is likely the header.
+				leadingTriviaOption := change.LeadingTriviaOptionNone
+				if existingImportStatements[0] == sourceFile.Statements.Nodes[0] {
+					leadingTriviaOption = change.LeadingTriviaOptionExclude
+				}
+				ct.InsertNodeBefore(sourceFile, existingImportStatements[0].AsNode(), newImport.AsNode(), false /*blankLineBetween*/, leadingTriviaOption)
 			} else {
 				prevImport := existingImportStatements[insertionIndex-1]
 				ct.InsertNodeAfter(sourceFile, prevImport.AsNode(), newImport.AsNode())
@@ -1001,9 +1019,33 @@ func promoteFromTypeOnly(
 		spec := aliasDeclaration.AsImportSpecifier()
 		if spec.IsTypeOnly {
 			if spec.Parent != nil && spec.Parent.Kind == ast.KindNamedImports {
-				// TypeScript creates a new specifier with isTypeOnly=false, computes insertion index,
-				// and if different from current position, deletes and re-inserts at new position.
-				// For now, we just delete the range from the first token (type keyword) to the property name or name.
+				namedImportsNode := spec.Parent.AsNamedImports()
+				elements := namedImportsNode.Elements.Nodes
+				if len(elements) > 1 {
+					// Create a synthetic specifier with isTypeOnly=false to compute sorted position
+					var propertyName *ast.Node
+					if spec.PropertyName != nil {
+						propertyName = changes.NodeFactory.NewIdentifier(spec.PropertyName.Text()).AsIdentifier().AsNode()
+					}
+					newSpecifier := changes.NodeFactory.NewImportSpecifier(
+						false, // isTypeOnly = false
+						propertyName,
+						changes.NodeFactory.NewIdentifier(spec.Name().Text()),
+					)
+					specifierComparer, _ := lsutil.GetNamedImportSpecifierComparerWithDetection(
+						spec.Parent.Parent.Parent, // ImportDeclaration
+						sourceFile,
+						preferences,
+					)
+					insertionIndex := lsutil.GetImportSpecifierInsertionIndex(elements, newSpecifier, specifierComparer)
+					currentIndex := slices.Index(elements, aliasDeclaration)
+					if insertionIndex != currentIndex {
+						changes.Delete(sourceFile, aliasDeclaration)
+						changes.InsertImportSpecifierAtIndex(sourceFile, newSpecifier, spec.Parent, insertionIndex)
+						return aliasDeclaration
+					}
+				}
+				// If no re-sorting needed, just remove the 'type' keyword
 				firstToken := lsutil.GetFirstToken(aliasDeclaration, sourceFile)
 				typeKeywordPos := scanner.GetTokenPosOfNode(firstToken, sourceFile, false)
 				var targetNode *ast.DeclarationName
@@ -1087,7 +1129,7 @@ func promoteImportClause(
 			namedImportsData := namedImports.AsNamedImports()
 			if len(namedImportsData.Elements.Nodes) > 1 {
 				// Check if the list is sorted and if we need to reorder
-				_, isSorted := organizeimports.GetNamedImportSpecifierComparerWithDetection(
+				_, isSorted := lsutil.GetNamedImportSpecifierComparerWithDetection(
 					importClause.Parent,
 					sourceFile,
 					preferences,
