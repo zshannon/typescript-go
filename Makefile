@@ -12,7 +12,7 @@ YELLOW = \033[1;33m
 BLUE = \033[0;34m
 NC = \033[0m # No Color
 
-.PHONY: all build build-bridge sign-bridge setup test clean clean-bridge help
+.PHONY: all build build-bridge sign-bridge setup test clean clean-bridge help bench bench-local bench-prod bench-gen-fixtures
 
 # Default target
 all: build
@@ -136,6 +136,69 @@ dev-setup: setup build-bridge
 quick: build-bridge test-swift
 	@echo "$(GREEN)Quick build and test completed!$(NC)"
 
+# Benchmarks
+BENCH_DIR = server/benchmark-results
+BENCH_PROD_URL = https://server-wild-sea-9370.fly.dev
+BENCH_TIMESTAMP = $(shell date +%Y%m%d-%H%M%S)
+BENCH_RUNS = 30
+BENCH_WARMUP = 5
+
+# Generate JSON fixture files from Go test constants
+bench-gen-fixtures:
+	@echo "$(YELLOW)Generating v2 benchmark fixtures...$(NC)"
+	@cd server && go test -run=TestGenerateV2Fixtures -v ./... 2>&1 | grep "Wrote"
+	@echo "$(GREEN)Fixtures generated$(NC)"
+
+# Local Go benchmarks (pure compiler, no network)
+bench-local:
+	@echo "$(BLUE)=== Local V2 Benchmarks ===$(NC)"
+	@echo "$(YELLOW)Running 3 rounds, 5s each...$(NC)"
+	@mkdir -p $(BENCH_DIR)
+	@cd server && go test -bench=BenchmarkV2 -benchmem -benchtime=5s -count=3 -run='^$$' ./... 2>/dev/null | tee ../$(BENCH_DIR)/$(BENCH_TIMESTAMP)-local.txt
+	@echo ""
+	@echo "$(GREEN)Results saved to $(BENCH_DIR)/$(BENCH_TIMESTAMP)-local.txt$(NC)"
+
+# Production benchmarks via hyperfine
+bench-prod: bench-gen-fixtures
+	@echo "$(BLUE)=== Production V2 Benchmarks ===$(NC)"
+	@echo "Endpoint: $(BENCH_PROD_URL)"
+	@echo "Runs: $(BENCH_RUNS), Warmup: $(BENCH_WARMUP)"
+	@echo ""
+	@mkdir -p $(BENCH_DIR)
+	@# Verify server is reachable
+	@curl -sf $(BENCH_PROD_URL)/health > /dev/null 2>&1 || (echo "$(RED)Server unreachable at $(BENCH_PROD_URL)$(NC)" && exit 1)
+	@hyperfine \
+		--warmup $(BENCH_WARMUP) \
+		--runs $(BENCH_RUNS) \
+		--style full \
+		--export-markdown $(BENCH_DIR)/$(BENCH_TIMESTAMP)-prod.md \
+		--export-json $(BENCH_DIR)/$(BENCH_TIMESTAMP)-prod.json \
+		-n "Health Check" \
+			"curl -s $(BENCH_PROD_URL)/health > /dev/null" \
+		-n "V2 Typecheck: Trivial" \
+			"curl -s -X POST $(BENCH_PROD_URL)/v2/typecheck -H 'Content-Type: application/json' -d @server/fixtures/v2/typecheck-trivial.json > /dev/null" \
+		-n "V2 Typecheck: Small Component" \
+			"curl -s -X POST $(BENCH_PROD_URL)/v2/typecheck -H 'Content-Type: application/json' -d @server/fixtures/v2/typecheck-small.json > /dev/null" \
+		-n "V2 Typecheck: Medium Component" \
+			"curl -s -X POST $(BENCH_PROD_URL)/v2/typecheck -H 'Content-Type: application/json' -d @server/fixtures/v2/typecheck-medium.json > /dev/null" \
+		-n "V2 Typecheck: Multi-File (5 files)" \
+			"curl -s -X POST $(BENCH_PROD_URL)/v2/typecheck -H 'Content-Type: application/json' -d @server/fixtures/v2/typecheck-multifile.json > /dev/null" \
+		-n "V2 Build: Trivial" \
+			"curl -s -X POST $(BENCH_PROD_URL)/v2/build -H 'Content-Type: application/json' -d @server/fixtures/v2/build-trivial.json > /dev/null" \
+		-n "V2 Build: Small Component" \
+			"curl -s -X POST $(BENCH_PROD_URL)/v2/build -H 'Content-Type: application/json' -d @server/fixtures/v2/build-small.json > /dev/null" \
+		-n "V2 Build: Medium Component" \
+			"curl -s -X POST $(BENCH_PROD_URL)/v2/build -H 'Content-Type: application/json' -d @server/fixtures/v2/build-medium.json > /dev/null" \
+		-n "V2 Build: Multi-File (5 files)" \
+			"curl -s -X POST $(BENCH_PROD_URL)/v2/build -H 'Content-Type: application/json' -d @server/fixtures/v2/build-multifile.json > /dev/null"
+	@echo ""
+	@echo "$(GREEN)Results saved to:$(NC)"
+	@echo "  $(BENCH_DIR)/$(BENCH_TIMESTAMP)-prod.md"
+	@echo "  $(BENCH_DIR)/$(BENCH_TIMESTAMP)-prod.json"
+
+# Run both local and production benchmarks
+bench: bench-local bench-prod
+
 # Help target
 help:
 	@echo "$(GREEN)TypeScript-Go Build System$(NC)"
@@ -154,6 +217,12 @@ help:
 	@echo "  test               Run all tests (Go + Swift)"
 	@echo "  test-go            Run Go tests only"
 	@echo "  test-swift         Run Swift tests only"
+	@echo ""
+	@echo "$(BLUE)Benchmarks:$(NC)"
+	@echo "  bench              Run local + production benchmarks"
+	@echo "  bench-local        Local Go benchmarks (no network)"
+	@echo "  bench-prod         Production benchmarks via hyperfine"
+	@echo "  bench-gen-fixtures Generate JSON fixture files"
 	@echo ""
 	@echo "$(BLUE)Maintenance:$(NC)"
 	@echo "  clean              Clean all build artifacts"
