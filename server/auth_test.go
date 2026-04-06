@@ -277,3 +277,58 @@ func TestAuthMiddleware_WrongKey(t *testing.T) {
 		t.Fatalf("expected 401, got %d", rr.Code)
 	}
 }
+
+func TestAuthMiddleware_TamperedBody(t *testing.T) {
+	privKey, pubKeyBase58 := generateTestKeypair(t)
+
+	pubKey, _ := parseAuthPublicKey(pubKeyBase58)
+	key := httpsig.Key{Algorithm: httpsig.EcdsaP256Sha256, Key: pubKey, KeyID: "server"}
+	oldVerifier := authVerifier
+	authVerifier, _ = httpsig.NewVerifier(key,
+		httpsig.WithExpiredTimestampRequired(false),
+		httpsig.WithMaxAge(300*time.Second),
+		httpsig.WithRequiredComponents("@method", "@path", "@authority"),
+		httpsig.WithValidateAllSignatures(),
+	)
+	defer func() { authVerifier = oldVerifier }()
+
+	handler := authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	body := []byte(`{"code":"const x: number = 1;","version":"0.0.4"}`)
+	req := httptest.NewRequest("POST", "/typecheck", bytes.NewReader(body))
+	req.Host = "localhost"
+	req.Header.Set("Content-Type", "application/json")
+	signRequest(t, req, privKey, pubKeyBase58, "@method", "@path", "@authority", "content-digest")
+
+	// Tamper with the body after signing
+	tamperedBody := []byte(`{"code":"EVIL CODE","version":"0.0.4"}`)
+	req.Body = io.NopCloser(bytes.NewReader(tamperedBody))
+	req.ContentLength = int64(len(tamperedBody))
+
+	rr := httptest.NewRecorder()
+	handler(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for tampered body, got %d", rr.Code)
+	}
+}
+
+func TestUnauthenticatedRoutesPassThrough(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	req := httptest.NewRequest("GET", "/health", nil)
+	rr := httptest.NewRecorder()
+	health(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /health, got %d", rr.Code)
+	}
+
+	req = httptest.NewRequest("GET", "/", nil)
+	rr = httptest.NewRecorder()
+	hello(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /, got %d", rr.Code)
+	}
+}
