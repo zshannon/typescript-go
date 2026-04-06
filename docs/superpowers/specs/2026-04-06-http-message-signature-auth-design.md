@@ -10,7 +10,7 @@ Add RFC 9421 HTTP Message Signature verification to the tsgo server, using a P-2
 - Health check (`/health`) and root (`/`) remain unauthenticated
 - All other routes require valid signatures
 - Requests with bodies must include `Content-Digest` as a signed component
-- Signatures expire after 5 minutes, with 30 seconds of clock skew tolerance
+- Signatures expire after 5 minutes
 
 ## Dependencies
 
@@ -65,7 +65,6 @@ authVerifier, err = httpsig.NewVerifier(
     httpsig.WithMaxAge(300 * time.Second),          // 5 minute signature lifetime
     httpsig.WithRequiredComponents("@method", "@path", "@authority"),
     httpsig.WithValidateAllSignatures(),
-    httpsig.WithValidityTolerance(30 * time.Second), // tolerate 30s clock skew
 )
 ```
 
@@ -74,6 +73,7 @@ Key decisions:
 - `WithExpiredTimestampRequired(false)` — clients only need `created`, not `expires`
 - `WithValidateAllSignatures()` is required by the library (otherwise it errors on construction)
 - `content-digest` is NOT in `WithRequiredComponents` because it can't be conditional on body presence
+- No validity tolerance — the 5 minute window is the entire budget
 
 ## Auth Middleware
 
@@ -148,7 +148,6 @@ All auth failures return `401 Unauthorized` with a generic message. Details are 
 | POST without content-digest in covered components | 401 |
 | Content-digest hash mismatch | 401 |
 | Signature older than 5 minutes | 401 |
-| Clock skew under 30 seconds | Tolerated |
 | GET without content-digest | OK |
 | `GET /health` or `GET /` | Always OK |
 
