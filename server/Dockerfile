@@ -37,9 +37,13 @@ RUN set -xe; \
     -o /server .
 
 FROM alpine:3.19
-RUN apk --no-cache add bash ca-certificates curl unzip && \
-    curl -fsSL https://bun.sh/install | bash && \
-    ln -s /root/.bun/bin/bun /usr/local/bin/bun
+RUN apk --no-cache add ca-certificates curl libgcc libstdc++ unzip && \
+    ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then BUN_ARCH="x64"; else BUN_ARCH="aarch64"; fi && \
+    curl -fsSL "https://github.com/oven-sh/bun/releases/latest/download/bun-linux-${BUN_ARCH}-musl.zip" -o /tmp/bun.zip && \
+    unzip /tmp/bun.zip -d /tmp && \
+    mv /tmp/bun-linux-${BUN_ARCH}-musl/bun /usr/local/bin/bun && \
+    rm -rf /tmp/bun.zip /tmp/bun-linux-*
 
 COPY --from=build /server /server
 
