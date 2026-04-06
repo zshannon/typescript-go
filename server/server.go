@@ -1570,18 +1570,20 @@ func main() {
 
 	log.Printf("Initialized with S3 bucket: %s, disk cache: %s", s3Bucket, diskCachePath)
 
+	initAuth()
+
 	// Handle graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Set up routes with logging middleware
+	// Set up routes
 	http.HandleFunc("/", loggingMiddleware(hello))
-	http.HandleFunc("/build", loggingMiddleware(build))
+	http.HandleFunc("/build", loggingMiddleware(authMiddleware(build)))
 	http.HandleFunc("/health", loggingMiddleware(health))
-	http.HandleFunc("/sync", loggingMiddleware(syncVersion))
-	http.HandleFunc("/typecheck", loggingMiddleware(typecheck))
-	http.HandleFunc("/v2/build", loggingMiddleware(buildV2))
-	http.HandleFunc("/v2/typecheck", loggingMiddleware(typecheckV2))
+	http.HandleFunc("/sync", loggingMiddleware(authMiddleware(syncVersion)))
+	http.HandleFunc("/typecheck", loggingMiddleware(authMiddleware(typecheck)))
+	http.HandleFunc("/v2/build", loggingMiddleware(authMiddleware(buildV2)))
+	http.HandleFunc("/v2/typecheck", loggingMiddleware(authMiddleware(typecheckV2)))
 
 	// Start Prometheus metrics server on port 9091
 	go startMetricsServer()
