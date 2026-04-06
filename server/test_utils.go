@@ -275,6 +275,16 @@ func (m *MockS3Client) ListObjectsV2(ctx context.Context, params *s3.ListObjects
 	}, nil
 }
 
+func (m *MockS3Client) PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
+	key := aws.ToString(params.Key)
+	data, err := io.ReadAll(params.Body)
+	if err != nil {
+		return nil, err
+	}
+	m.files[key] = string(data)
+	return &s3.PutObjectOutput{}, nil
+}
+
 // FileBasedMockS3Client reads from testdata directory instead of real S3
 type FileBasedMockS3Client struct {
 	basePath string
@@ -353,6 +363,22 @@ func (m *FileBasedMockS3Client) ListObjectsV2(ctx context.Context, params *s3.Li
 	return &s3.ListObjectsV2Output{
 		Contents: objects,
 	}, nil
+}
+
+func (m *FileBasedMockS3Client) PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
+	key := aws.ToString(params.Key)
+	filePath := filepath.Join(m.basePath, key)
+	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+		return nil, err
+	}
+	data, err := io.ReadAll(params.Body)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
+		return nil, err
+	}
+	return &s3.PutObjectOutput{}, nil
 }
 
 // LoadRealS3Content loads actual S3 content from downloaded files for testing
