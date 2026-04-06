@@ -69,7 +69,7 @@ The `esbuild` field in package.json maps directly to esbuild Go API options. Onl
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
 | `bundle` | bool | `true` | Bundle imports into output |
-| `external` | string[] | `["*"]` | Packages to exclude from bundle |
+| `external` | string[] | `[]` | Packages to exclude from bundle (e.g., `["*"]` for all, `["zod"]` for specific) |
 | `format` | `"cjs"` \| `"esm"` \| `"iife"` | `"cjs"` | Output format |
 | `minify` | bool | -- | Shorthand for all three minify flags |
 | `minifyIdentifiers` | bool | `false` | Minify variable names |
@@ -79,6 +79,8 @@ The `esbuild` field in package.json maps directly to esbuild Go API options. Onl
 | `target` | string | `"es2022"` | JS target version |
 
 JSX settings (factory, fragment, import source) come from tsconfig.json, not from the esbuild field. esbuild will respect the tsconfig.json JSX configuration.
+
+**Note on externals:** Because the esbuild virtual-fs plugin intercepts all import resolution (overriding esbuild's built-in `External` option), the plugin's OnResolve handler must explicitly check the externals list and return `External: true` for matching imports. Setting `"external": ["*"]` in package.json means "externalize all bare imports" — the output will contain `require('zod')` calls instead of inlining the package code. The default `[]` bundles everything, matching the current v1/v2 behavior where the platform does not support `require`.
 
 ## tsconfig.json Handling
 
