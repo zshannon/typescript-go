@@ -24,6 +24,81 @@ import (
 	"github.com/evanw/esbuild/pkg/api"
 )
 
+// setupV3DepCache creates a pre-populated dependency cache with @crayonnow/core and react
+// packages on disk, simulating a bun install cache hit. Returns the lock hash.
+func setupV3DepCache(t *testing.T, lockContent string) string {
+	t.Helper()
+	hash := hashBunLock([]byte(lockContent))
+	depBase := filepath.Join(diskCachePath, "deps", hash)
+	nmDir := filepath.Join(depBase, "node_modules")
+
+	// @crayonnow/core
+	coreDir := filepath.Join(nmDir, "@crayonnow", "core")
+	if err := os.MkdirAll(coreDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(coreDir, "package.json"), []byte(`{"name": "@crayonnow/core", "version": "1.0.0", "main": "index.js", "types": "index.d.ts", "exports": {".": {"types": "./index.d.ts", "default": "./index.js"}, "./jsx-runtime": {"types": "./jsx-runtime.d.ts", "default": "./jsx-runtime.js"}}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(coreDir, "index.d.ts"), []byte(`export interface FlexProps { style?: any; children?: any; }
+export declare function Flex(props: FlexProps): any;
+export interface ButtonProps { onClick?: () => void; style?: any; children?: any; }
+export declare function Button(props: ButtonProps): any;
+export interface TextProps { style?: any; children?: any; }
+export declare function Text(props: TextProps): any;`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(coreDir, "index.js"), []byte(`exports.Flex = function(props) { return {type: 'Flex', props}; };
+exports.Button = function(props) { return {type: 'Button', props}; };
+exports.Text = function(props) { return {type: 'Text', props}; };`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(coreDir, "jsx-runtime.d.ts"), []byte(`export namespace JSX { interface Element {} interface IntrinsicElements { [key: string]: any; } }
+export function jsx(type: any, props: any, key?: any): any;
+export function jsxs(type: any, props: any, key?: any): any;
+export function Fragment(props: any): any;`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(coreDir, "jsx-runtime.js"), []byte(`exports.jsx = function(type, props) { return {type, props}; };
+exports.jsxs = exports.jsx;
+exports.Fragment = function(props) { return props.children; };`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// react
+	reactDir := filepath.Join(nmDir, "react")
+	if err := os.MkdirAll(reactDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(reactDir, "package.json"), []byte(`{"name": "react", "version": "18.0.0", "main": "index.js", "types": "index.d.ts"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(reactDir, "index.d.ts"), []byte(`export function useState<T>(init: T): [T, (value: T) => void];
+export function useEffect(fn: () => void | (() => void), deps?: any[]): void;
+export function createElement(type: any, props: any, children?: any): any;`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(reactDir, "index.js"), []byte(`exports.useState = function(init) { return [init, function() {}]; };
+exports.useEffect = function(fn, deps) { };
+exports.createElement = function(type, props, children) { return {type, props, children}; };`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	return hash
+}
+
+// buildV3Multipart creates a multipart/form-data body and content-type for v3 handler tests.
+func buildV3Multipart(files map[string]string) (*bytes.Buffer, string) {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	for path, content := range files {
+		fw, _ := writer.CreateFormFile(path, path)
+		fw.Write([]byte(content))
+	}
+	writer.Close()
+	return body, writer.FormDataContentType()
+}
+
 func TestNewDiskFSFromDeps(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "deps-test-*")
 	if err != nil {
@@ -589,4 +664,724 @@ func TestDeleteOldestVersion_IncludesDeps(t *testing.T) {
 	if _, err := os.Stat(depsDir); err != nil {
 		t.Fatal("deps dir should still exist")
 	}
+}
+
+// =============================================================================
+// V3 End-to-End Integration Tests
+// =============================================================================
+
+// Test 1: Fortune Cookie — full JSX app with React + Crayon via v3 multipart API
+func TestV3FortuneCookie(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	lockContent := "fortune-cookie-lock-v3"
+	setupV3DepCache(t, lockContent)
+
+	fortuneCookieCode := `import { Flex, Button, Text } from '@crayonnow/core';
+import { useState } from 'react';
+
+const fortunes = [
+  "You will find great success.",
+  "A fresh start awaits.",
+  "Believe in yourself.",
+];
+
+export default () => {
+  const [fortune, setFortune] = useState('');
+
+  const getFortune = () => {
+    const random = fortunes[Math.floor(Math.random() * fortunes.length)];
+    setFortune(random);
+  };
+
+  return (
+    <Flex style={{ alignItems: 'stretch', minHeight: '100vh' }}>
+      <Text style={{ fontSize: '24px' }}>
+        {fortune || 'Tap the cookie'}
+      </Text>
+      <Button onClick={getFortune} style={{ background: '#FFCC00' }}>
+        <Text style={{ color: 'black' }}>Break Cookie</Text>
+      </Button>
+    </Flex>
+  );
+};`
+
+	packageJSON := `{"name": "fortune-cookie", "main": "./src/index.tsx", "dependencies": {"@crayonnow/core": "1.0.0", "react": "18.0.0"}}`
+	tsconfigJSON := `{"compilerOptions": {"jsx": "react-jsx", "jsxImportSource": "@crayonnow/core"}}`
+
+	files := map[string]string{
+		"/package.json":  packageJSON,
+		"/bun.lock":      lockContent,
+		"/tsconfig.json": tsconfigJSON,
+		"/src/index.tsx": fortuneCookieCode,
+	}
+
+	t.Run("Typecheck", func(t *testing.T) {
+		body, ct := buildV3Multipart(files)
+		req := httptest.NewRequest(http.MethodPost, "/v3/typecheck", body)
+		req.Header.Set("Content-Type", ct)
+		w := httptest.NewRecorder()
+
+		typecheckV3Handler(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusOK {
+			respBody, _ := io.ReadAll(resp.Body)
+			t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(respBody))
+		}
+
+		var result TypecheckV2Response
+		json.NewDecoder(resp.Body).Decode(&result)
+		if !result.Pass {
+			t.Fatalf("expected typecheck pass, got errors: %v", result.Errors)
+		}
+	})
+
+	t.Run("Compile", func(t *testing.T) {
+		body, ct := buildV3Multipart(files)
+		req := httptest.NewRequest(http.MethodPost, "/v3/compile?skip_typecheck=true", body)
+		req.Header.Set("Content-Type", ct)
+		w := httptest.NewRecorder()
+
+		compileV3Handler(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusOK {
+			respBody, _ := io.ReadAll(resp.Body)
+			t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(respBody))
+		}
+
+		var result BuildV2Response
+		json.NewDecoder(resp.Body).Decode(&result)
+		if len(result.Errors) > 0 {
+			t.Fatalf("unexpected compile errors: %v", result.Errors)
+		}
+		if result.Code == "" {
+			t.Fatal("expected compiled code, got empty string")
+		}
+		if !strings.Contains(result.Code, "fortune") && !strings.Contains(result.Code, "Fortune") {
+			t.Errorf("compiled code does not contain 'fortune' text")
+		}
+		if !strings.Contains(result.Code, "Break Cookie") {
+			t.Errorf("compiled code does not contain 'Break Cookie' text")
+		}
+	})
+}
+
+// Test 2: Multi-file project with imports between files
+func TestV3MultiFileImports(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	lockContent := "multi-file-imports-lock"
+	setupV3DepCache(t, lockContent)
+
+	files := map[string]string{
+		"/package.json": `{"name": "multi-file", "main": "./src/index.ts", "dependencies": {}}`,
+		"/bun.lock":     lockContent,
+		"/src/types.ts": `export interface User {
+  name: string;
+  age: number;
+}
+
+export interface Greeting {
+  message: string;
+  user: User;
+}`,
+		"/src/utils.ts": `import { User, Greeting } from './types';
+
+export function greet(user: User): Greeting {
+  return {
+    message: "Hello, " + user.name,
+    user: user,
+  };
+}
+
+export function isAdult(user: User): boolean {
+  return user.age >= 18;
+}`,
+		"/src/index.ts": `import { User } from './types';
+import { greet, isAdult } from './utils';
+
+const user: User = { name: "Alice", age: 30 };
+const greeting = greet(user);
+const adult = isAdult(user);
+
+export { greeting, adult };`,
+	}
+
+	t.Run("Typecheck", func(t *testing.T) {
+		body, ct := buildV3Multipart(files)
+		req := httptest.NewRequest(http.MethodPost, "/v3/typecheck", body)
+		req.Header.Set("Content-Type", ct)
+		w := httptest.NewRecorder()
+
+		typecheckV3Handler(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusOK {
+			respBody, _ := io.ReadAll(resp.Body)
+			t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(respBody))
+		}
+
+		var result TypecheckV2Response
+		json.NewDecoder(resp.Body).Decode(&result)
+		if !result.Pass {
+			t.Fatalf("expected typecheck pass, got errors: %v", result.Errors)
+		}
+	})
+
+	t.Run("Compile", func(t *testing.T) {
+		body, ct := buildV3Multipart(files)
+		req := httptest.NewRequest(http.MethodPost, "/v3/compile?skip_typecheck=true", body)
+		req.Header.Set("Content-Type", ct)
+		w := httptest.NewRecorder()
+
+		compileV3Handler(w, req)
+
+		resp := w.Result()
+		if resp.StatusCode != http.StatusOK {
+			respBody, _ := io.ReadAll(resp.Body)
+			t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(respBody))
+		}
+
+		var result BuildV2Response
+		json.NewDecoder(resp.Body).Decode(&result)
+		if len(result.Errors) > 0 {
+			t.Fatalf("unexpected compile errors: %v", result.Errors)
+		}
+		if result.Code == "" {
+			t.Fatal("expected compiled code")
+		}
+		// Verify content from all files is bundled
+		if !strings.Contains(result.Code, "Alice") {
+			t.Errorf("compiled code missing content from index.ts")
+		}
+		if !strings.Contains(result.Code, "Hello") {
+			t.Errorf("compiled code missing content from utils.ts")
+		}
+	})
+}
+
+// Test 3: Type error detection across files
+func TestV3TypeErrorAcrossFiles(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	lockContent := "type-error-across-files-lock"
+	hash := hashBunLock([]byte(lockContent))
+	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
+	if err := os.MkdirAll(depDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	files := map[string]string{
+		"/package.json": `{"name": "type-error-test", "main": "./src/index.ts", "dependencies": {}}`,
+		"/bun.lock":     lockContent,
+		"/src/types.ts": `export interface Config {
+  port: number;
+  host: string;
+}`,
+		"/src/index.ts": `import { Config } from './types';
+
+const config: Config = {
+  port: "not-a-number",
+  host: "localhost",
+};
+
+export { config };`,
+	}
+
+	body, ct := buildV3Multipart(files)
+	req := httptest.NewRequest(http.MethodPost, "/v3/typecheck", body)
+	req.Header.Set("Content-Type", ct)
+	w := httptest.NewRecorder()
+
+	typecheckV3Handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result TypecheckV2Response
+	json.NewDecoder(resp.Body).Decode(&result)
+	if result.Pass {
+		t.Fatal("expected typecheck failure, got pass")
+	}
+	if len(result.Errors) == 0 {
+		t.Fatal("expected at least one error")
+	}
+
+	// Verify the error references the correct file
+	foundFileRef := false
+	for _, e := range result.Errors {
+		if strings.Contains(e.File, "index.ts") {
+			foundFileRef = true
+			if e.Line <= 0 {
+				t.Errorf("expected positive line number, got %d", e.Line)
+			}
+		}
+	}
+	if !foundFileRef {
+		t.Errorf("expected error to reference index.ts, got errors: %v", result.Errors)
+	}
+}
+
+// Test 4: Compile with typecheck (default behavior — no skip_typecheck)
+func TestV3CompileWithTypecheck(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	lockContent := "compile-with-typecheck-lock"
+	hash := hashBunLock([]byte(lockContent))
+	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
+	if err := os.MkdirAll(depDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	files := map[string]string{
+		"/package.json": `{"name": "typecheck-fail", "main": "./src/index.ts", "dependencies": {}}`,
+		"/bun.lock":     lockContent,
+		"/src/index.ts": `export const x: string = 123;`,
+	}
+
+	body, ct := buildV3Multipart(files)
+	// No skip_typecheck query param — typecheck should run by default
+	req := httptest.NewRequest(http.MethodPost, "/v3/compile", body)
+	req.Header.Set("Content-Type", ct)
+	w := httptest.NewRecorder()
+
+	compileV3Handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result BuildV2Response
+	json.NewDecoder(resp.Body).Decode(&result)
+	if len(result.Errors) == 0 {
+		t.Fatal("expected typecheck errors when compiling without skip_typecheck")
+	}
+	if result.Code != "" {
+		t.Errorf("expected no compiled code when typecheck fails, got %d bytes", len(result.Code))
+	}
+}
+
+// Test 5: Compile with skip_typecheck=true
+func TestV3CompileSkipTypecheck(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	lockContent := "skip-typecheck-lock"
+	hash := hashBunLock([]byte(lockContent))
+	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
+	if err := os.MkdirAll(depDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	files := map[string]string{
+		"/package.json": `{"name": "skip-typecheck", "main": "./src/index.ts", "dependencies": {}}`,
+		"/bun.lock":     lockContent,
+		"/src/index.ts": `export const x: string = 123;`,
+	}
+
+	body, ct := buildV3Multipart(files)
+	req := httptest.NewRequest(http.MethodPost, "/v3/compile?skip_typecheck=true", body)
+	req.Header.Set("Content-Type", ct)
+	w := httptest.NewRecorder()
+
+	compileV3Handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result BuildV2Response
+	json.NewDecoder(resp.Body).Decode(&result)
+	if len(result.Errors) > 0 {
+		t.Fatalf("expected no errors with skip_typecheck=true, got: %v", result.Errors)
+	}
+	if result.Code == "" {
+		t.Fatal("expected compiled code with skip_typecheck=true")
+	}
+}
+
+// Test 6: Custom tsconfig — strict vs non-strict
+func TestV3StrictVsNonStrict(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	lockContent := "strict-test-lock"
+	hash := hashBunLock([]byte(lockContent))
+	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
+	if err := os.MkdirAll(depDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// This function has an implicit 'any' parameter — strict mode should reject it
+	code := `export function foo(x) { return x; }`
+
+	t.Run("StrictTrue", func(t *testing.T) {
+		files := map[string]string{
+			"/package.json":  `{"name": "strict-test", "main": "./src/index.ts", "dependencies": {}}`,
+			"/bun.lock":      lockContent,
+			"/tsconfig.json": `{"compilerOptions": {"strict": true}}`,
+			"/src/index.ts":  code,
+		}
+
+		body, ct := buildV3Multipart(files)
+		req := httptest.NewRequest(http.MethodPost, "/v3/typecheck", body)
+		req.Header.Set("Content-Type", ct)
+		w := httptest.NewRecorder()
+
+		typecheckV3Handler(w, req)
+
+		var result TypecheckV2Response
+		json.NewDecoder(w.Result().Body).Decode(&result)
+		if result.Pass {
+			t.Fatal("expected strict mode to fail on implicit any parameter")
+		}
+		// Should mention 'any' in one of the errors
+		foundAnyError := false
+		for _, e := range result.Errors {
+			if strings.Contains(e.Message, "any") {
+				foundAnyError = true
+				break
+			}
+		}
+		if !foundAnyError {
+			t.Errorf("expected error mentioning 'any', got: %v", result.Errors)
+		}
+	})
+
+	t.Run("StrictFalse", func(t *testing.T) {
+		files := map[string]string{
+			"/package.json":  `{"name": "non-strict-test", "main": "./src/index.ts", "dependencies": {}}`,
+			"/bun.lock":      lockContent,
+			"/tsconfig.json": `{"compilerOptions": {"strict": false}}`,
+			"/src/index.ts":  code,
+		}
+
+		body, ct := buildV3Multipart(files)
+		req := httptest.NewRequest(http.MethodPost, "/v3/typecheck", body)
+		req.Header.Set("Content-Type", ct)
+		w := httptest.NewRecorder()
+
+		typecheckV3Handler(w, req)
+
+		var result TypecheckV2Response
+		json.NewDecoder(w.Result().Body).Decode(&result)
+		if !result.Pass {
+			t.Fatalf("expected non-strict mode to pass, got errors: %v", result.Errors)
+		}
+	})
+}
+
+// Test 7: Custom esbuild config — ESM output
+func TestV3EsbuildESMOutput(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	lockContent := "esm-output-lock"
+	hash := hashBunLock([]byte(lockContent))
+	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
+	if err := os.MkdirAll(depDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	files := map[string]string{
+		"/package.json": `{"name": "esm-test", "main": "./src/index.ts", "dependencies": {}, "esbuild": {"format": "esm"}}`,
+		"/bun.lock":     lockContent,
+		"/src/index.ts": `export const greeting = "hello world";
+export function greet(name: string): string {
+  return greeting + " " + name;
+}`,
+	}
+
+	body, ct := buildV3Multipart(files)
+	req := httptest.NewRequest(http.MethodPost, "/v3/compile?skip_typecheck=true", body)
+	req.Header.Set("Content-Type", ct)
+	w := httptest.NewRecorder()
+
+	compileV3Handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result BuildV2Response
+	json.NewDecoder(resp.Body).Decode(&result)
+	if len(result.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", result.Errors)
+	}
+	if result.Code == "" {
+		t.Fatal("expected compiled code")
+	}
+	// ESM output should contain export statements
+	if !strings.Contains(result.Code, "export") {
+		t.Errorf("expected ESM output to contain 'export', got:\n%s", result.Code)
+	}
+	// Should NOT contain module.exports (that's CJS)
+	if strings.Contains(result.Code, "module.exports") {
+		t.Errorf("ESM output should not contain 'module.exports', got:\n%s", result.Code)
+	}
+}
+
+// Test 8: Custom esbuild config — externals
+func TestV3EsbuildExternals(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	lockContent := "externals-lock"
+	setupV3DepCache(t, lockContent)
+
+	// Also add a zod package to the dep cache so resolution doesn't fail at typecheck
+	hash := hashBunLock([]byte(lockContent))
+	zodDir := filepath.Join(diskCachePath, "deps", hash, "node_modules", "zod")
+	if err := os.MkdirAll(zodDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(zodDir, "package.json"), []byte(`{"name": "zod", "version": "3.23.0", "main": "index.js", "types": "index.d.ts"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(zodDir, "index.js"), []byte(`exports.z = { string: function() { return {}; } };`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(zodDir, "index.d.ts"), []byte(`export declare const z: any;`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	files := map[string]string{
+		"/package.json": `{"name": "externals-test", "main": "./src/index.ts", "dependencies": {"zod": "3.23.0"}, "esbuild": {"external": ["zod"]}}`,
+		"/bun.lock":     lockContent,
+		"/src/index.ts": `import { z } from 'zod';
+export const schema = z;`,
+	}
+
+	body, ct := buildV3Multipart(files)
+	req := httptest.NewRequest(http.MethodPost, "/v3/compile?skip_typecheck=true", body)
+	req.Header.Set("Content-Type", ct)
+	w := httptest.NewRecorder()
+
+	compileV3Handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result BuildV2Response
+	json.NewDecoder(resp.Body).Decode(&result)
+	if len(result.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", result.Errors)
+	}
+	if result.Code == "" {
+		t.Fatal("expected compiled code")
+	}
+	// The import should be preserved as external (require("zod"))
+	if !strings.Contains(result.Code, "require(\"zod\")") {
+		t.Errorf("expected external import to produce require(\"zod\"), got:\n%s", result.Code)
+	}
+}
+
+// Test 9: Bad request — missing package.json
+func TestV3BadRequest_MissingPackageJSON(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	files := map[string]string{
+		"/bun.lock":     "some-lock",
+		"/src/index.ts": "export const x = 1;",
+	}
+
+	body, ct := buildV3Multipart(files)
+	req := httptest.NewRequest(http.MethodPost, "/v3/typecheck", body)
+	req.Header.Set("Content-Type", ct)
+	w := httptest.NewRecorder()
+
+	typecheckV3Handler(w, req)
+
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Result().StatusCode)
+	}
+}
+
+// Test 10: Bad request — invalid JSON in package.json
+func TestV3BadRequest_InvalidPackageJSON(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	lockContent := "invalid-pkg-json-lock"
+	hash := hashBunLock([]byte(lockContent))
+	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
+	if err := os.MkdirAll(depDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	files := map[string]string{
+		"/package.json": `{this is not valid json!!!`,
+		"/bun.lock":     lockContent,
+		"/src/index.ts": "export const x = 1;",
+	}
+
+	body, ct := buildV3Multipart(files)
+	req := httptest.NewRequest(http.MethodPost, "/v3/compile", body)
+	req.Header.Set("Content-Type", ct)
+	w := httptest.NewRecorder()
+
+	compileV3Handler(w, req)
+
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid package.json, got %d", w.Result().StatusCode)
+	}
+}
+
+// Test 11: Bad request — GET instead of POST
+func TestV3BadRequest_MethodNotAllowed(t *testing.T) {
+	t.Run("TypecheckGET", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/v3/typecheck", nil)
+		w := httptest.NewRecorder()
+		typecheckV3Handler(w, req)
+
+		if w.Result().StatusCode != http.StatusMethodNotAllowed {
+			t.Fatalf("expected 405 for GET /v3/typecheck, got %d", w.Result().StatusCode)
+		}
+	})
+
+	t.Run("CompileGET", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/v3/compile", nil)
+		w := httptest.NewRecorder()
+		compileV3Handler(w, req)
+
+		if w.Result().StatusCode != http.StatusMethodNotAllowed {
+			t.Fatalf("expected 405 for GET /v3/compile, got %d", w.Result().StatusCode)
+		}
+	})
+}
+
+// Test 12: Dep cache hit verification — two requests with same bun.lock
+func TestV3DepCacheHit(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	lockContent := "cache-hit-lock"
+	setupV3DepCache(t, lockContent)
+
+	files := map[string]string{
+		"/package.json": `{"name": "cache-hit-test", "main": "./src/index.ts", "dependencies": {}}`,
+		"/bun.lock":     lockContent,
+		"/src/index.ts": `export const x: string = "first";`,
+	}
+
+	// First request
+	body1, ct1 := buildV3Multipart(files)
+	req1 := httptest.NewRequest(http.MethodPost, "/v3/typecheck", body1)
+	req1.Header.Set("Content-Type", ct1)
+	w1 := httptest.NewRecorder()
+	typecheckV3Handler(w1, req1)
+
+	if w1.Result().StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(w1.Result().Body)
+		t.Fatalf("first request: expected 200, got %d: %s", w1.Result().StatusCode, string(respBody))
+	}
+
+	var result1 TypecheckV2Response
+	json.NewDecoder(w1.Result().Body).Decode(&result1)
+	if !result1.Pass {
+		t.Fatalf("first request: expected pass, got errors: %v", result1.Errors)
+	}
+
+	// Second request with same lock content — should reuse cache
+	files["/src/index.ts"] = `export const y: number = 42;`
+	body2, ct2 := buildV3Multipart(files)
+	req2 := httptest.NewRequest(http.MethodPost, "/v3/typecheck", body2)
+	req2.Header.Set("Content-Type", ct2)
+	w2 := httptest.NewRecorder()
+	typecheckV3Handler(w2, req2)
+
+	if w2.Result().StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(w2.Result().Body)
+		t.Fatalf("second request: expected 200, got %d: %s", w2.Result().StatusCode, string(respBody))
+	}
+
+	var result2 TypecheckV2Response
+	json.NewDecoder(w2.Result().Body).Decode(&result2)
+	if !result2.Pass {
+		t.Fatalf("second request: expected pass, got errors: %v", result2.Errors)
+	}
+}
+
+// Test 13: Multi-file compile with relative imports (../lib pattern)
+func TestV3RelativeImports(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	lockContent := "relative-imports-lock"
+	hash := hashBunLock([]byte(lockContent))
+	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
+	if err := os.MkdirAll(depDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	files := map[string]string{
+		"/package.json": `{"name": "relative-imports", "main": "./src/index.ts", "dependencies": {}}`,
+		"/bun.lock":     lockContent,
+		"/shared/math.ts": `export function add(a: number, b: number): number {
+  return a + b;
+}
+
+export function multiply(a: number, b: number): number {
+  return a * b;
+}`,
+		"/shared/strings.ts": `export function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}`,
+		"/src/helpers.ts": `import { add } from '../shared/math';
+import { capitalize } from '../shared/strings';
+
+export function formatResult(a: number, b: number): string {
+  return capitalize("sum: " + add(a, b).toString());
+}`,
+		"/src/index.ts": `import { formatResult } from './helpers';
+import { multiply } from '../shared/math';
+
+const result = formatResult(2, 3);
+const product = multiply(4, 5);
+export { result, product };`,
+	}
+
+	t.Run("Typecheck", func(t *testing.T) {
+		body, ct := buildV3Multipart(files)
+		req := httptest.NewRequest(http.MethodPost, "/v3/typecheck", body)
+		req.Header.Set("Content-Type", ct)
+		w := httptest.NewRecorder()
+
+		typecheckV3Handler(w, req)
+
+		var result TypecheckV2Response
+		json.NewDecoder(w.Result().Body).Decode(&result)
+		if !result.Pass {
+			t.Fatalf("expected typecheck pass, got errors: %v", result.Errors)
+		}
+	})
+
+	t.Run("Compile", func(t *testing.T) {
+		body, ct := buildV3Multipart(files)
+		req := httptest.NewRequest(http.MethodPost, "/v3/compile?skip_typecheck=true", body)
+		req.Header.Set("Content-Type", ct)
+		w := httptest.NewRecorder()
+
+		compileV3Handler(w, req)
+
+		var result BuildV2Response
+		json.NewDecoder(w.Result().Body).Decode(&result)
+		if len(result.Errors) > 0 {
+			t.Fatalf("unexpected compile errors: %v", result.Errors)
+		}
+		if result.Code == "" {
+			t.Fatal("expected compiled code")
+		}
+		// Verify content from nested files is included
+		if !strings.Contains(result.Code, "capitalize") || !strings.Contains(result.Code, "sum") {
+			t.Errorf("compiled code missing content from nested relative imports")
+		}
+	})
 }
