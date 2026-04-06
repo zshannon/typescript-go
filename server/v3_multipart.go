@@ -1,11 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
 	"strings"
+
+	"github.com/evanw/esbuild/pkg/api"
 )
 
 // parseV3Multipart parses a multipart/form-data request body where each field
@@ -97,4 +100,124 @@ func parseV3Multipart(body io.Reader, contentType string) (map[string][]byte, er
 	}
 
 	return files, nil
+}
+
+// v3PackageJSON represents the parsed package.json for v3 requests.
+type v3PackageJSON struct {
+	Dependencies    map[string]string `json:"dependencies"`
+	DevDependencies map[string]string `json:"devDependencies"`
+	Esbuild         v3EsbuildConfig   `json:"esbuild"`
+	Main            string            `json:"main"`
+}
+
+// v3EsbuildConfig holds the esbuild configuration from package.json.
+type v3EsbuildConfig struct {
+	Bundle            bool     `json:"bundle"`
+	External          []string `json:"external"`
+	Format            string   `json:"format"`
+	MinifyIdentifiers bool     `json:"minifyIdentifiers"`
+	MinifySyntax      bool     `json:"minifySyntax"`
+	MinifyWhitespace  bool     `json:"minifyWhitespace"`
+	Platform          string   `json:"platform"`
+	Target            string   `json:"target"`
+}
+
+// esbuildOptions converts the v3EsbuildConfig to esbuild Go API BuildOptions,
+// applying defaults when fields are zero/empty.
+//
+// Defaults:
+//   - Bundle: true
+//   - External: nil (bundle everything)
+//   - Format: CJS
+//   - MinifyIdentifiers: false
+//   - MinifySyntax: true
+//   - MinifyWhitespace: true
+//   - Platform: browser
+//   - Target: ES2022
+//   - Write: false
+func (c v3EsbuildConfig) esbuildOptions() api.BuildOptions {
+	opts := api.BuildOptions{
+		Bundle:           true,
+		MinifySyntax:     true,
+		MinifyWhitespace: true,
+		Write:            false,
+	}
+
+	// Format
+	switch strings.ToLower(c.Format) {
+	case "esm", "es", "module":
+		opts.Format = api.FormatESModule
+	case "iife":
+		opts.Format = api.FormatIIFE
+	default:
+		opts.Format = api.FormatCommonJS
+	}
+
+	// Platform
+	switch strings.ToLower(c.Platform) {
+	case "node":
+		opts.Platform = api.PlatformNode
+	case "neutral":
+		opts.Platform = api.PlatformNeutral
+	default:
+		opts.Platform = api.PlatformBrowser
+	}
+
+	// Target
+	switch strings.ToLower(c.Target) {
+	case "es2015", "es6":
+		opts.Target = api.ES2015
+	case "es2016":
+		opts.Target = api.ES2016
+	case "es2017":
+		opts.Target = api.ES2017
+	case "es2018":
+		opts.Target = api.ES2018
+	case "es2019":
+		opts.Target = api.ES2019
+	case "es2020":
+		opts.Target = api.ES2020
+	case "es2021":
+		opts.Target = api.ES2021
+	case "es2023":
+		opts.Target = api.ES2023
+	case "esnext":
+		opts.Target = api.ESNext
+	default:
+		opts.Target = api.ES2022
+	}
+
+	// MinifyIdentifiers: only enable if explicitly set true
+	if c.MinifyIdentifiers {
+		opts.MinifyIdentifiers = true
+	}
+
+	// MinifySyntax: only disable if explicitly set false AND format was specified
+	if c.Format != "" && !c.MinifySyntax {
+		opts.MinifySyntax = false
+	}
+
+	// MinifyWhitespace: only disable if explicitly set false AND format was specified
+	if c.Format != "" && !c.MinifyWhitespace {
+		opts.MinifyWhitespace = false
+	}
+
+	// External: nil means bundle everything (default)
+	if len(c.External) > 0 {
+		opts.External = c.External
+	}
+
+	return opts
+}
+
+// parsePackageJSON parses raw package.json bytes and validates required fields.
+func parsePackageJSON(raw []byte) (*v3PackageJSON, error) {
+	var pkg v3PackageJSON
+	if err := json.Unmarshal(raw, &pkg); err != nil {
+		return nil, fmt.Errorf("invalid package.json: %w", err)
+	}
+	if pkg.Main == "" {
+		return nil, fmt.Errorf("package.json missing required field: main")
+	}
+	return &pkg, nil
 }

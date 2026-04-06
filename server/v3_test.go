@@ -13,6 +13,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/evanw/esbuild/pkg/api"
 )
 
 func TestNewDiskFSFromDeps(t *testing.T) {
@@ -176,5 +177,94 @@ func TestParseV3Multipart_TooManyFiles(t *testing.T) {
 	_, err := parseV3Multipart(buf, ct)
 	if err == nil {
 		t.Fatal("expected error for too many files, got nil")
+	}
+}
+
+// Task 5: parsePackageJSON and esbuildOptions tests
+
+func TestParsePackageJSON_Valid(t *testing.T) {
+	raw := []byte(`{
+		"name": "my-app",
+		"main": "src/index.ts",
+		"dependencies": {"react": "^18.0.0"},
+		"devDependencies": {"typescript": "^5.0.0"},
+		"esbuild": {
+			"bundle": true,
+			"external": ["react"],
+			"format": "esm",
+			"minifyIdentifiers": true,
+			"minifySyntax": false,
+			"minifyWhitespace": false,
+			"platform": "node",
+			"target": "es2020"
+		}
+	}`)
+
+	pkg, err := parsePackageJSON(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pkg.Main != "src/index.ts" {
+		t.Errorf("expected main=src/index.ts, got %q", pkg.Main)
+	}
+	if len(pkg.Dependencies) != 1 {
+		t.Errorf("expected 1 dependency, got %d", len(pkg.Dependencies))
+	}
+	if len(pkg.DevDependencies) != 1 {
+		t.Errorf("expected 1 devDependency, got %d", len(pkg.DevDependencies))
+	}
+	if pkg.Esbuild.Format != "esm" {
+		t.Errorf("expected format=esm, got %q", pkg.Esbuild.Format)
+	}
+	if len(pkg.Esbuild.External) != 1 || pkg.Esbuild.External[0] != "react" {
+		t.Errorf("expected external=[react], got %v", pkg.Esbuild.External)
+	}
+}
+
+func TestParsePackageJSON_Defaults(t *testing.T) {
+	raw := []byte(`{"name":"app","main":"index.ts"}`)
+
+	pkg, err := parsePackageJSON(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	opts := pkg.Esbuild.esbuildOptions()
+
+	if !opts.Bundle {
+		t.Error("expected Bundle=true by default")
+	}
+	if len(opts.External) != 0 {
+		t.Errorf("expected External=[] by default, got %v", opts.External)
+	}
+	if opts.Format != api.FormatCommonJS {
+		t.Errorf("expected Format=CJS by default, got %v", opts.Format)
+	}
+	if !opts.MinifySyntax {
+		t.Error("expected MinifySyntax=true by default")
+	}
+	if !opts.MinifyWhitespace {
+		t.Error("expected MinifyWhitespace=true by default")
+	}
+	if opts.MinifyIdentifiers {
+		t.Error("expected MinifyIdentifiers=false by default")
+	}
+	if opts.Platform != api.PlatformBrowser {
+		t.Errorf("expected Platform=browser by default, got %v", opts.Platform)
+	}
+	if opts.Target != api.ES2022 {
+		t.Errorf("expected Target=ES2022 by default, got %v", opts.Target)
+	}
+	if opts.Write {
+		t.Error("expected Write=false")
+	}
+}
+
+func TestParsePackageJSON_MissingMain(t *testing.T) {
+	raw := []byte(`{"name":"app","dependencies":{}}`)
+
+	_, err := parsePackageJSON(raw)
+	if err == nil {
+		t.Fatal("expected error for missing main field, got nil")
 	}
 }
