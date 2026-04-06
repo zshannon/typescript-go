@@ -13,6 +13,22 @@ import (
 )
 
 var (
+	depCacheLookups = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Help: "Total number of dependency cache lookups by result",
+			Name: "dep_cache_lookups_total",
+		},
+		[]string{"result"},
+	)
+
+	depInstallDuration = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Buckets: []float64{0.5, 1, 2.5, 5, 10, 30, 60},
+			Help:    "Duration of bun install in seconds",
+			Name:    "dep_install_duration_seconds",
+		},
+	)
+
 	compileDuration = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
 			Buckets: []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
@@ -72,6 +88,8 @@ var (
 )
 
 func init() {
+	prometheus.MustRegister(depCacheLookups)
+	prometheus.MustRegister(depInstallDuration)
 	prometheus.MustRegister(compileDuration)
 	prometheus.MustRegister(compileResults)
 	prometheus.MustRegister(httpRequestDuration)
