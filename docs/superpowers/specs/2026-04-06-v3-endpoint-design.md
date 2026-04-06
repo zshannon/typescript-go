@@ -21,7 +21,7 @@ Query parameters:
 
 `Content-Type: multipart/form-data`
 
-Each part's field name is the file path (absolute, rooted at `/`). The server parses all parts into a `map[string][]byte`.
+Each part's field name is the file path (absolute, rooted at `/`). The server parses all parts into a `map[string][]byte`, converting to `string` when populating `diskFS.userFiles` (which remains `map[string]string` to match the existing v2 interface).
 
 ### Required files
 
@@ -102,16 +102,17 @@ If absent, defaults are:
     "skipLibCheck": true,
     "strict": true,
     "strictNullChecks": true,
-    "target": "ES2022"
+    "target": "ES2022",
+    "lib": ["ES2022"]
   }
 }
 ```
 
-These match the current v2 hardcoded options, providing backward compatibility for callers that don't need custom config.
+These match the current v2 hardcoded options (including the explicit `lib` field), providing backward compatibility for callers that don't need custom config.
 
 ## Response Format
 
-Same JSON structure as v2:
+Same JSON structure as v2. Both TypeScript-Go diagnostics and esbuild errors are mapped into the same `DiagnosticErrorV2` shape:
 
 ```json
 // typecheck success
@@ -123,7 +124,7 @@ Same JSON structure as v2:
 // compile success
 {"code": "...bundled JS..."}
 
-// compile errors
+// compile errors (esbuild errors mapped to same shape)
 {"errors": [{"file": "/src/index.ts", "message": "...", "line": 1, "column": 5}]}
 ```
 
@@ -137,7 +138,19 @@ SHA256 hash of the raw `/bun.lock` file contents. Fully deterministic since the 
 
 1. **Local disk** -- check `{DISK_CACHE_PATH}/deps/{hash}/node_modules/` exists. If yes, use it.
 2. **S3** -- check `deps/{hash}.tar.gz` in the S3 bucket. If found, download and extract to local disk path.
-3. **Install** -- write `package.json` + `bun.lock` to a temp directory, run `bun install --frozen-lockfile --ignore-scripts`, tar.gz the resulting `node_modules`, upload to S3, move to local disk cache path.
+3. **Install** -- write `package.json` + `bun.lock` to a temp directory, run `bun install --frozen-lockfile --ignore-scripts`, tar.gz the resulting `node_modules`, upload to S3 via `PutObject`, move to local disk cache path. If `bun install` fails, clean up the temp directory and return a 502 error with `{"errors": [{"message": "dependency installation failed: <stderr>"}]}`. If S3 upload fails, log the error but proceed (local cache is sufficient; S3 upload can be retried on next miss).
+
+### S3 interface change
+
+The existing `S3ClientInterface` must be extended with `PutObject` to support uploading cached dep tarballs:
+
+```go
+type S3ClientInterface interface {
+    GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+    ListObjectsV2(ctx context.Context, params *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
+    PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+}
+```
 
 ### S3 layout
 
@@ -145,11 +158,11 @@ Dep caches live under the `deps/` prefix: `deps/{sha256hash}.tar.gz`. This avoid
 
 ### Local disk eviction
 
-Same LRU strategy the server already uses for versioned caches. When disk is full, evict the oldest dep cache entry first.
+Same LRU strategy the server already uses for versioned caches. Eviction covers both `{version}/` directories (v1/v2) and `deps/{hash}/` directories (v3). When disk is full, evict the oldest entry by mtime regardless of type.
 
 ### Concurrency
 
-If multiple requests arrive simultaneously with the same bun.lock hash and all miss cache, only one installs. A `sync.Map` of in-flight installs keyed by hash coordinates this -- the second request waits on the first via a channel.
+If multiple requests arrive simultaneously with the same bun.lock hash and all miss cache, only one installs. A `sync.Map` of in-flight installs keyed by hash coordinates this -- the second request waits on the first via a channel. The install result (success or error) is broadcast to all waiters; on error, each waiter returns the same 502 to its caller.
 
 ## Request Processing Flow
 
