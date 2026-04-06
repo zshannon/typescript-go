@@ -64,6 +64,113 @@ cat > "$FIXTURES_DIR/bench-type-valid.json" << 'EOF'
 }
 EOF
 
+# V3 fixtures: package.json with deps and esbuild config
+cat > "$FIXTURES_DIR/bench-v3-package.json" << 'EOF'
+{"main": "/index.tsx", "dependencies": {"@crayonnow/core": "1.0.0", "react": "18.0.0"}, "esbuild": {"bundle": true}}
+EOF
+
+# V3 fixtures: tsconfig.json
+cat > "$FIXTURES_DIR/bench-v3-tsconfig.json" << 'EOF'
+{"compilerOptions": {"lib": ["ES2022", "DOM"], "jsx": "react-jsx", "jsxImportSource": "@crayonnow/core", "module": "commonjs", "moduleResolution": "bundler", "skipLibCheck": true, "strict": true, "target": "es2022"}}
+EOF
+
+# V3 fixtures: simple component source
+cat > "$FIXTURES_DIR/bench-v3-simple.tsx" << 'EOF'
+import { Text } from '@crayonnow/core';
+
+interface GreetingProps {
+  name: string;
+}
+
+export default ({ name }: GreetingProps) => (
+  <Text style={{ fontSize: '18px', fontWeight: '600' }}>
+    Hello, {name}!
+  </Text>
+);
+EOF
+
+# V3 fixtures: medium component source (meditation timer)
+cat > "$FIXTURES_DIR/bench-v3-medium.tsx" << 'MEDEOF'
+import { Flex, Text, Button, Picker } from '@crayonnow/core';
+import { useState, useEffect } from 'react';
+
+export default () => {
+  const [duration, setDuration] = useState('5');
+  const [seconds, setSeconds] = useState(0);
+  const [running, setRunning] = useState(false);
+
+  const handleStartPause = () => {
+    if (running) {
+      setRunning(false);
+    } else {
+      if (seconds === 0) {
+        setSeconds(parseInt(duration, 10) * 60);
+      }
+      setRunning(true);
+    }
+  };
+
+  const handleReset = () => {
+    setRunning(false);
+    setSeconds(parseInt(duration, 10) * 60);
+  };
+
+  useEffect(() => {
+    if (running && seconds > 0) {
+      const timer = setTimeout(() => setSeconds(seconds - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+    if (running && seconds === 0) {
+      setRunning(false);
+    }
+  }, [running, seconds]);
+
+  const minutesDisplay = String(Math.floor(seconds / 60)).padStart(2, '0');
+  const secondsDisplay = String(seconds % 60).padStart(2, '0');
+
+  return (
+    <Flex style={{ alignItems: 'stretch', minHeight: '100vh', background: '#e0f7fa', padding: '20px', rowGap: '16px' }}>
+      <Text style={{ fontSize: '24px', fontWeight: '600', textAlign: 'center', color: '#006064' }}>
+        Meditation Timer
+      </Text>
+      <Picker
+        value={duration}
+        onChange={(val) => {
+          setDuration(val);
+          setSeconds(parseInt(val, 10) * 60);
+          setRunning(false);
+        }}
+        style={{ background: 'white', borderRadius: '8px', padding: '12px' }}
+      >
+        <Text value="5">5 Minutes</Text>
+        <Text value="10">10 Minutes</Text>
+        <Text value="15">15 Minutes</Text>
+        <Text value="20">20 Minutes</Text>
+      </Picker>
+      <Text style={{ fontSize: '48px', fontWeight: 'bold', textAlign: 'center', color: '#004d40' }}>
+        {minutesDisplay}:{secondsDisplay}
+      </Text>
+      <Button onClick={handleStartPause} style={{ background: running ? '#ff9800' : '#34C759', borderRadius: '8px', padding: '12px' }}>
+        <Text style={{ color: 'white', textAlign: 'center', fontWeight: '600' }}>{running ? 'Pause' : 'Start'}</Text>
+      </Button>
+      <Button onClick={handleReset} style={{ background: '#f44336', borderRadius: '8px', padding: '12px' }}>
+        <Text style={{ color: 'white', textAlign: 'center', fontWeight: '600' }}>Reset</Text>
+      </Button>
+    </Flex>
+  );
+};
+MEDEOF
+
+# V3 fixtures: dummy bun.lock
+cat > "$FIXTURES_DIR/bench-v3-bun.lock" << 'EOF'
+bench-lock-content
+EOF
+
+# V3 fixtures: trivial source
+cat > "$FIXTURES_DIR/bench-v3-trivial.tsx" << 'EOF'
+export const x: number = 1;
+EOF
+
 echo -e "${GREEN}Test payloads created${NC}\n"
 
 # Function to run benchmark
@@ -86,6 +193,38 @@ echo -e "${YELLOW}Starting benchmarks...${NC}\n"
 # 1. Health Check
 run_benchmark "Health Check" \
     "curl -s ${PROD_URL}/health > /dev/null"
+
+# --- V3 Benchmarks (multipart/form-data) ---
+
+# V3: Typecheck Trivial
+run_benchmark "V3 Typecheck Trivial" \
+    "curl -s -X POST ${PROD_URL}/v3/typecheck -F '/bun.lock=<${FIXTURES_DIR}/bench-v3-bun.lock' -F '/package.json=<${FIXTURES_DIR}/bench-v3-package.json' -F '/tsconfig.json=<${FIXTURES_DIR}/bench-v3-tsconfig.json' -F '/index.tsx=<${FIXTURES_DIR}/bench-v3-trivial.tsx' > /dev/null"
+
+# V3: Typecheck Simple Component
+run_benchmark "V3 Typecheck Simple" \
+    "curl -s -X POST ${PROD_URL}/v3/typecheck -F '/bun.lock=<${FIXTURES_DIR}/bench-v3-bun.lock' -F '/package.json=<${FIXTURES_DIR}/bench-v3-package.json' -F '/tsconfig.json=<${FIXTURES_DIR}/bench-v3-tsconfig.json' -F '/index.tsx=<${FIXTURES_DIR}/bench-v3-simple.tsx' > /dev/null"
+
+# V3: Typecheck Medium Component
+run_benchmark "V3 Typecheck Medium" \
+    "curl -s -X POST ${PROD_URL}/v3/typecheck -F '/bun.lock=<${FIXTURES_DIR}/bench-v3-bun.lock' -F '/package.json=<${FIXTURES_DIR}/bench-v3-package.json' -F '/tsconfig.json=<${FIXTURES_DIR}/bench-v3-tsconfig.json' -F '/index.tsx=<${FIXTURES_DIR}/bench-v3-medium.tsx' > /dev/null"
+
+# V3: Compile Trivial
+run_benchmark "V3 Compile Trivial" \
+    "curl -s -X POST ${PROD_URL}/v3/compile -F '/bun.lock=<${FIXTURES_DIR}/bench-v3-bun.lock' -F '/package.json=<${FIXTURES_DIR}/bench-v3-package.json' -F '/tsconfig.json=<${FIXTURES_DIR}/bench-v3-tsconfig.json' -F '/index.tsx=<${FIXTURES_DIR}/bench-v3-trivial.tsx' > /dev/null"
+
+# V3: Compile Simple Component
+run_benchmark "V3 Compile Simple" \
+    "curl -s -X POST ${PROD_URL}/v3/compile -F '/bun.lock=<${FIXTURES_DIR}/bench-v3-bun.lock' -F '/package.json=<${FIXTURES_DIR}/bench-v3-package.json' -F '/tsconfig.json=<${FIXTURES_DIR}/bench-v3-tsconfig.json' -F '/index.tsx=<${FIXTURES_DIR}/bench-v3-simple.tsx' > /dev/null"
+
+# V3: Compile Medium Component
+run_benchmark "V3 Compile Medium" \
+    "curl -s -X POST ${PROD_URL}/v3/compile -F '/bun.lock=<${FIXTURES_DIR}/bench-v3-bun.lock' -F '/package.json=<${FIXTURES_DIR}/bench-v3-package.json' -F '/tsconfig.json=<${FIXTURES_DIR}/bench-v3-tsconfig.json' -F '/index.tsx=<${FIXTURES_DIR}/bench-v3-medium.tsx' > /dev/null"
+
+# V3: Compile with skip_typecheck
+run_benchmark "V3 Compile Skip Typecheck Medium" \
+    "curl -s -X POST '${PROD_URL}/v3/compile?skip_typecheck=true' -F '/bun.lock=<${FIXTURES_DIR}/bench-v3-bun.lock' -F '/package.json=<${FIXTURES_DIR}/bench-v3-package.json' -F '/tsconfig.json=<${FIXTURES_DIR}/bench-v3-tsconfig.json' -F '/index.tsx=<${FIXTURES_DIR}/bench-v3-medium.tsx' > /dev/null"
+
+# --- V1 Benchmarks (JSON) ---
 
 # 2. Simple React Component Build
 run_benchmark "Simple React Build" \
