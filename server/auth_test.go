@@ -278,6 +278,38 @@ func TestAuthMiddleware_WrongKey(t *testing.T) {
 	}
 }
 
+func TestAuthMiddleware_ExpiredSignature(t *testing.T) {
+	privKey, pubKeyBase58 := generateTestKeypair(t)
+
+	pubKey, _ := parseAuthPublicKey(pubKeyBase58)
+	key := httpsig.Key{Algorithm: httpsig.EcdsaP256Sha256, Key: pubKey, KeyID: "server"}
+	oldVerifier := authVerifier
+	authVerifier, _ = httpsig.NewVerifier(key,
+		httpsig.WithExpiredTimestampRequired(false),
+		httpsig.WithMaxAge(1*time.Nanosecond),
+		httpsig.WithRequiredComponents("@method", "@path", "@authority"),
+		httpsig.WithValidateAllSignatures(),
+	)
+	defer func() { authVerifier = oldVerifier }()
+
+	handler := authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest("GET", "/build", nil)
+	req.Host = "localhost"
+	signRequest(t, req, privKey, pubKeyBase58, "@method", "@path", "@authority")
+
+	time.Sleep(2 * time.Millisecond)
+
+	rr := httptest.NewRecorder()
+	handler(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for expired signature, got %d", rr.Code)
+	}
+}
+
 func TestAuthMiddleware_TamperedBody(t *testing.T) {
 	privKey, pubKeyBase58 := generateTestKeypair(t)
 
