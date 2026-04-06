@@ -7,9 +7,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -461,5 +464,93 @@ func TestIsExternal(t *testing.T) {
 		if result != tt.expected {
 			t.Errorf("isExternal(%q, %v) = %v, want %v", tt.path, tt.externals, result, tt.expected)
 		}
+	}
+}
+
+// Task 10: V3 HTTP handler tests
+
+func TestV3TypecheckHandler_Pass(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	lockContent := []byte("test-lock-for-handler")
+	hash := hashBunLock(lockContent)
+	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
+	if err := os.MkdirAll(depDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	writer.WriteField("/package.json", `{"main": "./src/index.ts", "dependencies": {}}`)
+	writer.WriteField("/bun.lock", "test-lock-for-handler")
+	writer.WriteField("/src/index.ts", "export const x: string = 'hello';")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v3/typecheck", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+
+	typecheckV3Handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result TypecheckV2Response
+	json.NewDecoder(resp.Body).Decode(&result)
+	if !result.Pass {
+		t.Fatalf("expected pass, got errors: %v", result.Errors)
+	}
+}
+
+func TestV3TypecheckHandler_MethodNotAllowed(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/v3/typecheck", nil)
+	w := httptest.NewRecorder()
+
+	typecheckV3Handler(w, req)
+
+	if w.Result().StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Result().StatusCode)
+	}
+}
+
+func TestV3CompileHandler_Success(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	lockContent := []byte("compile-handler-lock")
+	hash := hashBunLock(lockContent)
+	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
+	if err := os.MkdirAll(depDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	writer.WriteField("/package.json", `{"main": "./src/index.ts", "dependencies": {}}`)
+	writer.WriteField("/bun.lock", "compile-handler-lock")
+	writer.WriteField("/src/index.ts", "export const hello = 'world';")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v3/compile?skip_typecheck=true", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+
+	compileV3Handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result BuildV2Response
+	json.NewDecoder(resp.Body).Decode(&result)
+	if len(result.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", result.Errors)
+	}
+	if result.Code == "" {
+		t.Fatal("expected compiled code")
 	}
 }
