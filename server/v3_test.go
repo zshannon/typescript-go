@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"io"
+	"mime/multipart"
 	"os"
 	"path/filepath"
 	"strings"
@@ -76,5 +79,102 @@ func TestMockS3PutObject(t *testing.T) {
 	data, _ := io.ReadAll(result.Body)
 	if string(data) != "test content" {
 		t.Fatalf("expected 'test content', got %q", string(data))
+	}
+}
+
+// buildMultipart creates a multipart/form-data body from a map of path->content.
+func buildMultipart(files map[string][]byte) (*bytes.Buffer, string) {
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	for name, content := range files {
+		fw, _ := w.CreateFormFile(name, name)
+		fw.Write(content)
+	}
+	w.Close()
+	return &buf, w.FormDataContentType()
+}
+
+// Task 4: parseV3Multipart tests
+
+func TestParseV3Multipart_Valid(t *testing.T) {
+	files := map[string][]byte{
+		"/package.json": []byte(`{"name":"test","main":"src/index.ts"}`),
+		"/bun.lock":     []byte(`{}`),
+		"/src/index.ts": []byte(`export const x = 1;`),
+	}
+	buf, ct := buildMultipart(files)
+
+	result, err := parseV3Multipart(buf, ct)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 3 {
+		t.Fatalf("expected 3 files, got %d", len(result))
+	}
+	if _, ok := result["/package.json"]; !ok {
+		t.Error("missing /package.json")
+	}
+	if _, ok := result["/bun.lock"]; !ok {
+		t.Error("missing /bun.lock")
+	}
+	if _, ok := result["/src/index.ts"]; !ok {
+		t.Error("missing /src/index.ts")
+	}
+}
+
+func TestParseV3Multipart_MissingPackageJSON(t *testing.T) {
+	files := map[string][]byte{
+		"/bun.lock":     []byte(`{}`),
+		"/src/index.ts": []byte(`export const x = 1;`),
+	}
+	buf, ct := buildMultipart(files)
+
+	_, err := parseV3Multipart(buf, ct)
+	if err == nil {
+		t.Fatal("expected error for missing package.json, got nil")
+	}
+}
+
+func TestParseV3Multipart_MissingBunLock(t *testing.T) {
+	files := map[string][]byte{
+		"/package.json": []byte(`{"name":"test","main":"src/index.ts"}`),
+		"/src/index.ts": []byte(`export const x = 1;`),
+	}
+	buf, ct := buildMultipart(files)
+
+	_, err := parseV3Multipart(buf, ct)
+	if err == nil {
+		t.Fatal("expected error for missing bun.lock, got nil")
+	}
+}
+
+func TestParseV3Multipart_NodeModulesRejected(t *testing.T) {
+	files := map[string][]byte{
+		"/package.json":               []byte(`{"name":"test","main":"src/index.ts"}`),
+		"/bun.lock":                   []byte(`{}`),
+		"/node_modules/evil/index.js": []byte(`module.exports = {}`),
+	}
+	buf, ct := buildMultipart(files)
+
+	_, err := parseV3Multipart(buf, ct)
+	if err == nil {
+		t.Fatal("expected error for node_modules path, got nil")
+	}
+}
+
+func TestParseV3Multipart_TooManyFiles(t *testing.T) {
+	files := map[string][]byte{
+		"/package.json": []byte(`{"name":"test","main":"src/index.ts"}`),
+		"/bun.lock":     []byte(`{}`),
+	}
+	// Add 101 source files (exceeds maxFilesPerRequest=100)
+	for i := 0; i < 101; i++ {
+		files[fmt.Sprintf("/src/file%d.ts", i)] = []byte(`export const x = 1;`)
+	}
+	buf, ct := buildMultipart(files)
+
+	_, err := parseV3Multipart(buf, ct)
+	if err == nil {
+		t.Fatal("expected error for too many files, got nil")
 	}
 }
