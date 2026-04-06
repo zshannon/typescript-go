@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -268,3 +270,44 @@ func TestParsePackageJSON_MissingMain(t *testing.T) {
 		t.Fatal("expected error for missing main field, got nil")
 	}
 }
+
+// Task 6: hash and local disk lookup tests
+
+func TestHashBunLock(t *testing.T) {
+	lockContent := []byte("some lockfile content")
+	hash := hashBunLock(lockContent)
+	expected := sha256.Sum256(lockContent)
+	expectedHex := hex.EncodeToString(expected[:])
+	if hash != expectedHex {
+		t.Fatalf("expected %s, got %s", expectedHex, hash)
+	}
+}
+
+func TestResolveDeps_LocalHit(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "deps-cache-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+	diskCachePath = tmpDir
+
+	lockContent := []byte("test lockfile")
+	hash := hashBunLock(lockContent)
+	depDir := filepath.Join(tmpDir, "deps", hash, "node_modules", "zod")
+	if err := os.MkdirAll(depDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(depDir, "index.js"), []byte("module.exports = {}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := resolveDeps(context.Background(), lockContent, []byte(`{"dependencies":{"zod":"3.23.0"}}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expectedPath := filepath.Join(tmpDir, "deps", hash)
+	if path != expectedPath {
+		t.Fatalf("expected %s, got %s", expectedPath, path)
+	}
+}
+

@@ -1,0 +1,335 @@
+package main
+
+import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+)
+
+// depInstallResult holds the outcome of a dep install operation.
+// Multiple concurrent requests for the same hash share one result.
+type depInstallResult struct {
+	done chan struct{}
+	err  error
+	path string
+}
+
+var (
+	depInstallMu      sync.Mutex
+	depInstallInFlight = make(map[string]*depInstallResult)
+)
+
+// hashBunLock returns the SHA256 hex digest of the bun.lock content.
+func hashBunLock(lockContent []byte) string {
+	sum := sha256.Sum256(lockContent)
+	return hex.EncodeToString(sum[:])
+}
+
+// resolveDeps resolves dependencies using a 3-tier lookup:
+//  1. Local disk cache
+//  2. S3 cache
+//  3. bun install
+//
+// Concurrent requests for the same hash are deduplicated.
+func resolveDeps(ctx context.Context, lockContent []byte, packageJSON []byte) (string, error) {
+	hash := hashBunLock(lockContent)
+	depDir := filepath.Join(diskCachePath, "deps", hash)
+
+	// Tier 1: local disk check
+	nmDir := filepath.Join(depDir, "node_modules")
+	if _, err := os.Stat(nmDir); err == nil {
+		depCacheLookups.WithLabelValues("disk_hit").Inc()
+		// Touch mtime for LRU eviction tracking
+		now := time.Now()
+		_ = os.Chtimes(depDir, now, now)
+		return depDir, nil
+	}
+
+	// Concurrency dedup: only one goroutine does the install/download per hash
+	depInstallMu.Lock()
+	if inflight, ok := depInstallInFlight[hash]; ok {
+		depInstallMu.Unlock()
+		// Wait for the in-flight install to complete
+		<-inflight.done
+		return inflight.path, inflight.err
+	}
+	result := &depInstallResult{
+		done: make(chan struct{}),
+	}
+	depInstallInFlight[hash] = result
+	depInstallMu.Unlock()
+
+	// Perform the resolution (S3 then bun install)
+	path, err := func() (string, error) {
+		// Tier 2: S3 lookup
+		if s3Client != nil {
+			p, s3Err := resolveDepsFromS3(ctx, hash, depDir)
+			if s3Err == nil {
+				depCacheLookups.WithLabelValues("s3_hit").Inc()
+				return p, nil
+			}
+		}
+
+		// Tier 3: bun install
+		depCacheLookups.WithLabelValues("install").Inc()
+		return installDeps(ctx, hash, depDir, lockContent, packageJSON)
+	}()
+
+	// Broadcast result to all waiters
+	result.path = path
+	result.err = err
+	close(result.done)
+
+	// Remove from in-flight map
+	depInstallMu.Lock()
+	delete(depInstallInFlight, hash)
+	depInstallMu.Unlock()
+
+	return path, err
+}
+
+// resolveDepsFromS3 downloads and extracts a deps tarball from S3.
+func resolveDepsFromS3(ctx context.Context, hash string, depDir string) (string, error) {
+	key := "deps/" + hash + ".tar.gz"
+	out, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s3Bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return "", fmt.Errorf("s3 get %s: %w", key, err)
+	}
+	defer out.Body.Close()
+
+	if err := os.MkdirAll(depDir, 0755); err != nil {
+		return "", fmt.Errorf("mkdir %s: %w", depDir, err)
+	}
+
+	if err := extractTarGz(out.Body, depDir); err != nil {
+		return "", fmt.Errorf("extract tar.gz: %w", err)
+	}
+
+	return depDir, nil
+}
+
+// installDeps runs bun install in a temp dir, moves the result to the cache,
+// and uploads the tarball to S3 in the background.
+func installDeps(ctx context.Context, hash string, depDir string, lockContent []byte, packageJSON []byte) (string, error) {
+	start := time.Now()
+
+	tmpDir, err := os.MkdirTemp("", "bun-install-*")
+	if err != nil {
+		return "", fmt.Errorf("mkdirtemp: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "package.json"), packageJSON, 0644); err != nil {
+		return "", fmt.Errorf("write package.json: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "bun.lock"), lockContent, 0644); err != nil {
+		return "", fmt.Errorf("write bun.lock: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, "bun", "install", "--frozen-lockfile", "--ignore-scripts")
+	cmd.Dir = tmpDir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("bun install failed: %w\nstderr: %s", err, stderr.String())
+	}
+
+	depInstallDuration.Observe(time.Since(start).Seconds())
+
+	// Move node_modules to cache location
+	if err := os.MkdirAll(filepath.Dir(depDir), 0755); err != nil {
+		return "", fmt.Errorf("mkdir cache parent: %w", err)
+	}
+
+	tmpNM := filepath.Join(tmpDir, "node_modules")
+	destNM := filepath.Join(depDir, "node_modules")
+
+	// Attempt rename first (fast if same filesystem), fall back to copy
+	if err := os.Rename(filepath.Join(tmpDir), depDir); err != nil {
+		if err2 := os.MkdirAll(depDir, 0755); err2 != nil {
+			return "", fmt.Errorf("mkdir depDir: %w", err2)
+		}
+		if err2 := copyDir(tmpNM, destNM); err2 != nil {
+			return "", fmt.Errorf("copy node_modules: %w", err2)
+		}
+	}
+
+	// Upload to S3 in background
+	go uploadDepsToS3(context.Background(), hash, depDir)
+
+	return depDir, nil
+}
+
+// uploadDepsToS3 creates a tar.gz of node_modules and uploads it to S3.
+func uploadDepsToS3(ctx context.Context, hash string, depDir string) {
+	if s3Client == nil {
+		return
+	}
+
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+
+	nmDir := filepath.Join(depDir, "node_modules")
+	err := filepath.Walk(nmDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(depDir, path)
+		if err != nil {
+			return err
+		}
+		// Use forward slashes in tar headers
+		rel = filepath.ToSlash(rel)
+
+		header, err := tar.FileInfoHeader(info, "")
+		if err != nil {
+			return err
+		}
+		header.Name = rel
+
+		if err := tw.WriteHeader(header); err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			f, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			if _, err := io.Copy(tw, f); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		log.Printf("uploadDepsToS3: walk error for hash %s: %v", hash, err)
+		return
+	}
+
+	if err := tw.Close(); err != nil {
+		log.Printf("uploadDepsToS3: tw.Close error: %v", err)
+		return
+	}
+	if err := gw.Close(); err != nil {
+		log.Printf("uploadDepsToS3: gw.Close error: %v", err)
+		return
+	}
+
+	key := "deps/" + hash + ".tar.gz"
+	_, err = s3Client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(s3Bucket),
+		Body:   bytes.NewReader(buf.Bytes()),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		log.Printf("uploadDepsToS3: PutObject error for %s: %v", key, err)
+	}
+}
+
+// extractTarGz extracts a tar.gz stream into destDir.
+func extractTarGz(r io.Reader, destDir string) error {
+	gr, err := gzip.NewReader(r)
+	if err != nil {
+		return fmt.Errorf("gzip reader: %w", err)
+	}
+	defer gr.Close()
+
+	tr := tar.NewReader(gr)
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("tar next: %w", err)
+		}
+
+		// Sanitize path to prevent directory traversal
+		cleanName := filepath.Clean(header.Name)
+		if filepath.IsAbs(cleanName) {
+			continue
+		}
+
+		target := filepath.Join(destDir, cleanName)
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, os.FileMode(header.Mode)|0755); err != nil {
+				return fmt.Errorf("mkdir %s: %w", target, err)
+			}
+		case tar.TypeReg, tar.TypeRegA:
+			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+				return fmt.Errorf("mkdir parent %s: %w", target, err)
+			}
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode)|0644)
+			if err != nil {
+				return fmt.Errorf("create %s: %w", target, err)
+			}
+			if _, err := io.Copy(f, tr); err != nil {
+				f.Close()
+				return fmt.Errorf("write %s: %w", target, err)
+			}
+			f.Close()
+		}
+	}
+	return nil
+}
+
+// copyDir recursively copies src directory to dst.
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, info.Mode())
+		}
+		return copyFile(path, target, info.Mode())
+	})
+}
+
+// copyFile copies a single file from src to dst with the given mode.
+func copyFile(src, dst string, mode os.FileMode) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	return err
+}
