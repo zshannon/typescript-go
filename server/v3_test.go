@@ -1,7 +1,9 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -311,3 +313,40 @@ func TestResolveDeps_LocalHit(t *testing.T) {
 	}
 }
 
+// Task 7: S3 hit test
+
+func TestResolveDeps_S3Hit(t *testing.T) {
+	mockS3 := setupTestServerWithMockS3(t)
+
+	lockContent := []byte("s3 test lockfile")
+	hash := hashBunLock(lockContent)
+
+	// Create a tarball in mock S3
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+	content := []byte("module.exports = {}")
+	tw.WriteHeader(&tar.Header{
+		Name: "node_modules/zod/index.js",
+		Mode: 0644,
+		Size: int64(len(content)),
+	})
+	tw.Write(content)
+	tw.Close()
+	gw.Close()
+
+	mockS3.files["deps/"+hash+".tar.gz"] = buf.String()
+
+	path, err := resolveDeps(context.Background(), lockContent, []byte(`{"dependencies":{"zod":"3.23.0"}}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	extracted, err := os.ReadFile(filepath.Join(path, "node_modules", "zod", "index.js"))
+	if err != nil {
+		t.Fatalf("failed to read extracted file: %v", err)
+	}
+	if string(extracted) != "module.exports = {}" {
+		t.Fatalf("unexpected content: %s", string(extracted))
+	}
+}
