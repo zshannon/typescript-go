@@ -347,8 +347,202 @@ func TestParsePackageJSON_MissingMain(t *testing.T) {
 	raw := []byte(`{"name":"app","dependencies":{}}`)
 
 	_, err := parsePackageJSON(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: main is no longer required at parse time, got: %v", err)
+	}
+}
+
+func TestParsePackageJSON_ResolveS3(t *testing.T) {
+	raw := []byte(`{"main": "./src/index.ts", "dependencies": {"@flickfyi/core": "0.0.8"}, "resolve-s3": ["@flickfyi/core"]}`)
+	pkg, err := parsePackageJSON(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(pkg.ResolveS3) != 1 || pkg.ResolveS3[0] != "@flickfyi/core" {
+		t.Fatalf("expected resolve-s3 [@flickfyi/core], got %v", pkg.ResolveS3)
+	}
+}
+
+func TestParsePackageJSON_NoMainAllowed(t *testing.T) {
+	raw := []byte(`{"dependencies": {"zod": "^3.23.0"}}`)
+	_, err := parsePackageJSON(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestResolveS3Packages_VersionLookup(t *testing.T) {
+	pkg := &v3PackageJSON{
+		Dependencies: map[string]string{"@flickfyi/core": "0.0.8"},
+	}
+	version, err := lookupS3PackageVersion(pkg, "@flickfyi/core")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if version != "0.0.8" {
+		t.Fatalf("expected 0.0.8, got %s", version)
+	}
+}
+
+func TestResolveS3Packages_NotInDeps(t *testing.T) {
+	pkg := &v3PackageJSON{
+		Dependencies: map[string]string{"zod": "3.23.0"},
+	}
+	_, err := lookupS3PackageVersion(pkg, "@flickfyi/core")
 	if err == nil {
-		t.Fatal("expected error for missing main field, got nil")
+		t.Fatal("expected error for package not in deps, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found in dependencies") {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+func TestResolveS3Packages_RangeVersion(t *testing.T) {
+	pkg := &v3PackageJSON{
+		Dependencies: map[string]string{"@flickfyi/core": "^0.0.8"},
+	}
+	_, err := lookupS3PackageVersion(pkg, "@flickfyi/core")
+	if err == nil {
+		t.Fatal("expected error for range version, got nil")
+	}
+	if !strings.Contains(err.Error(), "exact version") {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+func TestResolveS3Packages_DevDeps(t *testing.T) {
+	pkg := &v3PackageJSON{
+		DevDependencies: map[string]string{"@flickfyi/core": "0.0.8"},
+	}
+	version, err := lookupS3PackageVersion(pkg, "@flickfyi/core")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if version != "0.0.8" {
+		t.Fatalf("expected 0.0.8, got %s", version)
+	}
+}
+
+func TestExtractNpmTarball(t *testing.T) {
+	// Create a tarball with package/ prefix like npm produces
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+
+	// Add a directory entry
+	tw.WriteHeader(&tar.Header{
+		Name:     "package/",
+		Typeflag: tar.TypeDir,
+		Mode:     0755,
+	})
+
+	// Add a file inside package/
+	content := []byte(`{"name": "@flickfyi/core", "version": "0.0.8"}`)
+	tw.WriteHeader(&tar.Header{
+		Name: "package/package.json",
+		Mode: 0644,
+		Size: int64(len(content)),
+	})
+	tw.Write(content)
+
+	// Add a nested file
+	jsContent := []byte(`module.exports = {}`)
+	tw.WriteHeader(&tar.Header{
+		Name: "package/dist/index.js",
+		Mode: 0644,
+		Size: int64(len(jsContent)),
+	})
+	tw.Write(jsContent)
+
+	tw.Close()
+	gw.Close()
+
+	// Extract to temp dir
+	destDir, err := os.MkdirTemp("", "extract-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(destDir)
+
+	if err := extractNpmTarball(&buf, destDir); err != nil {
+		t.Fatalf("extractNpmTarball failed: %v", err)
+	}
+
+	// Verify package/ prefix was stripped
+	pkgJSON, err := os.ReadFile(filepath.Join(destDir, "package.json"))
+	if err != nil {
+		t.Fatalf("package.json not found after extraction: %v", err)
+	}
+	if string(pkgJSON) != string(content) {
+		t.Fatalf("unexpected package.json content: %s", string(pkgJSON))
+	}
+
+	jsFile, err := os.ReadFile(filepath.Join(destDir, "dist", "index.js"))
+	if err != nil {
+		t.Fatalf("dist/index.js not found after extraction: %v", err)
+	}
+	if string(jsFile) != string(jsContent) {
+		t.Fatalf("unexpected dist/index.js content: %s", string(jsFile))
+	}
+}
+
+func TestV3CompileHandler_MissingMain(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	lockContent := []byte("missing-main-lock")
+	hash := hashBunLock(lockContent)
+	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
+	if err := os.MkdirAll(depDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	writer.WriteField("/package.json", `{"dependencies": {}}`)
+	writer.WriteField("/bun.lock", "missing-main-lock")
+	writer.WriteField("/src/index.ts", "export const x = 1;")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v3/compile", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+
+	compileV3Handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusBadRequest {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 400, got %d: %s", resp.StatusCode, string(respBody))
+	}
+}
+
+func TestV3TypecheckHandler_NoMainRequired(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	lockContent := []byte("no-main-typecheck-lock")
+	hash := hashBunLock(lockContent)
+	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
+	if err := os.MkdirAll(depDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	writer.WriteField("/package.json", `{"dependencies": {}}`)
+	writer.WriteField("/bun.lock", "no-main-typecheck-lock")
+	writer.WriteField("/src/index.ts", "export const x: string = 'hello';")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v3/typecheck", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+
+	typecheckV3Handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(respBody))
 	}
 }
 
@@ -382,7 +576,8 @@ func TestResolveDeps_LocalHit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	path, err := resolveDeps(context.Background(), lockContent, []byte(`{"dependencies":{"zod":"3.23.0"}}`))
+	pkg := &v3PackageJSON{Dependencies: map[string]string{"zod": "3.23.0"}}
+	path, err := resolveDeps(context.Background(), lockContent, pkg, []byte(`{"dependencies":{"zod":"3.23.0"}}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -416,7 +611,8 @@ func TestResolveDeps_S3Hit(t *testing.T) {
 
 	mockS3.files["deps/"+hash+".tar.gz"] = buf.String()
 
-	path, err := resolveDeps(context.Background(), lockContent, []byte(`{"dependencies":{"zod":"3.23.0"}}`))
+	pkg := &v3PackageJSON{Dependencies: map[string]string{"zod": "3.23.0"}}
+	path, err := resolveDeps(context.Background(), lockContent, pkg, []byte(`{"dependencies":{"zod":"3.23.0"}}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

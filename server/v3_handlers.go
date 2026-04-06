@@ -19,9 +19,14 @@ func typecheckV3Handler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	pkg, err := parsePackageJSON(files["/package.json"])
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	lockContent := files["/bun.lock"]
-	packageJSON := files["/package.json"]
-	depPath, err := resolveDeps(context.Background(), lockContent, packageJSON)
+	depPath, err := resolveDeps(context.Background(), lockContent, pkg, files["/package.json"])
 	if err != nil {
 		log.Printf("[V3] Dep resolution failed: %v", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -61,9 +66,13 @@ func compileV3Handler(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if pkg.Main == "" {
+		http.Error(w, "package.json missing required field: main", http.StatusBadRequest)
+		return
+	}
 
 	lockContent := files["/bun.lock"]
-	depPath, err := resolveDeps(context.Background(), lockContent, files["/package.json"])
+	depPath, err := resolveDeps(context.Background(), lockContent, pkg, files["/package.json"])
 	if err != nil {
 		log.Printf("[V3] Dep resolution failed: %v", err)
 		w.Header().Set("Content-Type", "application/json")

@@ -13,6 +13,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,7 +47,7 @@ func hashBunLock(lockContent []byte) string {
 //  3. bun install
 //
 // Concurrent requests for the same hash are deduplicated.
-func resolveDeps(ctx context.Context, lockContent []byte, packageJSON []byte) (string, error) {
+func resolveDeps(ctx context.Context, lockContent []byte, pkg *v3PackageJSON, rawPackageJSON []byte) (string, error) {
 	hash := hashBunLock(lockContent)
 	depDir := filepath.Join(diskCachePath, "deps", hash)
 
@@ -86,7 +88,7 @@ func resolveDeps(ctx context.Context, lockContent []byte, packageJSON []byte) (s
 
 		// Tier 3: bun install
 		depCacheLookups.WithLabelValues("install").Inc()
-		return installDeps(ctx, hash, depDir, lockContent, packageJSON)
+		return installDeps(ctx, hash, depDir, lockContent, pkg, rawPackageJSON)
 	}()
 
 	// Broadcast result to all waiters
@@ -127,7 +129,7 @@ func resolveDepsFromS3(ctx context.Context, hash string, depDir string) (string,
 
 // installDeps runs bun install in a temp dir, moves the result to the cache,
 // and uploads the tarball to S3 in the background.
-func installDeps(ctx context.Context, hash string, depDir string, lockContent []byte, packageJSON []byte) (string, error) {
+func installDeps(ctx context.Context, hash string, depDir string, lockContent []byte, pkg *v3PackageJSON, rawPackageJSON []byte) (string, error) {
 	start := time.Now()
 
 	tmpDir, err := os.MkdirTemp("", "bun-install-*")
@@ -136,11 +138,22 @@ func installDeps(ctx context.Context, hash string, depDir string, lockContent []
 	}
 	defer os.RemoveAll(tmpDir)
 
-	if err := os.WriteFile(filepath.Join(tmpDir, "package.json"), packageJSON, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "package.json"), rawPackageJSON, 0644); err != nil {
 		return "", fmt.Errorf("write package.json: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(tmpDir, "bun.lock"), lockContent, 0644); err != nil {
 		return "", fmt.Errorf("write bun.lock: %w", err)
+	}
+
+	// Pre-seed private S3 packages into node_modules before bun install
+	if len(pkg.ResolveS3) > 0 {
+		nmDir := filepath.Join(tmpDir, "node_modules")
+		if err := os.MkdirAll(nmDir, 0755); err != nil {
+			return "", fmt.Errorf("mkdir node_modules: %w", err)
+		}
+		if err := preseedS3Packages(ctx, pkg, nmDir); err != nil {
+			return "", fmt.Errorf("preseed s3 packages: %w", err)
+		}
 	}
 
 	cmd := exec.CommandContext(ctx, "bun", "install", "--frozen-lockfile", "--ignore-scripts")
@@ -332,4 +345,118 @@ func copyFile(src, dst string, mode os.FileMode) error {
 
 	_, err = io.Copy(out, in)
 	return err
+}
+
+// exactSemverRe matches exact semver versions like 1.2.3 or 1.2.3-beta.1
+var exactSemverRe = regexp.MustCompile(`^\d+\.\d+\.\d+(-[\w.]+)?$`)
+
+// lookupS3PackageVersion finds the version for a resolve-s3 package in deps or devDeps.
+// Only exact semver versions are allowed (no ranges like ^1.0.0).
+func lookupS3PackageVersion(pkg *v3PackageJSON, name string) (string, error) {
+	version := pkg.Dependencies[name]
+	if version == "" {
+		version = pkg.DevDependencies[name]
+	}
+	if version == "" {
+		return "", fmt.Errorf("resolve-s3 package %q not found in dependencies or devDependencies", name)
+	}
+	if !exactSemverRe.MatchString(version) {
+		return "", fmt.Errorf("resolve-s3 package %q must use an exact version, got %q", name, version)
+	}
+	return version, nil
+}
+
+// extractNpmTarball extracts a gzipped npm tarball into destDir,
+// stripping the leading "package/" prefix from all entries.
+func extractNpmTarball(r io.Reader, destDir string) error {
+	gr, err := gzip.NewReader(r)
+	if err != nil {
+		return fmt.Errorf("gzip reader: %w", err)
+	}
+	defer gr.Close()
+
+	tr := tar.NewReader(gr)
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("tar next: %w", err)
+		}
+
+		// Strip "package/" prefix (npm tarballs wrap everything in package/)
+		name := header.Name
+		if strings.HasPrefix(name, "package/") {
+			name = strings.TrimPrefix(name, "package/")
+		}
+		if name == "" || name == "." {
+			continue
+		}
+
+		// Sanitize path to prevent directory traversal
+		cleanName := filepath.Clean(name)
+		if filepath.IsAbs(cleanName) {
+			continue
+		}
+
+		target := filepath.Join(destDir, cleanName)
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, os.FileMode(header.Mode)|0755); err != nil {
+				return fmt.Errorf("mkdir %s: %w", target, err)
+			}
+		case tar.TypeReg, tar.TypeRegA:
+			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+				return fmt.Errorf("mkdir parent %s: %w", target, err)
+			}
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode)|0644)
+			if err != nil {
+				return fmt.Errorf("create %s: %w", target, err)
+			}
+			if _, err := io.Copy(f, tr); err != nil {
+				f.Close()
+				return fmt.Errorf("write %s: %w", target, err)
+			}
+			f.Close()
+		}
+	}
+	return nil
+}
+
+// preseedS3Packages downloads private packages from S3 and extracts them
+// into node_modules before bun install runs.
+func preseedS3Packages(ctx context.Context, pkg *v3PackageJSON, nodeModulesDir string) error {
+	if s3Client == nil {
+		return fmt.Errorf("s3 client not configured")
+	}
+
+	for _, name := range pkg.ResolveS3 {
+		version, err := lookupS3PackageVersion(pkg, name)
+		if err != nil {
+			return err
+		}
+
+		key := "packages/" + name + "/" + version + ".tgz"
+		out, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: aws.String(s3Bucket),
+			Key:    aws.String(key),
+		})
+		if err != nil {
+			return fmt.Errorf("s3 get %s: %w", key, err)
+		}
+		defer out.Body.Close()
+
+		pkgDir := filepath.Join(nodeModulesDir, name)
+		if err := os.MkdirAll(pkgDir, 0755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", pkgDir, err)
+		}
+
+		if err := extractNpmTarball(out.Body, pkgDir); err != nil {
+			return fmt.Errorf("extract %s: %w", name, err)
+		}
+	}
+
+	return nil
 }
