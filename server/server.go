@@ -138,6 +138,15 @@ func newDiskFS(ctx context.Context, version string) (*diskFS, error) {
 	}, nil
 }
 
+// newDiskFSFromDeps creates a diskFS backed by a dependency cache directory (v3 mode).
+// Unlike newDiskFS, this does not sync from S3 — the caller ensures deps are already installed.
+func newDiskFSFromDeps(depCachePath string) *diskFS {
+	return &diskFS{
+		basePath:  depCachePath,
+		userFiles: make(map[string]string),
+	}
+}
+
 // normalizeAndValidatePath ensures paths are absolute and prevents security issues
 func normalizeAndValidatePath(path string) (string, error) {
 	// Ensure absolute path
