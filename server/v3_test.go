@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/evanw/esbuild/pkg/api"
+	"github.com/microsoft/typescript-go/internal/core"
 )
 
 // setupV3DepCache creates a pre-populated dependency cache with @crayonnow/core and react
@@ -1688,4 +1689,504 @@ export { result, product };`,
 			t.Errorf("compiled code missing content from nested relative imports")
 		}
 	})
+}
+
+// =============================================================================
+// Coverage Gap Tests
+// =============================================================================
+
+func TestParseTSConfig(t *testing.T) {
+	t.Run("Nil returns defaults", func(t *testing.T) {
+		opts, err := parseTSConfig(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defaults := defaultCompilerOptions()
+		if opts.Strict != defaults.Strict {
+			t.Error("strict mismatch")
+		}
+		if opts.Target != defaults.Target {
+			t.Error("target mismatch")
+		}
+		if opts.Module != defaults.Module {
+			t.Error("module mismatch")
+		}
+		if opts.ModuleResolution != defaults.ModuleResolution {
+			t.Error("moduleResolution mismatch")
+		}
+		if opts.Jsx != defaults.Jsx {
+			t.Error("jsx mismatch")
+		}
+	})
+
+	t.Run("Target variants", func(t *testing.T) {
+		cases := []struct {
+			input    string
+			expected core.ScriptTarget
+		}{
+			{"es2015", core.ScriptTargetES2015},
+			{"es2016", core.ScriptTargetES2016},
+			{"es2017", core.ScriptTargetES2017},
+			{"es2018", core.ScriptTargetES2018},
+			{"es2019", core.ScriptTargetES2019},
+			{"es2020", core.ScriptTargetES2020},
+			{"es2021", core.ScriptTargetES2021},
+			{"es2022", core.ScriptTargetES2022},
+			{"es2023", core.ScriptTargetES2023},
+			{"esnext", core.ScriptTargetESNext},
+		}
+		for _, tc := range cases {
+			raw := []byte(fmt.Sprintf(`{"compilerOptions": {"target": "%s"}}`, tc.input))
+			opts, err := parseTSConfig(raw)
+			if err != nil {
+				t.Fatalf("target %s: %v", tc.input, err)
+			}
+			if opts.Target != tc.expected {
+				t.Errorf("target %s: got %v, want %v", tc.input, opts.Target, tc.expected)
+			}
+		}
+	})
+
+	t.Run("Module variants", func(t *testing.T) {
+		cases := []struct {
+			input    string
+			expected core.ModuleKind
+		}{
+			{"commonjs", core.ModuleKindCommonJS},
+			{"es2015", core.ModuleKindES2015},
+			{"es2020", core.ModuleKindES2020},
+			{"es2022", core.ModuleKindES2022},
+			{"esnext", core.ModuleKindESNext},
+			{"node16", core.ModuleKindNode16},
+			{"nodenext", core.ModuleKindNodeNext},
+		}
+		for _, tc := range cases {
+			raw := []byte(fmt.Sprintf(`{"compilerOptions": {"module": "%s"}}`, tc.input))
+			opts, err := parseTSConfig(raw)
+			if err != nil {
+				t.Fatalf("module %s: %v", tc.input, err)
+			}
+			if opts.Module != tc.expected {
+				t.Errorf("module %s: got %v, want %v", tc.input, opts.Module, tc.expected)
+			}
+		}
+	})
+
+	t.Run("ModuleResolution variants", func(t *testing.T) {
+		cases := []struct {
+			input    string
+			expected core.ModuleResolutionKind
+		}{
+			{"bundler", core.ModuleResolutionKindBundler},
+			{"classic", core.ModuleResolutionKindClassic},
+			{"node", core.ModuleResolutionKindNode10},
+			{"node16", core.ModuleResolutionKindNode16},
+			{"nodenext", core.ModuleResolutionKindNodeNext},
+		}
+		for _, tc := range cases {
+			raw := []byte(fmt.Sprintf(`{"compilerOptions": {"moduleResolution": "%s"}}`, tc.input))
+			opts, err := parseTSConfig(raw)
+			if err != nil {
+				t.Fatalf("moduleResolution %s: %v", tc.input, err)
+			}
+			if opts.ModuleResolution != tc.expected {
+				t.Errorf("moduleResolution %s: got %v, want %v", tc.input, opts.ModuleResolution, tc.expected)
+			}
+		}
+	})
+
+	t.Run("JSX variants", func(t *testing.T) {
+		cases := []struct {
+			input    string
+			expected core.JsxEmit
+		}{
+			{"preserve", core.JsxEmitPreserve},
+			{"react", core.JsxEmitReact},
+			{"react-jsx", core.JsxEmitReactJSX},
+			{"react-jsxdev", core.JsxEmitReactJSXDev},
+			{"react-native", core.JsxEmitReactNative},
+		}
+		for _, tc := range cases {
+			raw := []byte(fmt.Sprintf(`{"compilerOptions": {"jsx": "%s"}}`, tc.input))
+			opts, err := parseTSConfig(raw)
+			if err != nil {
+				t.Fatalf("jsx %s: %v", tc.input, err)
+			}
+			if opts.Jsx != tc.expected {
+				t.Errorf("jsx %s: got %v, want %v", tc.input, opts.Jsx, tc.expected)
+			}
+		}
+	})
+
+	t.Run("JsxImportSource", func(t *testing.T) {
+		raw := []byte(`{"compilerOptions": {"jsxImportSource": "@flickfyi/core"}}`)
+		opts, err := parseTSConfig(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if opts.JsxImportSource != "@flickfyi/core" {
+			t.Errorf("expected @flickfyi/core, got %s", opts.JsxImportSource)
+		}
+	})
+
+	t.Run("Lib override", func(t *testing.T) {
+		raw := []byte(`{"compilerOptions": {"lib": ["ES2022", "DOM"]}}`)
+		opts, err := parseTSConfig(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(opts.Lib) != 2 || opts.Lib[0] != "ES2022" || opts.Lib[1] != "DOM" {
+			t.Errorf("expected [ES2022, DOM], got %v", opts.Lib)
+		}
+	})
+
+	t.Run("SkipLibCheck false", func(t *testing.T) {
+		raw := []byte(`{"compilerOptions": {"skipLibCheck": false}}`)
+		opts, err := parseTSConfig(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if opts.SkipLibCheck != core.TSFalse {
+			t.Errorf("expected TSFalse, got %v", opts.SkipLibCheck)
+		}
+	})
+
+	t.Run("SkipLibCheck true", func(t *testing.T) {
+		raw := []byte(`{"compilerOptions": {"skipLibCheck": true}}`)
+		opts, err := parseTSConfig(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if opts.SkipLibCheck != core.TSTrue {
+			t.Errorf("expected TSTrue, got %v", opts.SkipLibCheck)
+		}
+	})
+
+	t.Run("Strict false", func(t *testing.T) {
+		raw := []byte(`{"compilerOptions": {"strict": false}}`)
+		opts, err := parseTSConfig(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if opts.Strict != core.TSFalse {
+			t.Errorf("expected TSFalse, got %v", opts.Strict)
+		}
+	})
+
+	t.Run("Strict true", func(t *testing.T) {
+		raw := []byte(`{"compilerOptions": {"strict": true}}`)
+		opts, err := parseTSConfig(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if opts.Strict != core.TSTrue {
+			t.Errorf("expected TSTrue, got %v", opts.Strict)
+		}
+	})
+
+	t.Run("Empty compilerOptions", func(t *testing.T) {
+		raw := []byte(`{"compilerOptions": {}}`)
+		opts, err := parseTSConfig(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defaults := defaultCompilerOptions()
+		if opts.Target != defaults.Target {
+			t.Error("should use default target")
+		}
+		if opts.Module != defaults.Module {
+			t.Error("should use default module")
+		}
+		if opts.Jsx != defaults.Jsx {
+			t.Error("should use default jsx")
+		}
+	})
+
+	t.Run("Invalid JSON", func(t *testing.T) {
+		raw := []byte(`{not valid json}`)
+		_, err := parseTSConfig(raw)
+		if err == nil {
+			t.Error("expected error for invalid JSON")
+		}
+	})
+}
+
+func TestCompileV3_MissingEntryPoint(t *testing.T) {
+	tmpDir, _ := os.MkdirTemp("", "v3-missing-entry-*")
+	defer os.RemoveAll(tmpDir)
+	diskCachePath = tmpDir
+
+	hash := hashBunLock([]byte("missing-entry-lock"))
+	os.MkdirAll(filepath.Join(tmpDir, "deps", hash, "node_modules"), 0755)
+
+	files := map[string][]byte{
+		"/src/other.ts": []byte("export const x = 1;"),
+	}
+	pkg := &v3PackageJSON{Main: "./src/index.ts"} // index.ts not in files
+
+	response := compileV3(files, pkg, nil, []byte("missing-entry-lock"))
+	if len(response.Errors) == 0 {
+		t.Fatal("expected error for missing entry point")
+	}
+	if !strings.Contains(response.Errors[0].Message, "Entry point not found") {
+		t.Fatalf("expected 'Entry point not found' error, got: %s", response.Errors[0].Message)
+	}
+}
+
+func TestTypecheckV3_NoTSFiles(t *testing.T) {
+	tmpDir, _ := os.MkdirTemp("", "v3-no-ts-*")
+	defer os.RemoveAll(tmpDir)
+	diskCachePath = tmpDir
+
+	hash := hashBunLock([]byte("no-ts-lock"))
+	os.MkdirAll(filepath.Join(tmpDir, "deps", hash, "node_modules"), 0755)
+
+	files := map[string][]byte{
+		"/src/data.json": []byte(`{"key": "value"}`),
+	}
+
+	response := typecheckV3(files, nil, []byte("no-ts-lock"))
+	if response.Pass {
+		t.Fatal("expected failure when no TypeScript files present, got pass")
+	}
+	if len(response.Errors) == 0 {
+		t.Fatal("expected errors")
+	}
+	if !strings.Contains(response.Errors[0].Message, "No TypeScript files") {
+		t.Fatalf("expected 'No TypeScript files' error, got: %s", response.Errors[0].Message)
+	}
+}
+
+func TestLoaderForPath(t *testing.T) {
+	tests := []struct {
+		expected api.Loader
+		path     string
+	}{
+		{api.LoaderTSX, "/src/index.ts"},
+		{api.LoaderTSX, "/src/app.tsx"},
+		{api.LoaderJSX, "/src/component.jsx"},
+		{api.LoaderJSON, "/data/config.json"},
+		{api.LoaderJS, "/lib/utils.mjs"},
+		{api.LoaderDefault, "/lib/main.js"},
+		{api.LoaderDefault, "/styles.css"},
+	}
+	for _, tt := range tests {
+		got := loaderForPath(tt.path)
+		if got != tt.expected {
+			t.Errorf("loaderForPath(%q) = %v, want %v", tt.path, got, tt.expected)
+		}
+	}
+}
+
+func TestExtractNpmTarball_DirectoryTraversal(t *testing.T) {
+	t.Run("AbsolutePathSkipped", func(t *testing.T) {
+		// Create a tarball with an absolute path entry
+		var buf bytes.Buffer
+		gw := gzip.NewWriter(&buf)
+		tw := tar.NewWriter(gw)
+
+		malicious := []byte("pwned")
+		tw.WriteHeader(&tar.Header{
+			Name: "/etc/evil",
+			Mode: 0644,
+			Size: int64(len(malicious)),
+		})
+		tw.Write(malicious)
+
+		// Add a legitimate file too
+		legit := []byte("ok")
+		tw.WriteHeader(&tar.Header{
+			Name: "package/index.js",
+			Mode: 0644,
+			Size: int64(len(legit)),
+		})
+		tw.Write(legit)
+		tw.Close()
+		gw.Close()
+
+		tmpDir, _ := os.MkdirTemp("", "traversal-abs-test-*")
+		defer os.RemoveAll(tmpDir)
+
+		destDir := filepath.Join(tmpDir, "node_modules", "pkg")
+		os.MkdirAll(destDir, 0755)
+		err := extractNpmTarball(bytes.NewReader(buf.Bytes()), destDir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// The absolute path entry should have been skipped
+		if _, statErr := os.Stat("/etc/evil"); statErr == nil {
+			t.Fatal("absolute path entry was not skipped")
+		}
+
+		// The legitimate file should exist
+		if _, statErr := os.Stat(filepath.Join(destDir, "index.js")); statErr != nil {
+			t.Fatal("legitimate file missing after extraction")
+		}
+	})
+
+	t.Run("DotOnlyEntrySkipped", func(t *testing.T) {
+		// Entry that resolves to "." after stripping package/ should be skipped
+		var buf bytes.Buffer
+		gw := gzip.NewWriter(&buf)
+		tw := tar.NewWriter(gw)
+
+		legit := []byte("content")
+		tw.WriteHeader(&tar.Header{
+			Name: "package/lib/main.js",
+			Mode: 0644,
+			Size: int64(len(legit)),
+		})
+		tw.Write(legit)
+		tw.Close()
+		gw.Close()
+
+		tmpDir, _ := os.MkdirTemp("", "traversal-dot-test-*")
+		defer os.RemoveAll(tmpDir)
+
+		destDir := filepath.Join(tmpDir, "node_modules", "pkg")
+		os.MkdirAll(destDir, 0755)
+		err := extractNpmTarball(bytes.NewReader(buf.Bytes()), destDir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if _, statErr := os.Stat(filepath.Join(destDir, "lib", "main.js")); statErr != nil {
+			t.Fatal("legitimate nested file missing after extraction")
+		}
+	})
+}
+
+func TestV3CompileHandler_DepResolutionFailure(t *testing.T) {
+	setupTestServerWithMockS3(t)
+	// No disk cache, no S3 cache, no bun -> dep resolution fails
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	writer.WriteField("/package.json", `{
+		"main": "./src/index.ts",
+		"dependencies": {"@flickfyi/core": "0.0.8"},
+		"resolve-s3": ["@flickfyi/core"]
+	}`)
+	writer.WriteField("/bun.lock", "compile-502-lock")
+	writer.WriteField("/src/index.ts", "export const x = 1;")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v3/compile", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+
+	compileV3Handler(w, req)
+
+	if w.Result().StatusCode != http.StatusBadGateway {
+		respBody, _ := io.ReadAll(w.Result().Body)
+		t.Fatalf("expected 502, got %d: %s", w.Result().StatusCode, string(respBody))
+	}
+}
+
+func TestParseV3Multipart_FileTooLarge(t *testing.T) {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	writer.WriteField("/package.json", `{"main": "./src/index.ts"}`)
+	writer.WriteField("/bun.lock", "lockfile")
+	// Write a file that exceeds 1MB
+	bigContent := strings.Repeat("x", 1024*1024+1)
+	writer.WriteField("/src/big.ts", bigContent)
+	writer.Close()
+
+	_, err := parseV3Multipart(body, writer.FormDataContentType())
+	if err == nil {
+		t.Fatal("expected error for file too large")
+	}
+	if !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("expected 'too large' error, got: %s", err.Error())
+	}
+}
+
+func TestCompileV3_BareMainPath(t *testing.T) {
+	tmpDir, _ := os.MkdirTemp("", "v3-bare-main-*")
+	defer os.RemoveAll(tmpDir)
+	diskCachePath = tmpDir
+
+	hash := hashBunLock([]byte("bare-main-lock"))
+	os.MkdirAll(filepath.Join(tmpDir, "deps", hash, "node_modules"), 0755)
+
+	files := map[string][]byte{
+		"/src/index.ts": []byte("export const hello = 'world';"),
+	}
+	// main without ./ prefix
+	pkg := &v3PackageJSON{Main: "src/index.ts"}
+
+	response := compileV3(files, pkg, nil, []byte("bare-main-lock"))
+	if len(response.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", response.Errors)
+	}
+	if response.Code == "" {
+		t.Fatal("expected compiled code")
+	}
+}
+
+func TestEsbuildOptions_AllFormats(t *testing.T) {
+	tests := []struct {
+		expected api.Format
+		format   string
+	}{
+		{api.FormatCommonJS, "cjs"},
+		{api.FormatCommonJS, ""},
+		{api.FormatESModule, "esm"},
+		{api.FormatESModule, "es"},
+		{api.FormatESModule, "module"},
+		{api.FormatIIFE, "iife"},
+	}
+	for _, tt := range tests {
+		cfg := v3EsbuildConfig{Format: tt.format}
+		opts := cfg.esbuildOptions()
+		if opts.Format != tt.expected {
+			t.Errorf("format %q: got %v, want %v", tt.format, opts.Format, tt.expected)
+		}
+	}
+}
+
+func TestEsbuildOptions_AllPlatforms(t *testing.T) {
+	tests := []struct {
+		expected api.Platform
+		platform string
+	}{
+		{api.PlatformBrowser, "browser"},
+		{api.PlatformBrowser, ""},
+		{api.PlatformNode, "node"},
+		{api.PlatformNeutral, "neutral"},
+	}
+	for _, tt := range tests {
+		cfg := v3EsbuildConfig{Platform: tt.platform}
+		opts := cfg.esbuildOptions()
+		if opts.Platform != tt.expected {
+			t.Errorf("platform %q: got %v, want %v", tt.platform, opts.Platform, tt.expected)
+		}
+	}
+}
+
+func TestEsbuildOptions_AllTargets(t *testing.T) {
+	tests := []struct {
+		expected api.Target
+		target   string
+	}{
+		{api.ES2015, "es2015"},
+		{api.ES2016, "es2016"},
+		{api.ES2017, "es2017"},
+		{api.ES2018, "es2018"},
+		{api.ES2019, "es2019"},
+		{api.ES2020, "es2020"},
+		{api.ES2021, "es2021"},
+		{api.ES2022, ""},
+		{api.ES2023, "es2023"},
+		{api.ESNext, "esnext"},
+	}
+	for _, tt := range tests {
+		cfg := v3EsbuildConfig{Target: tt.target}
+		opts := cfg.esbuildOptions()
+		if opts.Target != tt.expected {
+			t.Errorf("target %q: got %v, want %v", tt.target, opts.Target, tt.expected)
+		}
+	}
 }
