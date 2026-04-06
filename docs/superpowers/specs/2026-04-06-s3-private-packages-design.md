@@ -40,18 +40,27 @@ This lives in the same S3 bucket the server already uses (`S3_BUCKET`), under a 
 
 ### Install flow change
 
-The existing `installDeps` function in `v3_deps.go` is modified. Between writing `package.json`/`bun.lock` to the temp directory and running `bun install`, a new step pre-seeds node_modules with S3 packages:
+The `installDeps` function signature changes to accept the parsed `*v3PackageJSON` instead of raw `[]byte`, since it needs access to the `ResolveS3` field. This cascades to `resolveDeps`, which must also receive the parsed struct. The handlers already call `parsePackageJSON` for the compile path; the typecheck handler will now call it too (but only to pass it through — `parsePackageJSON` does not enforce `main` for typecheck-only callers, so the `main` validation moves to the compile handler).
+
+Between writing `package.json`/`bun.lock` to the temp directory and running `bun install`, a new step pre-seeds node_modules with S3 packages:
 
 1. Write `package.json` + `bun.lock` to temp dir
 2. **Pre-seed S3 packages**: For each package name in `resolve-s3`:
    - Look up the version from `dependencies` or `devDependencies`
-   - If not found, return error (bad package.json)
+   - If not found, return 400 identifying the package
+   - If the version contains `^`, `~`, `>`, `<`, `=`, or `*`, return 400: "resolve-s3 package {name} must use an exact version, got {version}"
    - Download `packages/{name}/{version}.tgz` from S3 via `GetObject`
    - Extract the tarball into `{tempDir}/node_modules/{name}/`
 3. Run `bun install --frozen-lockfile --ignore-scripts` — bun sees the pre-seeded packages (matching name + version in lockfile), skips them, installs only public npm packages
 4. Cache result locally and upload to S3 as before
 
 This only runs on a full cache miss. On local disk or S3 dep cache hit, the cached node_modules already contain both private and public packages from the original install.
+
+### Lockfile requirements
+
+The `bun.lock` must include entries for the private packages. This means the dev-time environment where the lockfile is generated must have access to the private packages (either pre-installed in node_modules or available via a local registry). This is a CI/CD concern for the crayon repo — not a server concern. The server trusts the lockfile as-is.
+
+If a private package has transitive dependencies on other private packages, those must also be listed in `resolve-s3`. Transitive dependencies on public npm packages are handled by bun normally.
 
 ### Tarball format
 
@@ -90,7 +99,8 @@ type v3PackageJSON struct {
 ### Error handling
 
 - Package listed in `resolve-s3` but not found in `dependencies` or `devDependencies`: return 400 with message identifying the missing package.
-- S3 download failure for a private package: return 502 with message identifying the package and S3 error.
+- Package listed in `resolve-s3` with a non-exact version (contains `^`, `~`, etc.): return 400 with message.
+- S3 download failure for a private package (e.g., tarball not found): return 502 with message identifying the package and S3 error.
 - Tarball extraction failure: return 502 with details.
 
 ### Publishing workflow (out of scope for this server change)
