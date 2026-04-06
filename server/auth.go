@@ -5,10 +5,12 @@ import (
 	"crypto/elliptic"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"time"
 
 	"github.com/dadrus/httpsig"
+	"github.com/dunglas/httpsfv"
 	"github.com/mr-tron/base58"
 )
 
@@ -68,4 +70,53 @@ func initAuth() {
 	}
 
 	log.Printf("Auth enabled: verifying HTTP message signatures")
+}
+
+// authMiddleware verifies HTTP message signatures on incoming requests.
+func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if authVerifier == nil {
+			next(w, r)
+			return
+		}
+
+		msg := httpsig.MessageFromRequest(r)
+		if err := authVerifier.Verify(msg); err != nil {
+			log.Printf("auth: signature verification failed: %v", err)
+			http.Error(w, "signature verification failed", http.StatusUnauthorized)
+			return
+		}
+
+		if r.ContentLength > 0 || len(r.TransferEncoding) > 0 {
+			if !signatureCoversContentDigest(r) {
+				log.Printf("auth: request has body but signature does not cover content-digest")
+				http.Error(w, "signature verification failed", http.StatusUnauthorized)
+				return
+			}
+		}
+
+		next(w, r)
+	}
+}
+
+// signatureCoversContentDigest parses the Signature-Input header(s) and checks
+// whether any signature's covered components include "content-digest".
+func signatureCoversContentDigest(r *http.Request) bool {
+	for _, val := range r.Header.Values("Signature-Input") {
+		dict, err := httpsfv.UnmarshalDictionary([]string{val})
+		if err != nil {
+			continue
+		}
+		for _, name := range dict.Names() {
+			member, _ := dict.Get(name)
+			if il, ok := member.(httpsfv.InnerList); ok {
+				for _, item := range il.Items {
+					if s, ok := item.Value.(string); ok && s == "content-digest" {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
 }
