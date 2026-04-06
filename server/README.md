@@ -368,64 +368,98 @@ docker run -p 8080:8080 typescript-server
 go run server.go
 ```
 
-## Performance
+## Benchmarks
 
-### Benchmark Commands
+### tsgo-bench (V3)
 
-**Fly.io (deployed):**
+A Go CLI tool that benchmarks all v3 endpoints with authenticated requests. Build it from the server directory:
+
 ```bash
-# Create test file
-cat > test-fortune-cookie.json << 'EOF'
-{
-  "code": "import { Button, Flex, Text } from '@crayonnow/core';\nimport { useState } from 'react';\n\nconst fortunes = [\n  \"A beautiful, smart, and loving person will be coming into your life.\",\n  \"Believe it can be done.\",\n  \"Your ability to overcome challenges will set you up for success.\"\n];\n\nexport default () => {\n  const [currentFortune, setCurrentFortune] = useState(fortunes[0]);\n\n  return (\n    <Flex style={{ padding: '20px' }}>\n      <Text>{currentFortune}</Text>\n      <Button onClick={() => setCurrentFortune(fortunes[Math.floor(Math.random() * fortunes.length)])}>\n        Get New Fortune\n      </Button>\n    </Flex>\n  );\n};"
-}
-EOF
-
-# Benchmark both endpoints
-hyperfine --warmup 3 --min-runs 10 \
-  'curl -s -X POST https://server-wild-sea-9370.fly.dev/typecheck -H "Content-Type: application/json" -d @test-fortune-cookie.json' \
-  'curl -s -X POST https://server-wild-sea-9370.fly.dev/build -H "Content-Type: application/json" -d @test-fortune-cookie.json'
+cd server
+go build ./cmd/tsgo-bench
 ```
 
-### Results
-
-**Unikraft Cloud:**
-```
-Benchmark 1: curl -X POST https://restless-mountain-fa2gk4yu.dal0.kraft.host/compile \
-   -H "Content-Type: application/json" \
-   -d "{\"code\": \"export const hello: number = \\\"hello!!!\\\"\"}"
-  Time (mean ± σ):     218.2 ms ±  84.3 ms    [User: 7.9 ms, System: 4.3 ms]
-  Range (min … max):   179.6 ms … 369.0 ms    5 runs
+**Against a deployed server:**
+```bash
+tsgo-bench --url https://server-wild-sea-9370.fly.dev --key <base58-private-key>
 ```
 
-**Fly.io:**
-```
-Benchmark 1: curl -s -X POST https://server-wild-sea-9370.fly.dev/typecheck -H "Content-Type: application/json" -d @test-fortune-cookie.json
-  Time (mean ± σ):     212.1 ms ±  15.8 ms    [User: 10.4 ms, System: 7.1 ms]
-  Range (min … max):   190.3 ms … 246.7 ms    11 runs
+**Against localhost:**
+```bash
+tsgo-bench --url http://localhost:8080 --key <base58-private-key>
 
-Benchmark 2: curl -s -X POST https://server-wild-sea-9370.fly.dev/build -H "Content-Type: application/json" -d @test-fortune-cookie.json
-  Time (mean ± σ):     146.6 ms ±  15.9 ms    [User: 8.8 ms, System: 5.5 ms]
-  Range (min … max):   125.5 ms … 187.3 ms    22 runs
+# Without auth (if TSGO_AUTH_PUBLIC_KEY is not set on the server)
+tsgo-bench --url http://localhost:8080
 ```
 
-**Local:**
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--url` | (required) | Server base URL |
+| `--key` | (none) | Base58-encoded ECDSA P-256 private key. Omit for unauthenticated servers. |
+| `--runs` | 10 | Measured iterations per benchmark |
+
+Always runs 2 warmup iterations before measured runs.
+
+**What it benchmarks:**
+
+6 fixtures (trivial, small component, medium component, multi-file, type error, multi-file type error) across 3 endpoints (`/v3/typecheck`, `/v3/compile` with skip_typecheck, `/v3/compile` with typecheck) = 18 benchmark combinations. Requests are signed with RFC 9421 HTTP Message Signatures when `--key` is provided.
+
+**Example output (localhost):**
 ```
-Benchmark 1: curl -X POST http://localhost:8080/compile \
-   -H "Content-Type: application/json" \
-   -d "{\"code\": \"export const hello: number = \\\"hello!!!\\\"\"}"
-  Time (mean ± σ):      11.6 ms ±   2.1 ms    [User: 3.4 ms, System: 3.7 ms]
-  Range (min … max):     8.6 ms …  14.4 ms    5 runs
+tsgo-bench v3 benchmarks
+Target: http://localhost:8080
+Auth:   enabled
+Runs:   5 (+ 2 warmup)
+
+Fixture              Endpoint         Avg        Min        Max
+Trivial              /v3/compile      0.6ms      0.5ms      0.9ms
+Trivial              /v3/compile+tc   3.9ms      3.8ms      4.0ms
+Trivial              /v3/typecheck    3.0ms      3.0ms      3.2ms
+SmallComponent       /v3/compile      0.7ms      0.6ms      0.9ms
+SmallComponent       /v3/compile+tc   3.9ms      3.6ms      4.3ms
+SmallComponent       /v3/typecheck    3.1ms      2.9ms      3.4ms
+MediumComponent      /v3/compile      0.8ms      0.7ms      1.2ms
+MediumComponent      /v3/compile+tc   3.6ms      3.0ms      4.3ms
+MediumComponent      /v3/typecheck    3.6ms      2.8ms      4.3ms
+MultiFile            /v3/compile      0.9ms      0.8ms      1.3ms
+MultiFile            /v3/compile+tc   3.5ms      3.4ms      3.7ms
+MultiFile            /v3/typecheck    3.5ms      3.3ms      3.6ms
+TypeError            /v3/compile      0.6ms      0.4ms      0.7ms
+TypeError            /v3/compile+tc   3.0ms      2.9ms      3.1ms
+TypeError            /v3/typecheck    2.9ms      2.7ms      3.0ms
+MultiError           /v3/compile      0.2ms      0.2ms      0.2ms
+MultiError           /v3/compile+tc   0.2ms      0.2ms      0.2ms
+MultiError           /v3/typecheck    0.2ms      0.1ms      0.2ms
 ```
 
-### Performance Summary
+**Note:** The dependency cache must be populated on the server before benchmarks will succeed. On first request, the server installs deps via `bun install` and caches the result. Subsequent requests (including benchmark runs) hit the local disk cache.
 
-- **Local development**: 11.6ms ± 2.1ms (localhost, no network latency)
-- **Fly.io**: 64.4ms ± 6.2ms (including network latency to sjc)
-- **Unikraft Cloud**: 218ms ± 84ms (including network latency to dal0)
-- **Boot time**: 37ms on Unikraft Cloud
-- **Memory usage**: 128 MiB
-- **Compilation**: Full TypeScript parsing, type checking, and JavaScript emission
+### Go Benchmarks (V2 and V3)
+
+In-process benchmarks that bypass HTTP and measure pure compiler/esbuild performance:
+
+```bash
+cd server
+
+# V3 benchmarks
+go test -bench BenchmarkV3 -benchtime 3s -count 1
+
+# V2 benchmarks
+go test -bench BenchmarkV2 -benchtime 3s -count 1
+
+# All benchmarks
+go test -bench . -benchtime 3s -count 1
+```
+
+### V1 Benchmarks (Legacy)
+
+The `benchmark_prod.sh` script benchmarks v1 endpoints with curl + hyperfine (no auth support):
+
+```bash
+./benchmark_prod.sh
+```
 
 ## Architecture
 
