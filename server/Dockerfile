@@ -1,4 +1,4 @@
-FROM --platform=linux/x86_64 golang:1.26-bookworm AS build
+FROM golang:1.26-bookworm AS build
 
 # Accept git commit as build argument
 ARG GIT_COMMIT=unknown
