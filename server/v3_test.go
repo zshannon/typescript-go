@@ -1432,6 +1432,114 @@ func TestV3BadRequest_InvalidPackageJSON(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// resolve-s3 Integration Tests
+// =============================================================================
+
+func TestV3TypecheckHandler_WithS3Packages(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	lockContent := []byte("s3-pkg-typecheck-lock")
+	hash := hashBunLock(lockContent)
+	depBase := filepath.Join(diskCachePath, "deps", hash)
+	coreDir := filepath.Join(depBase, "node_modules", "@flickfyi", "core")
+	os.MkdirAll(coreDir, 0755)
+	os.WriteFile(filepath.Join(coreDir, "package.json"), []byte(`{"name": "@flickfyi/core", "version": "0.0.8", "main": "index.js", "types": "index.d.ts"}`), 0644)
+	os.WriteFile(filepath.Join(coreDir, "index.d.ts"), []byte(`export declare function Flex(props: any): any;`), 0644)
+	os.WriteFile(filepath.Join(coreDir, "index.js"), []byte(`exports.Flex = function() {};`), 0644)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	writer.WriteField("/package.json", `{"dependencies": {"@flickfyi/core": "0.0.8"}, "resolve-s3": ["@flickfyi/core"]}`)
+	writer.WriteField("/bun.lock", "s3-pkg-typecheck-lock")
+	writer.WriteField("/src/index.ts", "import { Flex } from '@flickfyi/core';\nexport const f = Flex;")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v3/typecheck", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	typecheckV3Handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(respBody))
+	}
+	var result TypecheckV2Response
+	json.NewDecoder(resp.Body).Decode(&result)
+	if !result.Pass {
+		t.Fatalf("expected pass, got errors: %v", result.Errors)
+	}
+}
+
+func TestV3_ResolveS3_BadVersion(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	writer.WriteField("/package.json", `{"dependencies": {"@flickfyi/core": "^0.0.8"}, "resolve-s3": ["@flickfyi/core"]}`)
+	writer.WriteField("/bun.lock", "bad-version-lock")
+	writer.WriteField("/src/index.ts", "import { Flex } from '@flickfyi/core';\nexport const f = Flex;")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v3/typecheck", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	typecheckV3Handler(w, req)
+
+	if w.Result().StatusCode != http.StatusBadGateway {
+		respBody, _ := io.ReadAll(w.Result().Body)
+		t.Fatalf("expected 502, got %d: %s", w.Result().StatusCode, string(respBody))
+	}
+}
+
+func TestV3_ResolveS3_NotInDeps(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	writer.WriteField("/package.json", `{"dependencies": {}, "resolve-s3": ["@flickfyi/core"]}`)
+	writer.WriteField("/bun.lock", "not-in-deps-lock")
+	writer.WriteField("/src/index.ts", "export const x = 1;")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v3/typecheck", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	typecheckV3Handler(w, req)
+
+	if w.Result().StatusCode != http.StatusBadGateway {
+		respBody, _ := io.ReadAll(w.Result().Body)
+		t.Fatalf("expected 502, got %d: %s", w.Result().StatusCode, string(respBody))
+	}
+}
+
+func TestV3_ResolveS3_EmptyList(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	lockContent := []byte("empty-resolve-s3-lock")
+	hash := hashBunLock(lockContent)
+	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
+	os.MkdirAll(depDir, 0755)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	writer.WriteField("/package.json", `{"dependencies": {}, "resolve-s3": []}`)
+	writer.WriteField("/bun.lock", "empty-resolve-s3-lock")
+	writer.WriteField("/src/index.ts", "export const x: string = 'hello';")
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v3/typecheck", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	typecheckV3Handler(w, req)
+
+	if w.Result().StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(w.Result().Body)
+		t.Fatalf("expected 200, got %d: %s", w.Result().StatusCode, string(respBody))
+	}
+}
+
 // Test 11: Bad request — GET instead of POST
 func TestV3BadRequest_MethodNotAllowed(t *testing.T) {
 	t.Run("TypecheckGET", func(t *testing.T) {
