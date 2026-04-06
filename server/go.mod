@@ -6,8 +6,10 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.38.0
 	github.com/aws/aws-sdk-go-v2/config v1.31.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.87.0
+	github.com/dadrus/httpsig v0.0.0-20260320084101-37048551fc59
 	github.com/evanw/esbuild v0.27.4
 	github.com/microsoft/typescript-go v0.0.0
+	github.com/mr-tron/base58 v1.3.0
 	github.com/prometheus/client_golang v1.23.0
 )
 
@@ -29,13 +31,13 @@ require (
 	github.com/aws/smithy-go v1.22.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/dunglas/httpsfv v1.1.0 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260214004413-d219187c3433 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.65.0 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
-	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
