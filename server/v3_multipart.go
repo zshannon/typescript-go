@@ -108,6 +108,7 @@ type v3PackageJSON struct {
 	DevDependencies map[string]string `json:"devDependencies"`
 	Esbuild         v3EsbuildConfig   `json:"esbuild"`
 	Main            string            `json:"main"`
+	ResolveS3       []string          `json:"resolve-s3"`
 }
 
 // v3EsbuildConfig holds the esbuild configuration from package.json.
@@ -210,14 +211,11 @@ func (c v3EsbuildConfig) esbuildOptions() api.BuildOptions {
 	return opts
 }
 
-// parsePackageJSON parses raw package.json bytes and validates required fields.
+// parsePackageJSON parses raw package.json bytes.
 func parsePackageJSON(raw []byte) (*v3PackageJSON, error) {
 	var pkg v3PackageJSON
 	if err := json.Unmarshal(raw, &pkg); err != nil {
 		return nil, fmt.Errorf("invalid package.json: %w", err)
-	}
-	if pkg.Main == "" {
-		return nil, fmt.Errorf("package.json missing required field: main")
 	}
 	return &pkg, nil
 }
