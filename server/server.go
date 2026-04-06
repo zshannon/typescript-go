@@ -1594,6 +1594,8 @@ func main() {
 	http.HandleFunc("/typecheck", loggingMiddleware(authMiddleware(typecheck)))
 	http.HandleFunc("/v2/build", loggingMiddleware(authMiddleware(buildV2)))
 	http.HandleFunc("/v2/typecheck", loggingMiddleware(authMiddleware(typecheckV2)))
+	http.HandleFunc("/v3/compile", loggingMiddleware(authMiddleware(compileV3Handler)))
+	http.HandleFunc("/v3/typecheck", loggingMiddleware(authMiddleware(typecheckV3Handler)))
 
 	// Start Prometheus metrics server on port 9091
 	go startMetricsServer()
@@ -1607,7 +1609,7 @@ func main() {
 	// Start server in goroutine
 	go func() {
 		log.Printf("Server ready! Listening on :8080...")
-		log.Printf("Endpoints: /, /build, /health, /sync, /typecheck, /v2/build, /v2/typecheck")
+		log.Printf("Endpoints: /, /build, /health, /sync, /typecheck, /v2/build, /v2/typecheck, /v3/compile, /v3/typecheck")
 		log.Printf("Metrics available at :9091/metrics")
 
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
