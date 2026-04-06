@@ -133,6 +133,29 @@ POST /flush-cache
 }
 ```
 
+## Authentication
+
+The server supports optional HTTP Message Signature authentication ([RFC 9421](https://www.rfc-editor.org/rfc/rfc9421)) using P-256 ECDSA.
+
+### Configuration
+
+Set the `TSGO_AUTH_PUBLIC_KEY` environment variable to a base58-encoded compressed P-256 public key. If unset, the server runs without authentication.
+
+### Signed Components
+
+Clients must sign these components:
+
+| Request type | Required signed components |
+|---|---|
+| Bodyless (GET, DELETE, HEAD) | `@method`, `@path`, `@authority` |
+| With body (POST, PUT, PATCH) | `@method`, `@path`, `@authority`, `content-digest` |
+
+Signatures must use `ecdsa-p256-sha256` and include a `created` timestamp. Signatures older than 5 minutes are rejected.
+
+### Protected Routes
+
+`/` and `/health` are always unauthenticated. All other routes require a valid signature when auth is enabled.
+
 ## Deployment
 
 ### Fly.io
@@ -229,8 +252,9 @@ Benchmark 1: curl -X POST http://localhost:8080/compile \
 
 ## Files
 
-- `server.go` - Main HTTP server implementation
+- `auth.go` - HTTP message signature authentication middleware
 - `Dockerfile` - Multi-stage build for static PIE binary
-- `Kraftfile` - Unikraft Cloud deployment configuration
 - `go.mod` - Go module definition with TypeScript-Go dependency
+- `Kraftfile` - Unikraft Cloud deployment configuration
+- `server.go` - Main HTTP server implementation
 - `vendor/` - Vendored dependencies for offline builds
