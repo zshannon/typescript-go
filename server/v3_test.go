@@ -350,3 +350,116 @@ func TestResolveDeps_S3Hit(t *testing.T) {
 		t.Fatalf("unexpected content: %s", string(extracted))
 	}
 }
+
+// Task 8: typecheckV3 tests
+
+func TestTypecheckV3_PassingCode(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "v3-typecheck-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+	diskCachePath = tmpDir
+
+	hash := hashBunLock([]byte("test-lock"))
+	depDir := filepath.Join(tmpDir, "deps", hash, "node_modules")
+	if err := os.MkdirAll(depDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	files := map[string][]byte{
+		"/src/index.ts": []byte("export const x: string = 'hello';"),
+	}
+
+	response := typecheckV3(files, nil, []byte("test-lock"))
+	if !response.Pass {
+		t.Fatalf("expected pass, got errors: %v", response.Errors)
+	}
+}
+
+func TestTypecheckV3_TypeError(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "v3-typecheck-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+	diskCachePath = tmpDir
+
+	hash := hashBunLock([]byte("test-lock"))
+	depDir := filepath.Join(tmpDir, "deps", hash, "node_modules")
+	if err := os.MkdirAll(depDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	files := map[string][]byte{
+		"/src/index.ts": []byte("export const x: string = 123;"),
+	}
+
+	response := typecheckV3(files, nil, []byte("test-lock"))
+	if response.Pass {
+		t.Fatal("expected type error, got pass")
+	}
+	if len(response.Errors) == 0 {
+		t.Fatal("expected errors, got none")
+	}
+}
+
+// Task 9: compileV3 and isExternal tests
+
+func TestCompileV3_SimpleBundle(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "v3-compile-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+	diskCachePath = tmpDir
+
+	hash := hashBunLock([]byte("test-lock"))
+	depDir := filepath.Join(tmpDir, "deps", hash, "node_modules")
+	if err := os.MkdirAll(depDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	files := map[string][]byte{
+		"/src/index.ts": []byte("export const hello = 'world';"),
+	}
+
+	pkg := &v3PackageJSON{Main: "./src/index.ts"}
+
+	response := compileV3(files, pkg, nil, []byte("test-lock"))
+	if len(response.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", response.Errors)
+	}
+	if response.Code == "" {
+		t.Fatal("expected compiled code, got empty string")
+	}
+	if !strings.Contains(response.Code, "hello") {
+		t.Fatalf("expected output to contain 'hello', got: %s", response.Code)
+	}
+}
+
+func TestIsExternal(t *testing.T) {
+	tests := []struct {
+		path      string
+		externals []string
+		expected  bool
+	}{
+		{"zod", []string{"*"}, true},
+		{"zod", []string{"zod"}, true},
+		{"zod/lib", []string{"zod"}, true},
+		{"@scope/pkg", []string{"*"}, true},
+		{"@scope/pkg", []string{"@scope/pkg"}, true},
+		{"react", []string{"zod"}, false},
+		{"./local", []string{"*"}, false},
+		{"../parent", []string{"*"}, false},
+		{"/absolute", []string{"*"}, false},
+		{"zod", nil, false},
+		{"zod", []string{}, false},
+	}
+	for _, tt := range tests {
+		result := isExternal(tt.path, tt.externals)
+		if result != tt.expected {
+			t.Errorf("isExternal(%q, %v) = %v, want %v", tt.path, tt.externals, result, tt.expected)
+		}
+	}
+}
