@@ -243,6 +243,18 @@ export default () => {
 };`,
 		},
 	},
+	{
+		name: "TypeError",
+		files: map[string]string{"/index.tsx": `export const x: string = 123;`},
+	},
+	{
+		name: "MultiError",
+		files: map[string]string{
+			"/index.tsx": `import { foo } from './lib';
+export const x: string = foo;`,
+			"/lib.ts": `export const foo: number = 42;`,
+		},
+	},
 }
 
 // endpoint defines a server endpoint to benchmark.
@@ -253,6 +265,7 @@ type endpoint struct {
 
 var endpoints = []endpoint{
 	{name: "/v3/compile", path: "/v3/compile?skip_typecheck=true"},
+	{name: "/v3/compile+tc", path: "/v3/compile"},
 	{name: "/v3/typecheck", path: "/v3/typecheck"},
 }
 
