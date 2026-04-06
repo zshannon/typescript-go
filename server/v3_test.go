@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -552,5 +553,40 @@ func TestV3CompileHandler_Success(t *testing.T) {
 	}
 	if result.Code == "" {
 		t.Fatal("expected compiled code")
+	}
+}
+
+func TestDeleteOldestVersion_IncludesDeps(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "eviction-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+	diskCachePath = tmpDir
+
+	// Create a version dir (old)
+	versionDir := filepath.Join(tmpDir, "5.7.0")
+	os.MkdirAll(versionDir, 0755)
+	oldTime := time.Now().Add(-2 * time.Hour)
+	os.Chtimes(versionDir, oldTime, oldTime)
+
+	// Create a deps dir (newer)
+	depsDir := filepath.Join(tmpDir, "deps", "abc123")
+	os.MkdirAll(depsDir, 0755)
+
+	// deleteOldestVersion should delete the older version dir first
+	deleted := deleteOldestVersion("")
+	if !deleted {
+		t.Fatal("expected a deletion")
+	}
+
+	// Version dir should be gone
+	if _, err := os.Stat(versionDir); !os.IsNotExist(err) {
+		t.Fatal("expected version dir to be deleted")
+	}
+
+	// Deps dir should still exist
+	if _, err := os.Stat(depsDir); err != nil {
+		t.Fatal("deps dir should still exist")
 	}
 }

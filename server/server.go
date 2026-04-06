@@ -322,6 +322,29 @@ func getVersionsByModTime(cachePath string) ([]versionInfo, error) {
 			continue
 		}
 
+		// Walk into deps/ directory to list individual hash dirs
+		if entry.Name() == "deps" {
+			depsPath := filepath.Join(cachePath, "deps")
+			depEntries, err := os.ReadDir(depsPath)
+			if err != nil {
+				continue
+			}
+			for _, depEntry := range depEntries {
+				if !depEntry.IsDir() {
+					continue
+				}
+				info, err := depEntry.Info()
+				if err != nil {
+					continue
+				}
+				versions = append(versions, versionInfo{
+					modTime: info.ModTime(),
+					name:    filepath.Join("deps", depEntry.Name()),
+				})
+			}
+			continue
+		}
+
 		info, err := entry.Info()
 		if err != nil {
 			continue
