@@ -46,7 +46,7 @@ const tsconfigJSON = `{"compilerOptions": {"strict": true, "jsx": "react-jsx", "
 // Real bun.lock from crayon repo — only covers public npm packages.
 // Private @flickfyi/* packages are pre-seeded from S3 via resolve-s3.
 //
-//go:embed bunlock.txt
+//go:embed bunlock.json
 var bunLock string
 
 // Fixture definitions.
