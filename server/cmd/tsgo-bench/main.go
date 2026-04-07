@@ -15,14 +15,39 @@ import (
 	"strings"
 	"time"
 
+	_ "embed"
+
 	"github.com/dadrus/httpsig"
 	"github.com/mr-tron/base58"
 )
 
-// Shared config files for all fixtures.
-const packageJSON = `{"main": "./index.tsx", "dependencies": {"@crayonnow/core": "0.0.8", "react": "18.0.0"}, "resolve-s3": ["@crayonnow/core"]}`
-const tsconfigJSON = `{"compilerOptions": {"strict": true, "jsx": "react-jsx", "jsxImportSource": "@crayonnow/core", "target": "ES2022", "module": "commonjs", "moduleResolution": "bundler", "lib": ["ES2022"]}}`
-const bunLock = "bench-lock-content"
+// Shared config files for all fixtures — matches the real crayon tsgo deployment.
+const packageJSON = `{
+  "main": "./index.tsx",
+  "dependencies": {
+    "@flickfyi/core": "0.0.8",
+    "@flickfyi/lens": "0.0.0",
+    "@flickfyi/photon": "0.0.2",
+    "@react-spring/core": "10.0.3",
+    "@react-spring/shared": "10.0.3",
+    "@types/react": "19.2.8",
+    "@use-gesture/react": "10.3.1",
+    "lodash": "4.17.21",
+    "react": "19.2.3",
+    "rxjs": "7.8.2",
+    "typescript": "5.9.3",
+    "zod": "4.3.5"
+  },
+  "resolve-s3": ["@flickfyi/core", "@flickfyi/lens", "@flickfyi/photon"]
+}`
+
+const tsconfigJSON = `{"compilerOptions": {"strict": true, "jsx": "react-jsx", "jsxImportSource": "@flickfyi/core", "target": "ES2022", "module": "commonjs", "moduleResolution": "bundler", "lib": ["ES2022"]}}`
+
+// Real bun.lock from crayon repo — only covers public npm packages.
+// Private @flickfyi/* packages are pre-seeded from S3 via resolve-s3.
+//
+//go:embed bunlock.txt
+var bunLock string
 
 // Fixture definitions.
 
@@ -38,7 +63,7 @@ var fixtures = []fixture{
 	},
 	{
 		name: "SmallComponent",
-		files: map[string]string{"/index.tsx": `import { Text } from '@crayonnow/core';
+		files: map[string]string{"/index.tsx": `import { Text } from '@flickfyi/core';
 
 interface GreetingProps {
   name: string;
@@ -52,7 +77,7 @@ export default ({ name }: GreetingProps) => (
 	},
 	{
 		name: "MediumComponent",
-		files: map[string]string{"/index.tsx": `import { Flex, Text, Button, Picker } from '@crayonnow/core';
+		files: map[string]string{"/index.tsx": `import { Flex, Text, Button, Picker } from '@flickfyi/core';
 import { useState, useEffect } from 'react';
 
 export default () => {
@@ -169,7 +194,7 @@ export function useTimer(initialDuration: number): TimerState & {
     reset: (duration: number) => { setRunning(false); setSeconds(duration * 60); },
   };
 }`,
-			"/Button.tsx": `import { Button as CoreButton, Text } from '@crayonnow/core';
+			"/Button.tsx": `import { Button as CoreButton, Text } from '@flickfyi/core';
 
 interface TimerButtonProps {
   label: string;
@@ -182,7 +207,7 @@ export default ({ color, label, onPress }: TimerButtonProps) => (
     <Text style={{ color: 'white', textAlign: 'center', fontWeight: '600' }}>{label}</Text>
   </CoreButton>
 );`,
-			"/Card.tsx": `import { Flex, Text } from '@crayonnow/core';
+			"/Card.tsx": `import { Flex, Text } from '@flickfyi/core';
 import TimerButton from './Button';
 import { TimerConfig } from './types';
 
@@ -202,7 +227,7 @@ export default ({ config, display, onReset, onToggle, running }: CardProps) => (
     <TimerButton label="Reset" color="#f44336" onPress={onReset} />
   </Flex>
 );`,
-			"/index.tsx": `import { Flex, Text, Picker } from '@crayonnow/core';
+			"/index.tsx": `import { Flex, Text, Picker } from '@flickfyi/core';
 import { useState } from 'react';
 import { DEFAULT_CONFIGS } from './types';
 import { useTimer } from './hooks';
