@@ -2190,3 +2190,105 @@ func TestEsbuildOptions_AllTargets(t *testing.T) {
 		}
 	}
 }
+
+func TestV3CompileHandler_Globals(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	lockContent := []byte("globals-test-lock")
+	hash := hashBunLock(lockContent)
+	depBase := filepath.Join(diskCachePath, "deps", hash)
+	nmDir := filepath.Join(depBase, "node_modules")
+	os.MkdirAll(nmDir, 0755)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	writer.WriteField("/package.json", `{
+		"main": "./index.tsx",
+		"dependencies": {},
+		"esbuild": {
+			"globals": {"react": "_CRAYONCORE_$REACT"}
+		}
+	}`)
+	writer.WriteField("/bun.lock", "globals-test-lock")
+	writer.WriteField("/index.tsx", `import { useState } from 'react';
+export const App = () => { const [x, setX] = useState(0); return x; };`)
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v3/compile?skip_typecheck=true", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+
+	compileV3Handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result BuildV2Response
+	json.NewDecoder(resp.Body).Decode(&result)
+	if len(result.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", result.Errors)
+	}
+
+	// Should contain the global reference, NOT require("react")
+	if strings.Contains(result.Code, `require("react")`) {
+		t.Fatal("output contains require(\"react\") — globals replacement did not work")
+	}
+	if !strings.Contains(result.Code, "_CRAYONCORE_$REACT") {
+		t.Fatalf("output should reference _CRAYONCORE_$REACT, got: %s", result.Code)
+	}
+}
+
+func TestV3CompileHandler_GlobalsAndExternals(t *testing.T) {
+	setupTestServerWithMockS3(t)
+
+	lockContent := []byte("globals-externals-lock")
+	hash := hashBunLock(lockContent)
+	depBase := filepath.Join(diskCachePath, "deps", hash)
+	nmDir := filepath.Join(depBase, "node_modules")
+	os.MkdirAll(nmDir, 0755)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	writer.WriteField("/package.json", `{
+		"main": "./index.tsx",
+		"dependencies": {},
+		"esbuild": {
+			"globals": {"react": "_CRAYONCORE_$REACT"},
+			"external": ["zod"]
+		}
+	}`)
+	writer.WriteField("/bun.lock", "globals-externals-lock")
+	writer.WriteField("/index.tsx", `import { useState } from 'react';
+import { z } from 'zod';
+export const schema = z.string();
+export const App = () => { const [x] = useState(0); return x; };`)
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v3/compile?skip_typecheck=true", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+
+	compileV3Handler(w, req)
+
+	var result BuildV2Response
+	json.NewDecoder(w.Result().Body).Decode(&result)
+	if len(result.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", result.Errors)
+	}
+
+	// react → global variable (not require)
+	if strings.Contains(result.Code, `require("react")`) {
+		t.Fatal("react should be a global, not require()")
+	}
+	if !strings.Contains(result.Code, "_CRAYONCORE_$REACT") {
+		t.Fatal("output should reference _CRAYONCORE_$REACT")
+	}
+
+	// zod → require() (external)
+	if !strings.Contains(result.Code, `require("zod")`) {
+		t.Fatalf("zod should be require()'d as external, got: %s", result.Code)
+	}
+}

@@ -113,14 +113,15 @@ type v3PackageJSON struct {
 
 // v3EsbuildConfig holds the esbuild configuration from package.json.
 type v3EsbuildConfig struct {
-	Bundle            bool     `json:"bundle"`
-	External          []string `json:"external"`
-	Format            string   `json:"format"`
-	MinifyIdentifiers bool     `json:"minifyIdentifiers"`
-	MinifySyntax      bool     `json:"minifySyntax"`
-	MinifyWhitespace  bool     `json:"minifyWhitespace"`
-	Platform          string   `json:"platform"`
-	Target            string   `json:"target"`
+	Bundle            bool              `json:"bundle"`
+	External          []string          `json:"external"`
+	Format            string            `json:"format"`
+	Globals           map[string]string `json:"globals"`
+	MinifyIdentifiers bool              `json:"minifyIdentifiers"`
+	MinifySyntax      bool              `json:"minifySyntax"`
+	MinifyWhitespace  bool              `json:"minifyWhitespace"`
+	Platform          string            `json:"platform"`
+	Target            string            `json:"target"`
 }
 
 // esbuildOptions converts the v3EsbuildConfig to esbuild Go API BuildOptions,

@@ -112,8 +112,9 @@ func compileV3(files map[string][]byte, pkg *v3PackageJSON, tsconfigRaw []byte, 
 	// Get esbuild options from package.json
 	opts := pkg.Esbuild.esbuildOptions()
 
-	// Get externals list for plugin-based external handling
+	// Get externals and globals for plugin-based handling
 	externals := pkg.Esbuild.External
+	globals := pkg.Esbuild.Globals
 
 	// Create virtual file resolver for esbuild
 	resolverCalls := 0
@@ -198,7 +199,12 @@ func compileV3(files map[string][]byte, pkg *v3PackageJSON, tsconfigRaw []byte, 
 						return api.OnResolveResult{Path: resolvedPath, Namespace: "virtual"}, nil
 					}
 
-					// Check if bare import is external
+					// Check if bare import maps to a global variable
+					if _, ok := globals[args.Path]; ok {
+						return api.OnResolveResult{Path: args.Path, Namespace: "globals"}, nil
+					}
+
+					// Check if bare import is external (produces require())
 					if isExternal(args.Path, externals) {
 						return api.OnResolveResult{External: true}, nil
 					}
@@ -224,6 +230,12 @@ func compileV3(files map[string][]byte, pkg *v3PackageJSON, tsconfigRaw []byte, 
 					}
 
 					return api.OnResolveResult{Path: args.Path, Namespace: "virtual"}, nil
+				})
+
+				pb.OnLoad(api.OnLoadOptions{Filter: ".*", Namespace: "globals"}, func(args api.OnLoadArgs) (api.OnLoadResult, error) {
+					globalVar := globals[args.Path]
+					contents := "module.exports = " + globalVar
+					return api.OnLoadResult{Contents: &contents, Loader: api.LoaderJS}, nil
 				})
 
 				pb.OnLoad(api.OnLoadOptions{Filter: ".*", Namespace: "virtual"}, func(args api.OnLoadArgs) (api.OnLoadResult, error) {
