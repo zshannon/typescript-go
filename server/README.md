@@ -152,7 +152,7 @@ The `package.json` uploaded to v3 serves four purposes:
 }
 ```
 
-#### With private packages and esbuild config
+#### With private packages, globals, and esbuild config
 
 ```json
 {
@@ -160,11 +160,12 @@ The `package.json` uploaded to v3 serves four purposes:
   "dependencies": {
     "@flickfyi/core": "0.0.8",
     "@flickfyi/photon": "0.0.3",
+    "react": "19.2.3",
     "zod": "^3.23.0"
   },
   "resolve-s3": ["@flickfyi/core", "@flickfyi/photon"],
   "esbuild": {
-    "format": "esm",
+    "globals": {"react": "_CRAYONCORE_$REACT"},
     "external": ["zod"],
     "minifySyntax": true,
     "minifyWhitespace": false
@@ -199,6 +200,7 @@ The `esbuild` field maps directly to esbuild options. Only these fields are supp
 | `bundle` | bool | `true` | Bundle imports into a single output |
 | `external` | string[] | `[]` | Packages to leave as `require()` calls instead of bundling. Use `["*"]` to externalize all bare imports. Default `[]` bundles everything. |
 | `format` | `"cjs"` \| `"esm"` \| `"iife"` | `"cjs"` | Output module format |
+| `globals` | object | `{}` | Map of import name to global variable. Imports matching a key are replaced with `module.exports = <global>` instead of being bundled or externalized. |
 | `minify` | bool | — | Shorthand: sets all three minify flags at once |
 | `minifyIdentifiers` | bool | `false` | Shorten variable names |
 | `minifySyntax` | bool | `true` | Simplify syntax constructs |
@@ -208,7 +210,13 @@ The `esbuild` field maps directly to esbuild options. Only these fields are supp
 
 **JSX settings** (factory, fragment, import source) come from `tsconfig.json`, not from the esbuild field.
 
-**Externals behavior**: By default, all dependencies are bundled into the output (the platform does not support `require`). Setting `"external": ["zod"]` causes zod imports to remain as `require("zod")` calls in the output. Setting `"external": ["*"]` externalizes all bare imports.
+**Import resolution priority**: When esbuild encounters a bare import (e.g., `import { useState } from 'react'`), the plugin checks in this order:
+
+1. **`globals`** — if the import matches a key, it's replaced with a virtual module that exports the global variable. No `require()`, no bundling. Use this for packages provided by the runtime (e.g., `"react": "_CRAYONCORE_$REACT"` when the JSC runtime provides React as a global).
+2. **`external`** — if the import matches, it's left as a `require()` call. Use this for packages available via a module loader at runtime.
+3. **Neither** — the import is resolved from `node_modules` and bundled into the output.
+
+By default, `globals` is empty and `external` is empty, so everything is bundled.
 
 ---
 

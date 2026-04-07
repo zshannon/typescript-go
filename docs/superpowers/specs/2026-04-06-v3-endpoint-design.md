@@ -56,6 +56,7 @@ The `esbuild` field in package.json maps directly to esbuild Go API options. Onl
     "bundle": true,
     "external": ["some-runtime-dep"],
     "format": "cjs",
+    "globals": {"react": "_CRAYONCORE_$REACT"},
     "minify": false,
     "minifyIdentifiers": false,
     "minifySyntax": true,
@@ -69,8 +70,9 @@ The `esbuild` field in package.json maps directly to esbuild Go API options. Onl
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
 | `bundle` | bool | `true` | Bundle imports into output |
-| `external` | string[] | `[]` | Packages to exclude from bundle (e.g., `["*"]` for all, `["zod"]` for specific) |
+| `external` | string[] | `[]` | Packages to leave as `require()` calls instead of bundling |
 | `format` | `"cjs"` \| `"esm"` \| `"iife"` | `"cjs"` | Output format |
+| `globals` | object | `{}` | Map of import name to global variable name. Matched imports are replaced with `module.exports = <global>` |
 | `minify` | bool | -- | Shorthand for all three minify flags |
 | `minifyIdentifiers` | bool | `false` | Minify variable names |
 | `minifySyntax` | bool | `true` | Minify syntax constructs |
@@ -80,7 +82,13 @@ The `esbuild` field in package.json maps directly to esbuild Go API options. Onl
 
 JSX settings (factory, fragment, import source) come from tsconfig.json, not from the esbuild field. esbuild will respect the tsconfig.json JSX configuration.
 
-**Note on externals:** Because the esbuild virtual-fs plugin intercepts all import resolution (overriding esbuild's built-in `External` option), the plugin's OnResolve handler must explicitly check the externals list and return `External: true` for matching imports. Setting `"external": ["*"]` in package.json means "externalize all bare imports" — the output will contain `require('zod')` calls instead of inlining the package code. The default `[]` bundles everything, matching the current v1/v2 behavior where the platform does not support `require`.
+**Import resolution priority:** The esbuild virtual-fs plugin intercepts all import resolution. For bare imports, it checks in this order:
+
+1. **`globals`** — if the import matches a key, it's replaced with a virtual module exporting the global variable (`module.exports = _CRAYONCORE_$REACT`). No `require()`, no bundling. Use this for packages provided by the runtime as globals.
+2. **`external`** — if the import matches, it's left as a `require()` call. Use this for packages available via a module loader.
+3. **Neither** — the import is resolved from `node_modules` and bundled into the output.
+
+The default (empty `globals`, empty `external`) bundles everything.
 
 ## tsconfig.json Handling
 
