@@ -275,6 +275,12 @@ func (m *MockS3Client) ListObjectsV2(ctx context.Context, params *s3.ListObjects
 	}, nil
 }
 
+func (m *MockS3Client) DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error) {
+	key := aws.ToString(params.Key)
+	delete(m.files, key)
+	return &s3.DeleteObjectOutput{}, nil
+}
+
 func (m *MockS3Client) PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
 	key := aws.ToString(params.Key)
 	data, err := io.ReadAll(params.Body)
@@ -363,6 +369,13 @@ func (m *FileBasedMockS3Client) ListObjectsV2(ctx context.Context, params *s3.Li
 	return &s3.ListObjectsV2Output{
 		Contents: objects,
 	}, nil
+}
+
+func (m *FileBasedMockS3Client) DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error) {
+	key := aws.ToString(params.Key)
+	filePath := filepath.Join(m.basePath, key)
+	os.Remove(filePath)
+	return &s3.DeleteObjectOutput{}, nil
 }
 
 func (m *FileBasedMockS3Client) PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error) {

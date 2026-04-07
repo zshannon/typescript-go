@@ -2477,3 +2477,160 @@ export default () => {
 		t.Fatalf("output should reference _CRAYONCORE_$REACT, got:\n%s", result.Code)
 	}
 }
+
+func TestV3CompileHandler_GlobalsSubpathFromESMChunk(t *testing.T) {
+	// Reproduce: photon ESM has a shared chunk that imports react/jsx-runtime.
+	// react/jsx-runtime should resolve from node_modules (not as a global),
+	// since react's jsx-runtime is a different module than react itself.
+	setupTestServerWithMockS3(t)
+
+	lockContent := []byte("globals-esm-chunk-lock")
+	hash := hashBunLock(lockContent)
+	depBase := filepath.Join(diskCachePath, "deps", hash)
+	nmDir := filepath.Join(depBase, "node_modules")
+
+	// @flickfyi/photon with ESM entries and a shared chunk
+	photonDir := filepath.Join(nmDir, "@flickfyi", "photon", "dist")
+	os.MkdirAll(photonDir, 0755)
+	os.WriteFile(filepath.Join(nmDir, "@flickfyi", "photon", "package.json"), []byte(`{
+		"name": "@flickfyi/photon", "version": "0.0.4",
+		"exports": {
+			".": {"import": "./dist/index.js"},
+			"./jsx-runtime": {"import": "./dist/jsx-runtime.js"}
+		}
+	}`), 0644)
+	os.WriteFile(filepath.Join(photonDir, "index.js"), []byte(`
+import './chunk-SHARED.js';
+export function Text(props) { return props.children; }
+export function Flex(props) { return props.children; }
+`), 0644)
+	os.WriteFile(filepath.Join(photonDir, "jsx-runtime.js"), []byte(`
+import './chunk-SHARED.js';
+import { Fragment } from 'react/jsx-runtime';
+export { Fragment };
+export const jsx = (type, props) => _CRAYONCORE_$REACT.createElement(type, props);
+export const jsxs = jsx;
+`), 0644)
+	// Shared chunk that imports react/jsx-runtime (the problematic import)
+	os.WriteFile(filepath.Join(photonDir, "chunk-SHARED.js"), []byte(`
+export { jsx as a } from 'react/jsx-runtime';
+`), 0644)
+
+	// react package with jsx-runtime subpath
+	reactDir := filepath.Join(nmDir, "react")
+	os.MkdirAll(reactDir, 0755)
+	os.WriteFile(filepath.Join(reactDir, "package.json"), []byte(`{
+		"name": "react", "version": "19.2.3", "main": "index.js",
+		"exports": {
+			".": "./index.js",
+			"./jsx-runtime": "./jsx-runtime.js"
+		}
+	}`), 0644)
+	os.WriteFile(filepath.Join(reactDir, "index.js"), []byte(`
+exports.createElement = function(type, props) { return {type: type, props: props}; };
+exports.Fragment = 'react.fragment';
+`), 0644)
+	os.WriteFile(filepath.Join(reactDir, "jsx-runtime.js"), []byte(`
+var React = require('./index.js');
+exports.jsx = React.createElement;
+exports.jsxs = React.createElement;
+exports.Fragment = React.Fragment;
+`), 0644)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	writer.WriteField("/package.json", `{
+		"main": "./index.tsx",
+		"dependencies": {},
+		"esbuild": {
+			"globals": {"react": "_CRAYONCORE_$REACT"}
+		}
+	}`)
+	writer.WriteField("/bun.lock", "globals-esm-chunk-lock")
+	writer.WriteField("/tsconfig.json", `{"compilerOptions": {"jsx": "react-jsx", "jsxImportSource": "@flickfyi/photon"}}`)
+	writer.WriteField("/index.tsx", `import { Text } from '@flickfyi/photon';
+export default () => <Text>Hello</Text>;`)
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v3/compile?skip_typecheck=true", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+
+	compileV3Handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result BuildV2Response
+	json.NewDecoder(resp.Body).Decode(&result)
+	if len(result.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", result.Errors)
+	}
+
+	// "react" (exact) should use the global, but react/jsx-runtime should resolve
+	// from node_modules since it's a different module
+	if !strings.Contains(result.Code, "_CRAYONCORE_$REACT") {
+		t.Fatalf("output should reference _CRAYONCORE_$REACT for bare 'react' imports, got:\n%s", result.Code)
+	}
+	// Compilation should succeed without "file not found" errors for react/jsx-runtime
+	if len(result.Errors) > 0 {
+		t.Fatalf("unexpected errors (react/jsx-runtime should resolve from node_modules): %v", result.Errors)
+	}
+}
+
+func TestFlushDeps_ClearsDiskAndS3(t *testing.T) {
+	mockS3 := setupTestServerWithMockS3(t)
+
+	lockContent := []byte("flush-test-lockfile")
+	hash := hashBunLock(lockContent)
+
+	// Seed a deps tarball in S3
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+	content := []byte("module.exports = {}")
+	tw.WriteHeader(&tar.Header{
+		Name: "node_modules/zod/index.js",
+		Mode: 0644,
+		Size: int64(len(content)),
+	})
+	tw.Write(content)
+	tw.Close()
+	gw.Close()
+	s3Key := "deps/" + hash + ".tar.gz"
+	mockS3.files[s3Key] = buf.String()
+
+	// Resolve deps — should hit S3 and populate disk cache
+	pkg := &v3PackageJSON{Dependencies: map[string]string{"zod": "3.23.0"}}
+	path, err := resolveDeps(context.Background(), lockContent, pkg, []byte(`{"dependencies":{"zod":"3.23.0"}}`))
+	if err != nil {
+		t.Fatalf("resolveDeps failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(path, "node_modules", "zod", "index.js")); err != nil {
+		t.Fatalf("disk cache should exist after resolve: %v", err)
+	}
+
+	// Call flush endpoint
+	req := httptest.NewRequest(http.MethodPost, "/v3/flush-deps", nil)
+	w := httptest.NewRecorder()
+	flushDeps(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Verify disk cache is gone
+	if _, err := os.Stat(filepath.Join(diskCachePath, "deps")); !os.IsNotExist(err) {
+		t.Fatalf("disk deps dir should be deleted after flush")
+	}
+
+	// Verify S3 tarball is gone
+	if _, exists := mockS3.files[s3Key]; exists {
+		t.Fatalf("S3 deps tarball should be deleted after flush")
+	}
+}

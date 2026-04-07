@@ -31,6 +31,7 @@ import (
 
 // S3ClientInterface defines the interface for S3 operations
 type S3ClientInterface interface {
+	DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
 	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
 	ListObjectsV2(ctx context.Context, params *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
 	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
@@ -1061,27 +1062,63 @@ func build(w http.ResponseWriter, req *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// flushDeps deletes all cached V3 dependency directories, forcing re-resolution on next request.
+// flushDeps deletes all cached V3 dependency directories (disk and S3), forcing re-resolution on next request.
 func flushDeps(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	depsPath := filepath.Join(diskCachePath, "deps")
-
 	// Clear in-flight map
 	depInstallMu.Lock()
 	clear(depInstallInFlight)
 	depInstallMu.Unlock()
 
+	// Clear disk cache
+	depsPath := filepath.Join(diskCachePath, "deps")
 	if err := os.RemoveAll(depsPath); err != nil {
 		log.Printf("[FLUSH] Failed to remove %s: %v", depsPath, err)
 		http.Error(w, fmt.Sprintf("failed to flush deps: %v", err), http.StatusInternalServerError)
 		return
 	}
+	log.Printf("[FLUSH] Cleared disk deps cache at %s", depsPath)
 
-	log.Printf("[FLUSH] Cleared deps cache at %s", depsPath)
+	// Clear S3 deps tarballs
+	if s3Client != nil {
+		var deleted int
+		var continuationToken *string
+		for {
+			input := &s3.ListObjectsV2Input{
+				Bucket: aws.String(s3Bucket),
+				Prefix: aws.String("deps/"),
+			}
+			if continuationToken != nil {
+				input.ContinuationToken = continuationToken
+			}
+			page, err := s3Client.ListObjectsV2(req.Context(), input)
+			if err != nil {
+				log.Printf("[FLUSH] Failed to list S3 deps: %v", err)
+				break
+			}
+			for _, obj := range page.Contents {
+				if obj.Key != nil {
+					if _, err := s3Client.DeleteObject(req.Context(), &s3.DeleteObjectInput{
+						Bucket: aws.String(s3Bucket),
+						Key:    obj.Key,
+					}); err != nil {
+						log.Printf("[FLUSH] Failed to delete S3 object %s: %v", *obj.Key, err)
+					} else {
+						deleted++
+					}
+				}
+			}
+			if page.IsTruncated == nil || !*page.IsTruncated {
+				break
+			}
+			continuationToken = page.NextContinuationToken
+		}
+		log.Printf("[FLUSH] Deleted %d S3 deps tarballs", deleted)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
