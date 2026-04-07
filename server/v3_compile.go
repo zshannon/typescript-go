@@ -206,7 +206,7 @@ func compileV3(files map[string][]byte, pkg *v3PackageJSON, tsconfigRaw []byte, 
 						return api.OnResolveResult{Path: resolvedPath, Namespace: "virtual"}, nil
 					}
 
-					// Check if bare import maps to a global variable
+					// Check if bare import maps to a global variable (exact match only)
 					if _, ok := globals[args.Path]; ok {
 						return api.OnResolveResult{Path: args.Path, Namespace: "globals"}, nil
 					}
@@ -221,18 +221,34 @@ func compileV3(files map[string][]byte, pkg *v3PackageJSON, tsconfigRaw []byte, 
 						return api.OnResolveResult{Path: args.Path, Namespace: "virtual"}, nil
 					}
 
-					// Handle subpath imports
+					// Handle subpath imports from within node_modules.
+					// Only resolve relative to the importer's package if the import
+					// targets the SAME package. Cross-package bare specifiers like
+					// "react/jsx-runtime" imported from "@flickfyi/photon" must resolve
+					// from /node_modules/ root, not inside the importer's package.
 					if args.Importer != "" && strings.Contains(args.Importer, "/node_modules/") {
+						// Extract the importing package's name
 						parts := strings.Split(args.Importer, "/node_modules/")
 						if len(parts) >= 2 {
 							remainingPath := parts[1]
 							packageParts := strings.Split(remainingPath, "/")
-							packageName := packageParts[0]
-							if strings.HasPrefix(packageName, "@") && len(packageParts) > 1 {
-								packageName = packageParts[0] + "/" + packageParts[1]
+							importerPkg := packageParts[0]
+							if strings.HasPrefix(importerPkg, "@") && len(packageParts) > 1 {
+								importerPkg = packageParts[0] + "/" + packageParts[1]
 							}
-							resolvedPath := "/node_modules/" + packageName + "/" + args.Path
-							return api.OnResolveResult{Path: resolvedPath, Namespace: "virtual"}, nil
+
+							// Extract the imported specifier's package name
+							importParts := strings.Split(args.Path, "/")
+							importPkg := importParts[0]
+							if strings.HasPrefix(importPkg, "@") && len(importParts) > 1 {
+								importPkg = importParts[0] + "/" + importParts[1]
+							}
+
+							if importPkg == importerPkg {
+								// Same package: resolve as subpath within the package
+								resolvedPath := "/node_modules/" + importerPkg + "/" + args.Path
+								return api.OnResolveResult{Path: resolvedPath, Namespace: "virtual"}, nil
+							}
 						}
 					}
 

@@ -88,12 +88,12 @@ func resolvePackageExports(exports map[string]interface{}, subpath string) []str
 	
 	// Handle object export (conditional exports)
 	if obj, ok := exportPath.(map[string]interface{}); ok {
-		// Prioritize require for CommonJS
-		if req, exists := obj["require"]; exists {
-			paths = append(paths, extractPathsFromExport(req)...)
-		}
+		// Prioritize import for ESM so esbuild can tree-shake
 		if imp, exists := obj["import"]; exists {
 			paths = append(paths, extractPathsFromExport(imp)...)
+		}
+		if req, exists := obj["require"]; exists {
+			paths = append(paths, extractPathsFromExport(req)...)
 		}
 		if def, exists := obj["default"]; exists {
 			if defStr, ok := def.(string); ok {
@@ -139,16 +139,10 @@ func resolveBarePackageImporter(fs FileSystem, packageName string) string {
 		return "/node_modules/" + packageName + "/index.js"
 	}
 	
-	// Try exports field first for CommonJS
+	// Try exports field, preferring ESM for tree-shaking
 	if exports, ok := pkg["exports"].(map[string]interface{}); ok {
 		paths := resolvePackageExports(exports, ".")
-		for _, path := range paths {
-			if strings.Contains(path, "cjs") || strings.Contains(path, "require") {
-				// Prefer CommonJS paths
-				return "/node_modules/" + packageName + "/" + strings.TrimPrefix(path, "./")
-			}
-		}
-		// Use first available path if no CommonJS specific one found
+		// resolvePackageExports already prioritizes import over require
 		if len(paths) > 0 {
 			return "/node_modules/" + packageName + "/" + strings.TrimPrefix(paths[0], "./")
 		}

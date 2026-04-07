@@ -116,7 +116,7 @@ func TestModuleResolution(t *testing.T) {
 		expected   string
 	}{
 		{
-			name: "CommonJS with exports field",
+			name: "ESM preferred with exports field for tree-shaking",
 			setupFiles: map[string]string{
 				"/node_modules/test-pkg/package.json": `{
 					"exports": {
@@ -130,7 +130,7 @@ func TestModuleResolution(t *testing.T) {
 				"/node_modules/test-pkg/dist/esm/index.js": `export default "esm"`,
 			},
 			importPath: "test-pkg",
-			expected:   "/node_modules/test-pkg/dist/cjs/index.js", // Prefer require
+			expected:   "/node_modules/test-pkg/dist/esm/index.js", // Prefer import for tree-shaking
 		},
 		{
 			name: "nested require field in exports",
@@ -345,7 +345,7 @@ func TestResolvePackageExports(t *testing.T) {
 				},
 			},
 			subpath:  ".",
-			expected: []string{"./cjs.js", "./esm.js"}, // Both extracted, require first
+			expected: []string{"./esm.js", "./cjs.js"}, // Both extracted, import first for tree-shaking
 		},
 		{
 			name: "nested default in require",
@@ -491,7 +491,7 @@ func TestResolutionPriority(t *testing.T) {
 		}
 	})
 	
-	t.Run("require takes precedence over import", func(t *testing.T) {
+	t.Run("import takes precedence over require for tree-shaking", func(t *testing.T) {
 		fs := NewMockFS()
 		fs.AddFile("/node_modules/pkg/package.json", `{
 			"exports": {
@@ -503,10 +503,10 @@ func TestResolutionPriority(t *testing.T) {
 		}`)
 		fs.AddFile("/node_modules/pkg/cjs.js", `module.exports = "cjs"`)
 		fs.AddFile("/node_modules/pkg/esm.js", `export default "esm"`)
-		
+
 		result := resolveModule(fs, "pkg", "")
-		if result != "/node_modules/pkg/cjs.js" {
-			t.Errorf("Should prefer require over import, got: %s", result)
+		if result != "/node_modules/pkg/esm.js" {
+			t.Errorf("Should prefer import over require for tree-shaking, got: %s", result)
 		}
 	})
 }
