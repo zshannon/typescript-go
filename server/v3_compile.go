@@ -161,6 +161,12 @@ func compileV3(files map[string][]byte, pkg *v3PackageJSON, tsconfigRaw []byte, 
 		return api.OnLoadResult{}, fmt.Errorf("file not found: %s", path)
 	}
 
+	// Pass tsconfig to esbuild so it picks up JSX settings (jsx, jsxImportSource, etc.)
+	var tsconfigForEsbuild string
+	if tsconfigRaw != nil {
+		tsconfigForEsbuild = string(tsconfigRaw)
+	}
+
 	// Build with esbuild using options from package.json
 	esbuildStart := time.Now()
 	result := api.Build(api.BuildOptions{
@@ -172,6 +178,7 @@ func compileV3(files map[string][]byte, pkg *v3PackageJSON, tsconfigRaw []byte, 
 		MinifyWhitespace:  opts.MinifyWhitespace,
 		Platform:          opts.Platform,
 		Target:            opts.Target,
+		TsconfigRaw:       tsconfigForEsbuild,
 		Write:             false,
 		Plugins: []api.Plugin{{
 			Name: "virtual-fs-v3",

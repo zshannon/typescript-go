@@ -2292,3 +2292,188 @@ export const App = () => { const [x] = useState(0); return x; };`)
 		t.Fatalf("zod should be require()'d as external, got: %s", result.Code)
 	}
 }
+
+func TestV3CompileHandler_GlobalsFromNodeModules(t *testing.T) {
+	// Bug: when a node_modules package imports react, the globals replacement
+	// must also apply — not just to user code. Otherwise react gets bundled
+	// from node_modules (duplicate instance) while user code gets the global.
+	setupTestServerWithMockS3(t)
+
+	lockContent := []byte("globals-nm-lock")
+	hash := hashBunLock(lockContent)
+	depBase := filepath.Join(diskCachePath, "deps", hash)
+	nmDir := filepath.Join(depBase, "node_modules")
+
+	// Create a fake @flickfyi/photon package that imports react
+	photonDir := filepath.Join(nmDir, "@flickfyi", "photon")
+	os.MkdirAll(photonDir, 0755)
+	os.WriteFile(filepath.Join(photonDir, "package.json"), []byte(`{"name": "@flickfyi/photon", "version": "0.0.2", "main": "index.js"}`), 0644)
+	os.WriteFile(filepath.Join(photonDir, "index.js"), []byte(`
+var React = require('react');
+exports.useSpring = function(config) { return React.useState(config); };
+`), 0644)
+
+	// Create a fake react package (should NOT be bundled — globals should catch it)
+	reactDir := filepath.Join(nmDir, "react")
+	os.MkdirAll(reactDir, 0755)
+	os.WriteFile(filepath.Join(reactDir, "package.json"), []byte(`{"name": "react", "version": "19.2.3", "main": "index.js"}`), 0644)
+	os.WriteFile(filepath.Join(reactDir, "index.js"), []byte(`
+exports.useState = function(init) { return [init, function() {}]; };
+exports.createElement = function(type, props) { return {type: type, props: props}; };
+`), 0644)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	writer.WriteField("/package.json", `{
+		"main": "./index.tsx",
+		"dependencies": {},
+		"esbuild": {
+			"globals": {"react": "_CRAYONCORE_$REACT"}
+		}
+	}`)
+	writer.WriteField("/bun.lock", "globals-nm-lock")
+	writer.WriteField("/index.tsx", `import { useState } from 'react';
+import { useSpring } from '@flickfyi/photon';
+export const App = () => {
+  const [x, setX] = useState(0);
+  const spring = useSpring({x: 1});
+  return x;
+};`)
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v3/compile?skip_typecheck=true", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+
+	compileV3Handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result BuildV2Response
+	json.NewDecoder(resp.Body).Decode(&result)
+	if len(result.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", result.Errors)
+	}
+
+	// The output should reference _CRAYONCORE_$REACT
+	if !strings.Contains(result.Code, "_CRAYONCORE_$REACT") {
+		t.Fatalf("output should reference _CRAYONCORE_$REACT, got:\n%s", result.Code)
+	}
+
+	// The output should NOT contain react's actual implementation (useState function body)
+	// If react was bundled from node_modules, we'd see its source code in the output
+	if strings.Contains(result.Code, "exports.createElement") {
+		t.Fatalf("react was bundled from node_modules instead of using globals replacement:\n%s", result.Code)
+	}
+
+	// There should be no require("react") either
+	if strings.Contains(result.Code, `require("react")`) {
+		t.Fatalf("output contains require(\"react\") — should use globals:\n%s", result.Code)
+	}
+}
+
+func TestV3CompileHandler_GlobalsFromJSXRuntime(t *testing.T) {
+	// Reproduce the real bug: @flickfyi/core jsx-runtime imports react,
+	// JSX transform imports from @flickfyi/core/jsx-runtime, and the
+	// transitive react import should hit globals replacement.
+	setupTestServerWithMockS3(t)
+
+	lockContent := []byte("globals-jsx-runtime-lock")
+	hash := hashBunLock(lockContent)
+	depBase := filepath.Join(diskCachePath, "deps", hash)
+	nmDir := filepath.Join(depBase, "node_modules")
+
+	// @flickfyi/core with jsx-runtime that imports react
+	coreDir := filepath.Join(nmDir, "@flickfyi", "core")
+	os.MkdirAll(coreDir, 0755)
+	os.WriteFile(filepath.Join(coreDir, "package.json"), []byte(`{
+		"name": "@flickfyi/core", "version": "0.0.8", "main": "index.js",
+		"exports": {
+			".": {"default": "./index.js"},
+			"./jsx-runtime": {"default": "./jsx-runtime.js"}
+		}
+	}`), 0644)
+	os.WriteFile(filepath.Join(coreDir, "index.js"), []byte(`
+var React = require('react');
+exports.Text = function(props) { return React.createElement('span', null, props.children); };
+exports.Flex = function(props) { return React.createElement('div', null, props.children); };
+`), 0644)
+	os.WriteFile(filepath.Join(coreDir, "jsx-runtime.js"), []byte(`
+var React = require('react');
+exports.jsx = function(type, props, key) { return React.createElement(type, props); };
+exports.jsxs = exports.jsx;
+exports.Fragment = React.Fragment;
+`), 0644)
+
+	// react package (should NOT be bundled)
+	reactDir := filepath.Join(nmDir, "react")
+	os.MkdirAll(reactDir, 0755)
+	os.WriteFile(filepath.Join(reactDir, "package.json"), []byte(`{"name": "react", "version": "19.2.3", "main": "index.js"}`), 0644)
+	os.WriteFile(filepath.Join(reactDir, "index.js"), []byte(`
+exports.useState = function(init) { return [init, function() {}]; };
+exports.createElement = function(type, props) { return {type: type, props: props}; };
+exports.Fragment = 'react.fragment';
+`), 0644)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	writer.WriteField("/package.json", `{
+		"main": "./index.tsx",
+		"dependencies": {},
+		"esbuild": {
+			"globals": {"react": "_CRAYONCORE_$REACT"}
+		}
+	}`)
+	writer.WriteField("/bun.lock", "globals-jsx-runtime-lock")
+	writer.WriteField("/tsconfig.json", `{"compilerOptions": {"jsx": "react-jsx", "jsxImportSource": "@flickfyi/core"}}`)
+	writer.WriteField("/index.tsx", `import { useState } from 'react';
+import { Text } from '@flickfyi/core';
+
+export default () => {
+  const [count, setCount] = useState(0);
+  return <Text>Count: {count}</Text>;
+};`)
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v3/compile?skip_typecheck=true", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+
+	compileV3Handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result BuildV2Response
+	json.NewDecoder(resp.Body).Decode(&result)
+	if len(result.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", result.Errors)
+	}
+
+	// The JSX transform should use the jsx-runtime (automatic), NOT React.createElement (classic).
+	// The user code's JSX should become jsx()/jsxs() calls, not React.createElement.
+	// Note: bundled node_modules code may contain React.createElement calls — that's fine,
+	// as long as their React var is the globals-replaced one (require_react()).
+	if !strings.Contains(result.Code, "import_jsx_runtime") && !strings.Contains(result.Code, "jsxs") {
+		t.Fatalf("JSX should use jsx-runtime (automatic), but no jsx/jsxs calls found:\n%s", result.Code)
+	}
+
+	// ALL react references should be _CRAYONCORE_$REACT — including from
+	// @flickfyi/core and @flickfyi/core/jsx-runtime
+	if strings.Contains(result.Code, "exports.createElement") {
+		t.Fatalf("react source was bundled from node_modules:\n%s", result.Code)
+	}
+	if strings.Contains(result.Code, `require("react")`) {
+		t.Fatalf("output contains require(\"react\"):\n%s", result.Code)
+	}
+	if !strings.Contains(result.Code, "_CRAYONCORE_$REACT") {
+		t.Fatalf("output should reference _CRAYONCORE_$REACT, got:\n%s", result.Code)
+	}
+}
