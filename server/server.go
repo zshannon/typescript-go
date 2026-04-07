@@ -1061,6 +1061,34 @@ func build(w http.ResponseWriter, req *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// flushDeps deletes all cached V3 dependency directories, forcing re-resolution on next request.
+func flushDeps(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	depsPath := filepath.Join(diskCachePath, "deps")
+
+	// Clear in-flight map
+	depInstallMu.Lock()
+	clear(depInstallInFlight)
+	depInstallMu.Unlock()
+
+	if err := os.RemoveAll(depsPath); err != nil {
+		log.Printf("[FLUSH] Failed to remove %s: %v", depsPath, err)
+		http.Error(w, fmt.Sprintf("failed to flush deps: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("[FLUSH] Cleared deps cache at %s", depsPath)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "flushed",
+	})
+}
+
 func syncVersion(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -1618,6 +1646,7 @@ func main() {
 	http.HandleFunc("/v2/build", loggingMiddleware(authMiddleware(buildV2)))
 	http.HandleFunc("/v2/typecheck", loggingMiddleware(authMiddleware(typecheckV2)))
 	http.HandleFunc("/v3/compile", loggingMiddleware(authMiddleware(compileV3Handler)))
+	http.HandleFunc("/v3/flush-deps", loggingMiddleware(authMiddleware(flushDeps)))
 	http.HandleFunc("/v3/typecheck", loggingMiddleware(authMiddleware(typecheckV3Handler)))
 
 	// Start Prometheus metrics server on port 9091
