@@ -1,0 +1,106 @@
+package main
+
+import (
+	"context"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
+	sdkresource "go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	oteltrace "go.opentelemetry.io/otel/trace"
+)
+
+const (
+	defaultHoneycombEndpoint = "https://api.honeycomb.io"
+	defaultServiceName       = "fly-tsgo"
+)
+
+var tsgoTracer = otel.Tracer("fly-tsgo/server")
+
+func initTelemetry(ctx context.Context) (func(context.Context) error, error) {
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+
+	apiKey := strings.TrimSpace(os.Getenv("HONEYCOMB_API_KEY"))
+	otelHeaders := strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_HEADERS"))
+	if apiKey == "" && otelHeaders == "" {
+		log.Printf("OpenTelemetry export disabled: HONEYCOMB_API_KEY and OTEL_EXPORTER_OTLP_HEADERS are not set")
+		return func(context.Context) error { return nil }, nil
+	}
+
+	options := []otlptracehttp.Option{}
+	if apiKey != "" && otelHeaders == "" {
+		options = append(options, otlptracehttp.WithHeaders(map[string]string{
+			"x-honeycomb-team": apiKey,
+		}))
+	}
+	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") == "" && os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") == "" {
+		options = append(options, otlptracehttp.WithEndpointURL(defaultHoneycombEndpoint))
+	}
+
+	exporter, err := otlptracehttp.New(ctx, options...)
+	if err != nil {
+		return nil, err
+	}
+
+	serviceName := os.Getenv("OTEL_SERVICE_NAME")
+	if serviceName == "" {
+		serviceName = defaultServiceName
+	}
+
+	resource, err := sdkresource.New(ctx,
+		sdkresource.WithAttributes(
+			attribute.String("service.name", serviceName),
+			attribute.String("service.namespace", "flick"),
+			attribute.String("service.version", serverVersion),
+		),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	provider := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(resource),
+	)
+	otel.SetTracerProvider(provider)
+	tsgoTracer = provider.Tracer("fly-tsgo/server")
+	log.Printf("OpenTelemetry export enabled for service %q", serviceName)
+
+	return provider.Shutdown, nil
+}
+
+func otelRoute(operation string, handler http.HandlerFunc) http.Handler {
+	return otelhttp.NewHandler(http.HandlerFunc(handler), operation)
+}
+
+func recordSpanError(span oteltrace.Span, slug string, err error) {
+	if err == nil {
+		return
+	}
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
+	span.SetAttributes(
+		attribute.Bool("error", true),
+		attribute.String("exception.slug", slug),
+	)
+}
+
+func startSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, oteltrace.Span) {
+	return tsgoTracer.Start(ctx, name, oteltrace.WithAttributes(attrs...))
+}
+
+func spanDurationMS(duration time.Duration) float64 {
+	return float64(duration) / float64(time.Millisecond)
+}

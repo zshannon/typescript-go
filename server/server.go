@@ -27,6 +27,7 @@ import (
 	"github.com/microsoft/typescript-go/internal/locale"
 	"github.com/microsoft/typescript-go/internal/tsoptions"
 	"github.com/microsoft/typescript-go/internal/vfs"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // S3ClientInterface defines the interface for S3 operations
@@ -43,8 +44,8 @@ var (
 	gitCommit     = "unknown" // Set at build time with -ldflags
 
 	// S3 client and configuration
-	s3Client    S3ClientInterface
-	s3Bucket    string
+	s3Client S3ClientInterface
+	s3Bucket string
 
 	// Disk cache configuration
 	diskCachePath string
@@ -207,6 +208,11 @@ func ensureVersionSynced(ctx context.Context, version string) error {
 		return nil
 	}
 
+	ctx, span := startSpan(ctx, "fly_tsgo.version.sync",
+		attribute.String("fly_tsgo.version", version),
+	)
+	defer span.End()
+
 	log.Printf("[SYNC] Starting sync for version %s", version)
 	start := time.Now()
 
@@ -222,10 +228,18 @@ func ensureVersionSynced(ctx context.Context, version string) error {
 			input.ContinuationToken = continuationToken
 		}
 
+		_, listSpan := startSpan(ctx, "fly_tsgo.s3.list_objects",
+			attribute.String("fly_tsgo.s3.key_kind", "version_files"),
+		)
 		page, err := s3Client.ListObjectsV2(ctx, input)
 		if err != nil {
+			recordSpanError(listSpan, "err-s3-list-version-files", err)
+			listSpan.End()
+			recordSpanError(span, "err-s3-list-version-files", err)
 			return fmt.Errorf("failed to list S3 objects: %w", err)
 		}
+		listSpan.SetAttributes(attribute.Int("fly_tsgo.s3.objects.count", len(page.Contents)))
+		listSpan.End()
 		for _, obj := range page.Contents {
 			if obj.Key != nil {
 				keys = append(keys, *obj.Key)
@@ -239,8 +253,10 @@ func ensureVersionSynced(ctx context.Context, version string) error {
 	}
 
 	if len(keys) == 0 {
+		span.SetAttributes(attribute.Bool("fly_tsgo.version.sync.empty", true))
 		return fmt.Errorf("version %s not found in S3", version)
 	}
+	span.SetAttributes(attribute.Int("fly_tsgo.version.files.count", len(keys)))
 
 	log.Printf("[SYNC] Found %d files to download for version %s", len(keys), version)
 
@@ -402,7 +418,13 @@ func isDiskFullError(err error) bool {
 
 // downloadFile downloads a single file from S3 to local disk
 func downloadFile(ctx context.Context, key, localPath string) error {
+	ctx, span := startSpan(ctx, "fly_tsgo.s3.download_file",
+		attribute.String("fly_tsgo.s3.key_kind", "version_file"),
+	)
+	defer span.End()
+
 	if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
+		recordSpanError(span, "err-s3-download-mkdir", err)
 		return err
 	}
 
@@ -411,20 +433,22 @@ func downloadFile(ctx context.Context, key, localPath string) error {
 		Key:    aws.String(key),
 	})
 	if err != nil {
+		recordSpanError(span, "err-s3-download-get-object", err)
 		return err
 	}
 	defer result.Body.Close()
 
 	f, err := os.Create(localPath)
 	if err != nil {
+		recordSpanError(span, "err-s3-download-create-file", err)
 		return err
 	}
 	defer f.Close()
 
 	_, err = io.Copy(f, result.Body)
+	recordSpanError(span, "err-s3-download-copy", err)
 	return err
 }
-
 
 func (fs *diskFS) UseCaseSensitiveFileNames() bool { return true }
 
@@ -579,9 +603,9 @@ func (fs *diskFS) GetAccessibleEntries(path string) vfs.Entries {
 	}
 }
 
-func (fs *diskFS) Stat(path string) vfs.FileInfo { return nil }
+func (fs *diskFS) Stat(path string) vfs.FileInfo                     { return nil }
 func (fs *diskFS) WalkDir(root string, walkFn vfs.WalkDirFunc) error { return nil }
-func (fs *diskFS) Realpath(path string) string { return path }
+func (fs *diskFS) Realpath(path string) string                       { return path }
 
 func calculateLineColumn(text string, pos int) (int, int) {
 	if pos < 0 || pos >= len(text) {
@@ -619,9 +643,9 @@ func typecheckTypeScript(code string, version string) TypecheckResponse {
 	fileName := "/input.tsx"
 
 	fs.userFiles[fileName] = code
-	
+
 	wrappedFS := bundled.WrapFS(fs)
-	
+
 	// Create minimal compiler options (matching CrayonDeveloper settings)
 	jsxImportSource := "@crayonnow/core"
 	compilerOptions := &core.CompilerOptions{
@@ -642,24 +666,24 @@ func typecheckTypeScript(code string, version string) TypecheckResponse {
 		Target:                           core.ScriptTargetES2022,
 		Lib:                              []string{"ES2022"},
 	}
-	
+
 	// Create parsed options
 	parsedOptions := &core.ParsedOptions{
 		CompilerOptions: compilerOptions,
 		FileNames:       []string{fileName},
 	}
-	
+
 	// Create config
 	config := &tsoptions.ParsedCommandLine{
 		ParsedConfig: parsedOptions,
 	}
-	
+
 	// Create cache
 	extendedConfigCache := &tsc.ExtendedConfigCache{}
-	
+
 	// Create host
 	host := compiler.NewCachedFSCompilerHost("/", wrappedFS, bundled.LibPath(), extendedConfigCache, nil)
-	
+
 	// Create program
 	program := compiler.NewProgram(compiler.ProgramOptions{
 		Config: config,
@@ -671,7 +695,7 @@ func typecheckTypeScript(code string, version string) TypecheckResponse {
 	if len(diagnostics) == 0 {
 		diagnostics = append(diagnostics, program.GetSemanticDiagnostics(ctx, nil)...)
 	}
-	
+
 	if len(diagnostics) > 0 {
 		errors := make([]DiagnosticError, 0, len(diagnostics))
 		for _, diag := range diagnostics {
@@ -688,7 +712,7 @@ func typecheckTypeScript(code string, version string) TypecheckResponse {
 		typecheckResults.WithLabelValues("error").Inc()
 		return TypecheckResponse{Errors: errors}
 	}
-	
+
 	typecheckResults.WithLabelValues("success").Inc()
 	return TypecheckResponse{Pass: true}
 }
@@ -715,14 +739,14 @@ func buildTypeScript(code string, version string) BuildResponse {
 	fileName := "/input.tsx"
 
 	fs.userFiles[fileName] = code
-	
+
 	// Create virtual file resolver for esbuild
 	resolverCalls := 0
 	resolver := func(path string) (api.OnLoadResult, error) {
 		resolverCalls++
 		// Track package resolutions
 		trackPackageResolution(path)
-		
+
 		// Only try exact path for absolute paths or relative paths
 		// Bare module specifiers like "@use-gesture/react" should go through resolution
 		if strings.HasPrefix(path, "/") || strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../") {
@@ -745,12 +769,12 @@ func buildTypeScript(code string, version string) BuildResponse {
 				}, nil
 			}
 		}
-		
+
 		// Log cache miss
 		if strings.Contains(path, "node_modules") {
 			log.Printf("[BUILD] Cache MISS for path: %s", path)
 		}
-		
+
 		// Try with common extensions if exact path not found
 		if strings.HasPrefix(path, "/") {
 			extensions := []string{".js", ".jsx", ".mjs", ".json", ".ts", ".tsx"}
@@ -772,8 +796,8 @@ func buildTypeScript(code string, version string) BuildResponse {
 				}
 			}
 		}
-		
-		// Try to resolve using the clean module resolver  
+
+		// Try to resolve using the clean module resolver
 		if !strings.HasPrefix(path, "/") {
 			if strings.Contains(path, "node_modules") || strings.Contains(path, "@") {
 				log.Printf("[BUILD] Resolving module: %s", path)
@@ -801,32 +825,32 @@ func buildTypeScript(code string, version string) BuildResponse {
 				}
 			}
 		}
-		
+
 		return api.OnLoadResult{}, fmt.Errorf("file not found: %s", path)
 	}
-	
+
 	// Build with esbuild (matching Swift configuration)
 	esbuildStart := time.Now()
 	result := api.Build(api.BuildOptions{
-		EntryPoints:        []string{fileName},
-		Bundle:             true,
-		Format:             api.FormatCommonJS,
-		JSXFactory:         "_CRAYONCORE_$REACT.createElement",
-		JSXFragment:        "_CRAYONCORE_$REACT.Fragment",
-		MinifyWhitespace:   true,
-		MinifyIdentifiers:  false,
-		MinifySyntax:       true,
-		Platform:           api.PlatformBrowser,
-		Target:             api.ES2022,
-		Write:              false,
-		External:           []string{"*"},
+		EntryPoints:       []string{fileName},
+		Bundle:            true,
+		Format:            api.FormatCommonJS,
+		JSXFactory:        "_CRAYONCORE_$REACT.createElement",
+		JSXFragment:       "_CRAYONCORE_$REACT.Fragment",
+		MinifyWhitespace:  true,
+		MinifyIdentifiers: false,
+		MinifySyntax:      true,
+		Platform:          api.PlatformBrowser,
+		Target:            api.ES2022,
+		Write:             false,
+		External:          []string{"*"},
 		Plugins: []api.Plugin{{
 			Name: "virtual-fs",
 			Setup: func(pb api.PluginBuild) {
 				pb.OnResolve(api.OnResolveOptions{Filter: ".*"}, func(args api.OnResolveArgs) (api.OnResolveResult, error) {
 					// Track package resolutions in esbuild plugin
 					trackPackageResolution(args.Path)
-					
+
 					// Transform react imports to use global variable
 					if args.Path == "react" {
 						return api.OnResolveResult{
@@ -834,12 +858,12 @@ func buildTypeScript(code string, version string) BuildResponse {
 							Namespace: "use-crayon-react-global",
 						}, nil
 					}
-					
+
 					// Handle absolute imports
 					if strings.HasPrefix(args.Path, "/") {
 						return api.OnResolveResult{Path: args.Path, Namespace: "virtual"}, nil
 					}
-					
+
 					// Handle relative imports using the clean resolver
 					if strings.HasPrefix(args.Path, "./") || strings.HasPrefix(args.Path, "../") {
 						// Use the clean resolveModule function
@@ -857,13 +881,13 @@ func buildTypeScript(code string, version string) BuildResponse {
 						}
 						return api.OnResolveResult{Path: resolvedPath, Namespace: "virtual"}, nil
 					}
-					
+
 					// Handle bare imports (no relative path)
 					if !strings.Contains(args.Path, "/") || strings.HasPrefix(args.Path, "@") {
 						// This is a node_modules import
 						return api.OnResolveResult{Path: args.Path, Namespace: "virtual"}, nil
 					}
-					
+
 					// Handle subpath imports that aren't relative (like "cjs/react.production.js")
 					// These are relative to the importer's package
 					if args.Importer != "" && strings.Contains(args.Importer, "/node_modules/") {
@@ -882,15 +906,15 @@ func buildTypeScript(code string, version string) BuildResponse {
 							return api.OnResolveResult{Path: resolvedPath, Namespace: "virtual"}, nil
 						}
 					}
-					
+
 					// Default: treat as node_modules import
 					return api.OnResolveResult{Path: args.Path, Namespace: "virtual"}, nil
 				})
-				
+
 				pb.OnLoad(api.OnLoadOptions{Filter: ".*", Namespace: "virtual"}, func(args api.OnLoadArgs) (api.OnLoadResult, error) {
 					return resolver(args.Path)
 				})
-				
+
 				// Handle react global transform
 				pb.OnLoad(api.OnLoadOptions{Filter: ".*", Namespace: "use-crayon-react-global"}, func(args api.OnLoadArgs) (api.OnLoadResult, error) {
 					contents := "module.exports = _CRAYONCORE_$REACT"
@@ -903,7 +927,7 @@ func buildTypeScript(code string, version string) BuildResponse {
 		}},
 	})
 	log.Printf("[PERF] esbuild.Build: %v (resolver called %d times)", time.Since(esbuildStart), resolverCalls)
-	
+
 	if len(result.Errors) > 0 {
 		errors := make([]DiagnosticError, 0, len(result.Errors))
 		for _, err := range result.Errors {
@@ -919,13 +943,13 @@ func buildTypeScript(code string, version string) BuildResponse {
 		compileResults.WithLabelValues("error").Inc()
 		return BuildResponse{Errors: errors}
 	}
-	
+
 	if len(result.OutputFiles) == 0 {
 		compileResults.WithLabelValues("error").Inc()
 		// log.Printf("Build failed: No output files generated")
 		return BuildResponse{Errors: []DiagnosticError{{Message: "No output generated"}}}
 	}
-	
+
 	outputCode := string(result.OutputFiles[0].Contents)
 	// log.Printf("Build successful: Generated %d bytes of code", len(outputCode))
 	compileResults.WithLabelValues("success").Inc()
@@ -936,21 +960,21 @@ func buildTypeScript(code string, version string) BuildResponse {
 func loggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		
+
 		// Add git commit header to all responses
 		w.Header().Set("X-Git-Commit", gitCommit)
 		w.Header().Set("X-Server-Version", serverVersion)
-		
+
 		// Create a custom response writer to capture status code
 		lrw := &loggingResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		
+
 		// Call the next handler
 		next(lrw, r)
-		
+
 		// Log the request
 		duration := time.Since(start)
 		log.Printf("%s %s - %d - %v", r.Method, r.URL.Path, lrw.statusCode, duration)
-		
+
 		// Record metrics
 		recordHTTPMetrics(r, lrw.statusCode, duration)
 	}
@@ -965,7 +989,6 @@ func (lrw *loggingResponseWriter) WriteHeader(code int) {
 	lrw.statusCode = code
 	lrw.ResponseWriter.WriteHeader(code)
 }
-
 
 func health(w http.ResponseWriter, req *http.Request) {
 	response := HealthResponse{
@@ -984,7 +1007,7 @@ func hello(w http.ResponseWriter, req *http.Request) {
 		http.NotFound(w, req)
 		return
 	}
-	fmt.Fprintf(w, "TypeScript Go Server v%s\nUptime: %v\n", 
+	fmt.Fprintf(w, "TypeScript Go Server v%s\nUptime: %v\n",
 		serverVersion, time.Since(startTime).Round(time.Second))
 }
 
@@ -1004,14 +1027,14 @@ func typecheck(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "Code is required", http.StatusBadRequest)
 		return
 	}
-	
+
 	if typecheckReq.Version == "" {
 		http.Error(w, "Version is required", http.StatusBadRequest)
 		return
 	}
 
 	response := typecheckTypeScript(typecheckReq.Code, typecheckReq.Version)
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
@@ -1032,7 +1055,7 @@ func build(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "Code is required", http.StatusBadRequest)
 		return
 	}
-	
+
 	if buildReq.Version == "" {
 		http.Error(w, "Version is required", http.StatusBadRequest)
 		return
@@ -1040,7 +1063,7 @@ func build(w http.ResponseWriter, req *http.Request) {
 
 	// Check if type validation is requested
 	validateTypes := req.URL.Query().Get("validate_types") == "true"
-	
+
 	if validateTypes {
 		// First run typecheck
 		typecheckResponse := typecheckTypeScript(buildReq.Code, buildReq.Version)
@@ -1057,7 +1080,7 @@ func build(w http.ResponseWriter, req *http.Request) {
 
 	// Proceed with build
 	response := buildTypeScript(buildReq.Code, buildReq.Version)
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
@@ -1069,6 +1092,9 @@ func flushDeps(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	ctx, span := startSpan(req.Context(), "fly_tsgo.deps.flush")
+	defer span.End()
+
 	// Clear in-flight map
 	depInstallMu.Lock()
 	clear(depInstallInFlight)
@@ -1077,6 +1103,7 @@ func flushDeps(w http.ResponseWriter, req *http.Request) {
 	// Clear disk cache
 	depsPath := filepath.Join(diskCachePath, "deps")
 	if err := os.RemoveAll(depsPath); err != nil {
+		recordSpanError(span, "err-flush-deps-remove-disk", err)
 		log.Printf("[FLUSH] Failed to remove %s: %v", depsPath, err)
 		http.Error(w, fmt.Sprintf("failed to flush deps: %v", err), http.StatusInternalServerError)
 		return
@@ -1095,21 +1122,34 @@ func flushDeps(w http.ResponseWriter, req *http.Request) {
 			if continuationToken != nil {
 				input.ContinuationToken = continuationToken
 			}
-			page, err := s3Client.ListObjectsV2(req.Context(), input)
+			_, listSpan := startSpan(ctx, "fly_tsgo.s3.list_objects",
+				attribute.String("fly_tsgo.s3.key_kind", "deps_tarballs"),
+			)
+			page, err := s3Client.ListObjectsV2(ctx, input)
 			if err != nil {
+				recordSpanError(listSpan, "err-flush-deps-list-s3", err)
+				listSpan.End()
+				recordSpanError(span, "err-flush-deps-list-s3", err)
 				log.Printf("[FLUSH] Failed to list S3 deps: %v", err)
 				break
 			}
+			listSpan.SetAttributes(attribute.Int("fly_tsgo.s3.objects.count", len(page.Contents)))
+			listSpan.End()
 			for _, obj := range page.Contents {
 				if obj.Key != nil {
-					if _, err := s3Client.DeleteObject(req.Context(), &s3.DeleteObjectInput{
+					_, deleteSpan := startSpan(ctx, "fly_tsgo.s3.delete_object",
+						attribute.String("fly_tsgo.s3.key_kind", "deps_tarball"),
+					)
+					if _, err := s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
 						Bucket: aws.String(s3Bucket),
 						Key:    obj.Key,
 					}); err != nil {
+						recordSpanError(deleteSpan, "err-flush-deps-delete-s3", err)
 						log.Printf("[FLUSH] Failed to delete S3 object %s: %v", *obj.Key, err)
 					} else {
 						deleted++
 					}
+					deleteSpan.End()
 				}
 			}
 			if page.IsTruncated == nil || !*page.IsTruncated {
@@ -1118,6 +1158,7 @@ func flushDeps(w http.ResponseWriter, req *http.Request) {
 			continuationToken = page.NextContinuationToken
 		}
 		log.Printf("[FLUSH] Deleted %d S3 deps tarballs", deleted)
+		span.SetAttributes(attribute.Int("fly_tsgo.deps.flush.s3_deleted.count", deleted))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1289,8 +1330,8 @@ func typecheckTypeScriptV2(files map[string]string, entryPoints []string, versio
 	host := compiler.NewCachedFSCompilerHost("/", wrappedFS, bundled.LibPath(), extendedConfigCache, nil)
 
 	program := compiler.NewProgram(compiler.ProgramOptions{
-		Config:           config,
-		Host:             host,
+		Config: config,
+		Host:   host,
 	})
 
 	// Get diagnostics
@@ -1649,8 +1690,13 @@ func main() {
 		log.Fatalf("Failed to create disk cache directory %s: %v", diskCachePath, err)
 	}
 
-	// Initialize AWS SDK
 	ctx := context.Background()
+	shutdownTelemetry, err := initTelemetry(ctx)
+	if err != nil {
+		log.Fatalf("Failed to initialize OpenTelemetry: %v", err)
+	}
+
+	// Initialize AWS SDK
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		log.Fatalf("Failed to load AWS config: %v", err)
@@ -1675,16 +1721,17 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// Set up routes
-	http.HandleFunc("/", loggingMiddleware(hello))
-	http.HandleFunc("/build", loggingMiddleware(authMiddleware(build)))
-	http.HandleFunc("/health", loggingMiddleware(health))
-	http.HandleFunc("/sync", loggingMiddleware(authMiddleware(syncVersion)))
-	http.HandleFunc("/typecheck", loggingMiddleware(authMiddleware(typecheck)))
-	http.HandleFunc("/v2/build", loggingMiddleware(authMiddleware(buildV2)))
-	http.HandleFunc("/v2/typecheck", loggingMiddleware(authMiddleware(typecheckV2)))
-	http.HandleFunc("/v3/compile", loggingMiddleware(authMiddleware(compileV3Handler)))
-	http.HandleFunc("/v3/flush-deps", loggingMiddleware(authMiddleware(flushDeps)))
-	http.HandleFunc("/v3/typecheck", loggingMiddleware(authMiddleware(typecheckV3Handler)))
+	mux := http.NewServeMux()
+	mux.Handle("/", otelRoute("GET /", loggingMiddleware(hello)))
+	mux.Handle("/build", otelRoute("POST /build", loggingMiddleware(authMiddleware(build))))
+	mux.Handle("/health", otelRoute("GET /health", loggingMiddleware(health)))
+	mux.Handle("/sync", otelRoute("POST /sync", loggingMiddleware(authMiddleware(syncVersion))))
+	mux.Handle("/typecheck", otelRoute("POST /typecheck", loggingMiddleware(authMiddleware(typecheck))))
+	mux.Handle("/v2/build", otelRoute("POST /v2/build", loggingMiddleware(authMiddleware(buildV2))))
+	mux.Handle("/v2/typecheck", otelRoute("POST /v2/typecheck", loggingMiddleware(authMiddleware(typecheckV2))))
+	mux.Handle("/v3/compile", otelRoute("POST /v3/compile", loggingMiddleware(authMiddleware(compileV3Handler))))
+	mux.Handle("/v3/flush-deps", otelRoute("POST /v3/flush-deps", loggingMiddleware(authMiddleware(flushDeps))))
+	mux.Handle("/v3/typecheck", otelRoute("POST /v3/typecheck", loggingMiddleware(authMiddleware(typecheckV3Handler))))
 
 	// Start Prometheus metrics server on port 9091
 	go startMetricsServer()
@@ -1692,7 +1739,7 @@ func main() {
 	// Create HTTP server with graceful shutdown support
 	srv := &http.Server{
 		Addr:    ":8080",
-		Handler: nil, // Use default ServeMux
+		Handler: mux,
 	}
 
 	// Start server in goroutine
@@ -1716,6 +1763,9 @@ func main() {
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Printf("Server shutdown error: %v", err)
+	}
+	if err := shutdownTelemetry(shutdownCtx); err != nil {
+		log.Printf("OpenTelemetry shutdown error: %v", err)
 	}
 
 	log.Printf("Server shutdown complete")
