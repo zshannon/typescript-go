@@ -1707,16 +1707,16 @@ func main() {
 
 	// Set up routes
 	mux := http.NewServeMux()
-	mux.HandleFunc("/{$}", hello)
-	mux.HandleFunc("/build", authMiddleware(build))
-	mux.HandleFunc("/health", health)
-	mux.HandleFunc("/sync", authMiddleware(syncVersion))
-	mux.HandleFunc("/typecheck", authMiddleware(typecheck))
-	mux.HandleFunc("/v2/build", authMiddleware(buildV2))
-	mux.HandleFunc("/v2/typecheck", authMiddleware(typecheckV2))
-	mux.HandleFunc("/v3/compile", authMiddleware(compileV3Handler))
-	mux.HandleFunc("/v3/flush-deps", authMiddleware(flushDeps))
-	mux.HandleFunc("/v3/typecheck", authMiddleware(typecheckV3Handler))
+	registerRoute(mux, "/{$}", hello)
+	registerRoute(mux, "/build", authMiddleware(build))
+	registerRoute(mux, "/health", health)
+	registerRoute(mux, "/sync", authMiddleware(syncVersion))
+	registerRoute(mux, "/typecheck", authMiddleware(typecheck))
+	registerRoute(mux, "/v2/build", authMiddleware(buildV2))
+	registerRoute(mux, "/v2/typecheck", authMiddleware(typecheckV2))
+	registerRoute(mux, "/v3/compile", authMiddleware(compileV3Handler))
+	registerRoute(mux, "/v3/flush-deps", authMiddleware(flushDeps))
+	registerRoute(mux, "/v3/typecheck", authMiddleware(typecheckV3Handler))
 
 	// Start Prometheus metrics server on port 9091
 	go startMetricsServer()
@@ -1724,7 +1724,7 @@ func main() {
 	// Create HTTP server with graceful shutdown support
 	srv := &http.Server{
 		Addr:    ":8080",
-		Handler: otelHandler(loggingMiddleware(mux.ServeHTTP)),
+		Handler: loggingMiddleware(mux.ServeHTTP),
 	}
 
 	// Start server in goroutine

@@ -6,6 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -65,6 +68,38 @@ func TestHTTPSpanName(t *testing.T) {
 			t.Fatalf("httpSpanName(%q, %q) = %q, want %q", tt.method, tt.pattern, got, tt.want)
 		}
 	}
+}
+
+func TestRouteSpanNameUsesServeMuxPattern(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	previousProvider := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		_ = provider.Shutdown(context.Background())
+		otel.SetTracerProvider(previousProvider)
+	})
+
+	mux := http.NewServeMux()
+	registerRoute(mux, "/v3/compile", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v3/compile", http.NoBody)
+	res := httptest.NewRecorder()
+	loggingMiddleware(mux.ServeHTTP)(res, req)
+
+	if res.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, res.Code)
+	}
+
+	for _, span := range exporter.GetSpans() {
+		if span.SpanKind == trace.SpanKindServer && span.Name == "POST /v3/compile" {
+			return
+		}
+	}
+
+	t.Fatalf("expected server span named %q, got spans %#v", "POST /v3/compile", exporter.GetSpans())
 }
 
 func TestStandardOTLPHeadersConfigured(t *testing.T) {

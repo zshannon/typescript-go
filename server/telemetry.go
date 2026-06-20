@@ -120,6 +120,10 @@ func otelHandler(handler http.HandlerFunc) http.Handler {
 	)
 }
 
+func registerRoute(mux *http.ServeMux, pattern string, handler http.HandlerFunc) {
+	mux.Handle(pattern, otelHandler(handler))
+}
+
 func recordSpanError(span oteltrace.Span, slug string, err error) {
 	if err == nil {
 		return
