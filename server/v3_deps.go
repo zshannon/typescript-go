@@ -20,6 +20,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // depInstallResult holds the outcome of a dep install operation.
@@ -31,7 +32,7 @@ type depInstallResult struct {
 }
 
 var (
-	depInstallMu      sync.Mutex
+	depInstallMu       sync.Mutex
 	depInstallInFlight = make(map[string]*depInstallResult)
 )
 
@@ -48,6 +49,11 @@ func hashBunLock(lockContent []byte) string {
 //
 // Concurrent requests for the same hash are deduplicated.
 func resolveDeps(ctx context.Context, lockContent []byte, pkg *v3PackageJSON, rawPackageJSON []byte) (string, error) {
+	ctx, span := startSpan(ctx, "fly_tsgo.deps.resolve",
+		attribute.Int("fly_tsgo.deps.resolve_s3.count", len(pkg.ResolveS3)),
+	)
+	defer span.End()
+
 	hash := hashBunLock(lockContent)
 	depDir := filepath.Join(diskCachePath, "deps", hash)
 
@@ -55,6 +61,7 @@ func resolveDeps(ctx context.Context, lockContent []byte, pkg *v3PackageJSON, ra
 	nmDir := filepath.Join(depDir, "node_modules")
 	if _, err := os.Stat(nmDir); err == nil {
 		depCacheLookups.WithLabelValues("disk_hit").Inc()
+		span.SetAttributes(attribute.String("fly_tsgo.deps.cache.result", "disk_hit"))
 		// Touch mtime for LRU eviction tracking
 		now := time.Now()
 		_ = os.Chtimes(depDir, now, now)
@@ -67,6 +74,11 @@ func resolveDeps(ctx context.Context, lockContent []byte, pkg *v3PackageJSON, ra
 		depInstallMu.Unlock()
 		// Wait for the in-flight install to complete
 		<-inflight.done
+		span.SetAttributes(
+			attribute.String("fly_tsgo.deps.cache.result", "inflight"),
+			attribute.Bool("fly_tsgo.deps.wait_inflight.success", inflight.err == nil),
+		)
+		recordSpanError(span, "err-deps-inflight", inflight.err)
 		return inflight.path, inflight.err
 	}
 	result := &depInstallResult{
@@ -82,14 +94,17 @@ func resolveDeps(ctx context.Context, lockContent []byte, pkg *v3PackageJSON, ra
 			p, s3Err := resolveDepsFromS3(ctx, hash, depDir)
 			if s3Err == nil {
 				depCacheLookups.WithLabelValues("s3_hit").Inc()
+				span.SetAttributes(attribute.String("fly_tsgo.deps.cache.result", "s3_hit"))
 				return p, nil
 			}
 		}
 
 		// Tier 3: bun install
 		depCacheLookups.WithLabelValues("install").Inc()
+		span.SetAttributes(attribute.String("fly_tsgo.deps.cache.result", "install"))
 		return installDeps(ctx, hash, depDir, lockContent, pkg, rawPackageJSON)
 	}()
+	recordSpanError(span, "err-deps-resolve", err)
 
 	// Broadcast result to all waiters
 	result.path = path
@@ -130,6 +145,10 @@ func resolveDepsFromS3(ctx context.Context, hash string, depDir string) (string,
 // installDeps runs bun install in a temp dir, moves the result to the cache,
 // and uploads the tarball to S3 in the background.
 func installDeps(ctx context.Context, hash string, depDir string, lockContent []byte, pkg *v3PackageJSON, rawPackageJSON []byte) (string, error) {
+	ctx, span := startSpan(ctx, "fly_tsgo.deps.install",
+		attribute.Int("fly_tsgo.deps.resolve_s3.count", len(pkg.ResolveS3)),
+	)
+	defer span.End()
 	start := time.Now()
 
 	tmpDir, err := os.MkdirTemp("", "bun-install-*")
@@ -149,20 +168,26 @@ func installDeps(ctx context.Context, hash string, depDir string, lockContent []
 	if len(pkg.ResolveS3) > 0 {
 		nmDir := filepath.Join(tmpDir, "node_modules")
 		if err := os.MkdirAll(nmDir, 0755); err != nil {
+			recordSpanError(span, "err-deps-mkdir-node-modules", err)
 			return "", fmt.Errorf("mkdir node_modules: %w", err)
 		}
 		if err := preseedS3Packages(ctx, pkg, nmDir); err != nil {
+			recordSpanError(span, "err-deps-preseed-s3-packages", err)
 			return "", fmt.Errorf("preseed s3 packages: %w", err)
 		}
 	}
 
+	bunStart := time.Now()
 	cmd := exec.CommandContext(ctx, "bun", "install", "--frozen-lockfile", "--ignore-scripts")
 	cmd.Dir = tmpDir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		span.SetAttributes(attribute.Float64("fly_tsgo.deps.bun_install.duration_ms", spanDurationMS(time.Since(bunStart))))
+		recordSpanError(span, "err-bun-install", err)
 		return "", fmt.Errorf("bun install failed: %w\nstderr: %s", err, stderr.String())
 	}
+	span.SetAttributes(attribute.Float64("fly_tsgo.deps.bun_install.duration_ms", spanDurationMS(time.Since(bunStart))))
 
 	depInstallDuration.Observe(time.Since(start).Seconds())
 
@@ -177,15 +202,18 @@ func installDeps(ctx context.Context, hash string, depDir string, lockContent []
 	// Attempt rename first (fast if same filesystem), fall back to copy
 	if err := os.Rename(filepath.Join(tmpDir), depDir); err != nil {
 		if err2 := os.MkdirAll(depDir, 0755); err2 != nil {
+			recordSpanError(span, "err-deps-mkdir-cache-dir", err2)
 			return "", fmt.Errorf("mkdir depDir: %w", err2)
 		}
 		if err2 := copyDir(tmpNM, destNM); err2 != nil {
+			recordSpanError(span, "err-deps-copy-node-modules", err2)
 			return "", fmt.Errorf("copy node_modules: %w", err2)
 		}
+		span.SetAttributes(attribute.Bool("fly_tsgo.deps.cache.copied", true))
 	}
 
-	// Upload to S3 in background
-	go uploadDepsToS3(context.Background(), hash, depDir)
+	// Upload to S3 in background without inheriting request cancellation.
+	go uploadDepsToS3(ctx, hash, depDir)
 
 	return depDir, nil
 }
@@ -195,6 +223,12 @@ func uploadDepsToS3(ctx context.Context, hash string, depDir string) {
 	if s3Client == nil {
 		return
 	}
+
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute)
+	defer cancel()
+
+	ctx, span := startSpan(ctx, "fly_tsgo.deps.s3_upload")
+	defer span.End()
 
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
@@ -234,27 +268,33 @@ func uploadDepsToS3(ctx context.Context, hash string, depDir string) {
 		return nil
 	})
 	if err != nil {
+		recordSpanError(span, "err-deps-upload-walk", err)
 		log.Printf("uploadDepsToS3: walk error for hash %s: %v", hash, err)
 		return
 	}
 
 	if err := tw.Close(); err != nil {
+		recordSpanError(span, "err-deps-upload-tar-close", err)
 		log.Printf("uploadDepsToS3: tw.Close error: %v", err)
 		return
 	}
 	if err := gw.Close(); err != nil {
+		recordSpanError(span, "err-deps-upload-gzip-close", err)
 		log.Printf("uploadDepsToS3: gw.Close error: %v", err)
 		return
 	}
 
 	key := "deps/" + hash + ".tar.gz"
+	span.SetAttributes(attribute.Int("fly_tsgo.s3.body.bytes", buf.Len()))
 	_, err = s3Client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(s3Bucket),
 		Body:   bytes.NewReader(buf.Bytes()),
 		Key:    aws.String(key),
 	})
 	if err != nil {
+		recordSpanError(span, "err-s3-put-deps-tarball", err)
 		log.Printf("uploadDepsToS3: PutObject error for %s: %v", key, err)
+		return
 	}
 }
 

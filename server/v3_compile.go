@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/evanw/esbuild/pkg/api"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // isExternal determines if an import path should be treated as external.
@@ -51,13 +53,29 @@ func loaderForPath(path string) api.Loader {
 	}
 }
 
-// compileV3 bundles TypeScript files using esbuild for v3 requests.
 func compileV3(files map[string][]byte, pkg *v3PackageJSON, tsconfigRaw []byte, lockContent []byte) BuildV2Response {
+	return compileV3WithContext(context.Background(), files, pkg, tsconfigRaw, lockContent)
+}
+
+// compileV3WithContext bundles TypeScript files using esbuild for v3 requests.
+func compileV3WithContext(ctx context.Context, files map[string][]byte, pkg *v3PackageJSON, tsconfigRaw []byte, lockContent []byte) (response BuildV2Response) {
+	ctx, span := startSpan(ctx, "fly_tsgo.v3.compile",
+		attribute.Int("fly_tsgo.files.count", len(files)),
+	)
 	compileStart := time.Now()
 	defer func() {
 		duration := time.Since(compileStart)
 		compileDuration.Observe(duration.Seconds())
 		log.Printf("[PERF] compileV3 total: %v (%d files)", duration, len(files))
+		span.SetAttributes(
+			attribute.Float64("fly_tsgo.compile.duration_ms", spanDurationMS(duration)),
+			attribute.Int("fly_tsgo.compile.errors.count", len(response.Errors)),
+			attribute.Bool("fly_tsgo.compile.success", len(response.Errors) == 0),
+		)
+		if response.Code != "" {
+			span.SetAttributes(attribute.Int("fly_tsgo.compile.output.bytes", len(response.Code)))
+		}
+		span.End()
 	}()
 
 	// Resolve deps
@@ -267,7 +285,17 @@ func compileV3(files map[string][]byte, pkg *v3PackageJSON, tsconfigRaw []byte, 
 			},
 		}},
 	})
-	log.Printf("[PERF] esbuild.Build V3: %v (resolver called %d times)", time.Since(esbuildStart), resolverCalls)
+	esbuildDuration := time.Since(esbuildStart)
+	span.SetAttributes(
+		attribute.Bool("fly_tsgo.esbuild.bundle", opts.Bundle),
+		attribute.Float64("fly_tsgo.esbuild.duration_ms", spanDurationMS(esbuildDuration)),
+		attribute.Int("fly_tsgo.esbuild.errors.count", len(result.Errors)),
+		attribute.String("fly_tsgo.esbuild.format", esbuildFormatName(opts.Format)),
+		attribute.Int("fly_tsgo.esbuild.output_files.count", len(result.OutputFiles)),
+		attribute.Int("fly_tsgo.esbuild.resolver_calls.count", resolverCalls),
+		attribute.String("fly_tsgo.compile.entry_point", entryPoint),
+	)
+	log.Printf("[PERF] esbuild.Build V3: %v (resolver called %d times)", esbuildDuration, resolverCalls)
 
 	if len(result.Errors) > 0 {
 		errors := make([]DiagnosticErrorV2, 0, len(result.Errors))
@@ -294,4 +322,17 @@ func compileV3(files map[string][]byte, pkg *v3PackageJSON, tsconfigRaw []byte, 
 	outputCode := string(result.OutputFiles[0].Contents)
 	compileResults.WithLabelValues("success").Inc()
 	return BuildV2Response{Code: outputCode}
+}
+
+func esbuildFormatName(format api.Format) string {
+	switch format {
+	case api.FormatIIFE:
+		return "iife"
+	case api.FormatESModule:
+		return "esm"
+	case api.FormatCommonJS:
+		return "cjs"
+	default:
+		return "unknown"
+	}
 }

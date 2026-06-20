@@ -14,6 +14,7 @@ import (
 	"github.com/microsoft/typescript-go/internal/execute/tsc"
 	"github.com/microsoft/typescript-go/internal/locale"
 	"github.com/microsoft/typescript-go/internal/tsoptions"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // defaultCompilerOptions returns the default tsconfig options matching v2 hardcoded values.
@@ -173,14 +174,27 @@ func parseTSConfig(tsconfigRaw []byte) (*core.CompilerOptions, error) {
 	return opts, nil
 }
 
-// typecheckV3 performs typechecking for v3 requests.
-// Config files (package.json, bun.lock, tsconfig.json) are excluded from the diskFS.
 func typecheckV3(files map[string][]byte, tsconfigRaw []byte, lockContent []byte) TypecheckV2Response {
+	return typecheckV3WithContext(context.Background(), files, tsconfigRaw, lockContent)
+}
+
+// typecheckV3WithContext performs typechecking for v3 requests.
+// Config files (package.json, bun.lock, tsconfig.json) are excluded from the diskFS.
+func typecheckV3WithContext(ctx context.Context, files map[string][]byte, tsconfigRaw []byte, lockContent []byte) (response TypecheckV2Response) {
+	ctx, span := startSpan(ctx, "fly_tsgo.v3.typecheck",
+		attribute.Int("fly_tsgo.files.count", len(files)),
+	)
 	typecheckStart := time.Now()
 	defer func() {
 		duration := time.Since(typecheckStart)
 		typecheckDuration.Observe(duration.Seconds())
 		log.Printf("[PERF] typecheckV3 total: %v (%d files)", duration, len(files))
+		span.SetAttributes(
+			attribute.Float64("fly_tsgo.typecheck.duration_ms", spanDurationMS(duration)),
+			attribute.Int("fly_tsgo.typecheck.errors.count", len(response.Errors)),
+			attribute.Bool("fly_tsgo.typecheck.success", len(response.Errors) == 0),
+		)
+		span.End()
 	}()
 
 	// Resolve deps
@@ -229,6 +243,7 @@ func typecheckV3(files map[string][]byte, tsconfigRaw []byte, lockContent []byte
 	// Parse compiler options from tsconfig
 	compilerOptions, err := parseTSConfig(tsconfigRaw)
 	if err != nil {
+		recordSpanError(span, "err-v3-typecheck-parse-tsconfig", err)
 		return TypecheckV2Response{
 			Errors: []DiagnosticErrorV2{{
 				Message: "failed to parse tsconfig.json: " + err.Error(),
@@ -254,13 +269,14 @@ func typecheckV3(files map[string][]byte, tsconfigRaw []byte, lockContent []byte
 		Config: config,
 		Host:   host,
 	})
+	span.SetAttributes(attribute.Int("fly_tsgo.typecheck.entrypoints.count", len(fileNames)))
 
 	// Get diagnostics
-	ctx := context.Background()
 	diagnostics := program.GetSyntacticDiagnostics(ctx, nil)
 	if len(diagnostics) == 0 {
 		diagnostics = append(diagnostics, program.GetSemanticDiagnostics(ctx, nil)...)
 	}
+	span.SetAttributes(attribute.Int("fly_tsgo.typecheck.diagnostics.count", len(diagnostics)))
 
 	if len(diagnostics) > 0 {
 		errors := make([]DiagnosticErrorV2, 0, len(diagnostics))
