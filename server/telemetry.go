@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	defaultHoneycombEndpoint = "https://api.honeycomb.io"
+	defaultHoneycombEndpoint = "https://api.honeycomb.io/v1/traces"
 	defaultServiceName       = "fly-tsgo"
 )
 

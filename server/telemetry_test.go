@@ -39,6 +39,13 @@ func TestDepResolveContextIgnoresCancellationAndPreservesTraceContext(t *testing
 	}
 }
 
+func TestDefaultHoneycombEndpointTargetsTraceEndpoint(t *testing.T) {
+	const want = "https://api.honeycomb.io/v1/traces"
+	if defaultHoneycombEndpoint != want {
+		t.Fatalf("defaultHoneycombEndpoint = %q, want %q", defaultHoneycombEndpoint, want)
+	}
+}
+
 func TestHTTPSpanName(t *testing.T) {
 	tests := []struct {
 		method  string
