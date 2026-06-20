@@ -59,3 +59,62 @@ func TestHTTPSpanName(t *testing.T) {
 		}
 	}
 }
+
+func TestStandardOTLPHeadersConfigured(t *testing.T) {
+	tests := []struct {
+		name             string
+		otelHeaders      string
+		otelTraceHeaders string
+		want             bool
+	}{
+		{name: "none", want: false},
+		{name: "generic", otelHeaders: "x-honeycomb-team=key", want: true},
+		{name: "traces", otelTraceHeaders: "x-honeycomb-team=key", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := standardOTLPHeadersConfigured(tt.otelHeaders, tt.otelTraceHeaders)
+			if got != tt.want {
+				t.Fatalf("standardOTLPHeadersConfigured(%q, %q) = %t, want %t", tt.otelHeaders, tt.otelTraceHeaders, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTelemetryExportConfigured(t *testing.T) {
+	tests := []struct {
+		apiKey            string
+		name              string
+		otelEndpoint      string
+		otelHeaders       string
+		otelTraceEndpoint string
+		otelTraceHeaders  string
+		want              bool
+	}{
+		{name: "none", want: false},
+		{name: "honeycomb api key", apiKey: "key", want: true},
+		{name: "generic headers", otelHeaders: "x-honeycomb-team=key", want: true},
+		{name: "traces headers", otelTraceHeaders: "x-honeycomb-team=key", want: true},
+		{name: "generic endpoint", otelEndpoint: "http://collector:4318", want: true},
+		{name: "traces endpoint", otelTraceEndpoint: "http://collector:4318/v1/traces", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := telemetryExportConfigured(tt.apiKey, tt.otelHeaders, tt.otelTraceHeaders, tt.otelEndpoint, tt.otelTraceEndpoint)
+			if got != tt.want {
+				t.Fatalf(
+					"telemetryExportConfigured(%q, %q, %q, %q, %q) = %t, want %t",
+					tt.apiKey,
+					tt.otelHeaders,
+					tt.otelTraceHeaders,
+					tt.otelEndpoint,
+					tt.otelTraceEndpoint,
+					got,
+					tt.want,
+				)
+			}
+		})
+	}
+}

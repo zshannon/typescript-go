@@ -34,18 +34,21 @@ func initTelemetry(ctx context.Context) func(context.Context) error {
 
 	apiKey := strings.TrimSpace(os.Getenv("HONEYCOMB_API_KEY"))
 	otelHeaders := strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_HEADERS"))
-	if apiKey == "" && otelHeaders == "" {
-		log.Printf("OpenTelemetry export disabled: HONEYCOMB_API_KEY and OTEL_EXPORTER_OTLP_HEADERS are not set")
+	otelTraceHeaders := strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS"))
+	otelEndpoint := strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
+	otelTraceEndpoint := strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"))
+	if !telemetryExportConfigured(apiKey, otelHeaders, otelTraceHeaders, otelEndpoint, otelTraceEndpoint) {
+		log.Printf("OpenTelemetry export disabled: no Honeycomb API key or OTLP export config is set")
 		return func(context.Context) error { return nil }
 	}
 
 	options := []otlptracehttp.Option{}
-	if apiKey != "" && otelHeaders == "" {
+	if apiKey != "" && !standardOTLPHeadersConfigured(otelHeaders, otelTraceHeaders) {
 		options = append(options, otlptracehttp.WithHeaders(map[string]string{
 			"x-honeycomb-team": apiKey,
 		}))
 	}
-	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") == "" && os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") == "" {
+	if otelEndpoint == "" && otelTraceEndpoint == "" {
 		options = append(options, otlptracehttp.WithEndpointURL(defaultHoneycombEndpoint))
 	}
 
@@ -81,6 +84,14 @@ func initTelemetry(ctx context.Context) func(context.Context) error {
 	log.Printf("OpenTelemetry export enabled for service %q", serviceName)
 
 	return provider.Shutdown
+}
+
+func standardOTLPHeadersConfigured(otelHeaders string, otelTraceHeaders string) bool {
+	return otelHeaders != "" || otelTraceHeaders != ""
+}
+
+func telemetryExportConfigured(apiKey string, otelHeaders string, otelTraceHeaders string, otelEndpoint string, otelTraceEndpoint string) bool {
+	return apiKey != "" || otelHeaders != "" || otelTraceHeaders != "" || otelEndpoint != "" || otelTraceEndpoint != ""
 }
 
 func depResolveContext(ctx context.Context) context.Context {
