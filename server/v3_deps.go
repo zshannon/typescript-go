@@ -73,12 +73,11 @@ func resolveDeps(ctx context.Context, lockContent []byte, pkg *v3PackageJSON, ra
 	if inflight, ok := depInstallInFlight[hash]; ok {
 		depInstallMu.Unlock()
 		// Wait for the in-flight install to complete
-		_, waitSpan := startSpan(ctx, "fly_tsgo.deps.wait_inflight")
 		<-inflight.done
-		waitSpan.SetAttributes(attribute.Bool("fly_tsgo.deps.wait_inflight.success", inflight.err == nil))
-		recordSpanError(waitSpan, "err-deps-inflight", inflight.err)
-		waitSpan.End()
-		span.SetAttributes(attribute.String("fly_tsgo.deps.cache.result", "inflight"))
+		span.SetAttributes(
+			attribute.String("fly_tsgo.deps.cache.result", "inflight"),
+			attribute.Bool("fly_tsgo.deps.wait_inflight.success", inflight.err == nil),
+		)
 		recordSpanError(span, "err-deps-inflight", inflight.err)
 		return inflight.path, inflight.err
 	}
@@ -122,24 +121,14 @@ func resolveDeps(ctx context.Context, lockContent []byte, pkg *v3PackageJSON, ra
 
 // resolveDepsFromS3 downloads and extracts a deps tarball from S3.
 func resolveDepsFromS3(ctx context.Context, hash string, depDir string) (string, error) {
-	ctx, span := startSpan(ctx, "fly_tsgo.deps.s3_restore")
-	defer span.End()
-
 	key := "deps/" + hash + ".tar.gz"
-	_, getSpan := startSpan(ctx, "fly_tsgo.s3.get_object",
-		attribute.String("fly_tsgo.s3.key_kind", "deps_tarball"),
-	)
 	out, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s3Bucket),
 		Key:    aws.String(key),
 	})
 	if err != nil {
-		recordSpanError(getSpan, "err-s3-get-deps-tarball", err)
-		getSpan.End()
-		recordSpanError(span, "err-deps-s3-restore", err)
 		return "", fmt.Errorf("s3 get %s: %w", key, err)
 	}
-	getSpan.End()
 	defer out.Body.Close()
 
 	if err := os.MkdirAll(depDir, 0755); err != nil {
@@ -147,7 +136,6 @@ func resolveDepsFromS3(ctx context.Context, hash string, depDir string) (string,
 	}
 
 	if err := extractTarGz(out.Body, depDir); err != nil {
-		recordSpanError(span, "err-deps-s3-extract", err)
 		return "", fmt.Errorf("extract tar.gz: %w", err)
 	}
 
@@ -189,18 +177,17 @@ func installDeps(ctx context.Context, hash string, depDir string, lockContent []
 		}
 	}
 
-	_, bunSpan := startSpan(ctx, "fly_tsgo.deps.bun_install")
+	bunStart := time.Now()
 	cmd := exec.CommandContext(ctx, "bun", "install", "--frozen-lockfile", "--ignore-scripts")
 	cmd.Dir = tmpDir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		recordSpanError(bunSpan, "err-bun-install", err)
-		bunSpan.End()
+		span.SetAttributes(attribute.Float64("fly_tsgo.deps.bun_install.duration_ms", spanDurationMS(time.Since(bunStart))))
 		recordSpanError(span, "err-bun-install", err)
 		return "", fmt.Errorf("bun install failed: %w\nstderr: %s", err, stderr.String())
 	}
-	bunSpan.End()
+	span.SetAttributes(attribute.Float64("fly_tsgo.deps.bun_install.duration_ms", spanDurationMS(time.Since(bunStart))))
 
 	depInstallDuration.Observe(time.Since(start).Seconds())
 
@@ -214,24 +201,19 @@ func installDeps(ctx context.Context, hash string, depDir string, lockContent []
 
 	// Attempt rename first (fast if same filesystem), fall back to copy
 	if err := os.Rename(filepath.Join(tmpDir), depDir); err != nil {
-		_, copySpan := startSpan(ctx, "fly_tsgo.deps.cache_copy")
 		if err2 := os.MkdirAll(depDir, 0755); err2 != nil {
-			recordSpanError(copySpan, "err-deps-mkdir-cache-dir", err2)
-			copySpan.End()
 			recordSpanError(span, "err-deps-mkdir-cache-dir", err2)
 			return "", fmt.Errorf("mkdir depDir: %w", err2)
 		}
 		if err2 := copyDir(tmpNM, destNM); err2 != nil {
-			recordSpanError(copySpan, "err-deps-copy-node-modules", err2)
-			copySpan.End()
 			recordSpanError(span, "err-deps-copy-node-modules", err2)
 			return "", fmt.Errorf("copy node_modules: %w", err2)
 		}
-		copySpan.End()
+		span.SetAttributes(attribute.Bool("fly_tsgo.deps.cache.copied", true))
 	}
 
-	// Upload to S3 in background
-	go uploadDepsToS3(context.Background(), hash, depDir)
+	// Upload to S3 in background without inheriting request cancellation.
+	go uploadDepsToS3(ctx, hash, depDir)
 
 	return depDir, nil
 }
@@ -241,6 +223,10 @@ func uploadDepsToS3(ctx context.Context, hash string, depDir string) {
 	if s3Client == nil {
 		return
 	}
+
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute)
+	defer cancel()
+
 	ctx, span := startSpan(ctx, "fly_tsgo.deps.s3_upload")
 	defer span.End()
 
@@ -299,23 +285,17 @@ func uploadDepsToS3(ctx context.Context, hash string, depDir string) {
 	}
 
 	key := "deps/" + hash + ".tar.gz"
-	_, putSpan := startSpan(ctx, "fly_tsgo.s3.put_object",
-		attribute.Int("fly_tsgo.s3.body.bytes", buf.Len()),
-		attribute.String("fly_tsgo.s3.key_kind", "deps_tarball"),
-	)
+	span.SetAttributes(attribute.Int("fly_tsgo.s3.body.bytes", buf.Len()))
 	_, err = s3Client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(s3Bucket),
 		Body:   bytes.NewReader(buf.Bytes()),
 		Key:    aws.String(key),
 	})
 	if err != nil {
-		recordSpanError(putSpan, "err-s3-put-deps-tarball", err)
-		putSpan.End()
 		recordSpanError(span, "err-s3-put-deps-tarball", err)
 		log.Printf("uploadDepsToS3: PutObject error for %s: %v", key, err)
 		return
 	}
-	putSpan.End()
 }
 
 // extractTarGz extracts a tar.gz stream into destDir.
@@ -492,49 +472,30 @@ func preseedS3Packages(ctx context.Context, pkg *v3PackageJSON, nodeModulesDir s
 		return fmt.Errorf("s3 client not configured")
 	}
 
-	ctx, span := startSpan(ctx, "fly_tsgo.deps.preseed_s3_packages",
-		attribute.Int("fly_tsgo.deps.resolve_s3.count", len(pkg.ResolveS3)),
-	)
-	defer span.End()
-
 	for _, name := range pkg.ResolveS3 {
 		version, err := lookupS3PackageVersion(pkg, name)
 		if err != nil {
-			recordSpanError(span, "err-preseed-s3-version", err)
 			return err
 		}
 
 		key := "packages/" + name + "/" + version + ".tgz"
-		_, packageSpan := startSpan(ctx, "fly_tsgo.deps.preseed_s3_package",
-			attribute.String("fly_tsgo.package.name", name),
-		)
 		out, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
 			Bucket: aws.String(s3Bucket),
 			Key:    aws.String(key),
 		})
 		if err != nil {
-			recordSpanError(packageSpan, "err-s3-get-private-package", err)
-			packageSpan.End()
-			recordSpanError(span, "err-s3-get-private-package", err)
 			return fmt.Errorf("s3 get %s: %w", key, err)
 		}
 		defer out.Body.Close()
 
 		pkgDir := filepath.Join(nodeModulesDir, name)
 		if err := os.MkdirAll(pkgDir, 0755); err != nil {
-			recordSpanError(packageSpan, "err-preseed-package-mkdir", err)
-			packageSpan.End()
-			recordSpanError(span, "err-preseed-package-mkdir", err)
 			return fmt.Errorf("mkdir %s: %w", pkgDir, err)
 		}
 
 		if err := extractNpmTarball(out.Body, pkgDir); err != nil {
-			recordSpanError(packageSpan, "err-preseed-package-extract", err)
-			packageSpan.End()
-			recordSpanError(span, "err-preseed-package-extract", err)
 			return fmt.Errorf("extract %s: %w", name, err)
 		}
-		packageSpan.End()
 	}
 
 	return nil

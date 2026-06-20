@@ -26,7 +26,7 @@ const (
 
 var tsgoTracer = otel.Tracer("fly-tsgo/server")
 
-func initTelemetry(ctx context.Context) (func(context.Context) error, error) {
+func initTelemetry(ctx context.Context) func(context.Context) error {
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},
@@ -36,7 +36,7 @@ func initTelemetry(ctx context.Context) (func(context.Context) error, error) {
 	otelHeaders := strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_HEADERS"))
 	if apiKey == "" && otelHeaders == "" {
 		log.Printf("OpenTelemetry export disabled: HONEYCOMB_API_KEY and OTEL_EXPORTER_OTLP_HEADERS are not set")
-		return func(context.Context) error { return nil }, nil
+		return func(context.Context) error { return nil }
 	}
 
 	options := []otlptracehttp.Option{}
@@ -51,7 +51,8 @@ func initTelemetry(ctx context.Context) (func(context.Context) error, error) {
 
 	exporter, err := otlptracehttp.New(ctx, options...)
 	if err != nil {
-		return nil, err
+		log.Printf("OpenTelemetry export disabled: failed to initialize OTLP exporter: %v", err)
+		return func(context.Context) error { return nil }
 	}
 
 	serviceName := os.Getenv("OTEL_SERVICE_NAME")
@@ -67,7 +68,8 @@ func initTelemetry(ctx context.Context) (func(context.Context) error, error) {
 		),
 	)
 	if err != nil {
-		return nil, err
+		log.Printf("OpenTelemetry export disabled: failed to initialize resource: %v", err)
+		return func(context.Context) error { return nil }
 	}
 
 	provider := sdktrace.NewTracerProvider(
@@ -78,11 +80,33 @@ func initTelemetry(ctx context.Context) (func(context.Context) error, error) {
 	tsgoTracer = provider.Tracer("fly-tsgo/server")
 	log.Printf("OpenTelemetry export enabled for service %q", serviceName)
 
-	return provider.Shutdown, nil
+	return provider.Shutdown
 }
 
-func otelRoute(operation string, handler http.HandlerFunc) http.Handler {
-	return otelhttp.NewHandler(http.HandlerFunc(handler), operation)
+func depResolveContext(ctx context.Context) context.Context {
+	return context.WithoutCancel(ctx)
+}
+
+func httpSpanName(_ string, r *http.Request) string {
+	method := r.Method
+	if method == "" {
+		method = "HTTP"
+	}
+
+	route := strings.TrimSuffix(r.Pattern, "{$}")
+	if route != "" {
+		return method + " " + route
+	}
+
+	return method
+}
+
+func otelHandler(handler http.HandlerFunc) http.Handler {
+	return otelhttp.NewHandler(
+		http.HandlerFunc(handler),
+		"HTTP",
+		otelhttp.WithSpanNameFormatter(httpSpanName),
+	)
 }
 
 func recordSpanError(span oteltrace.Span, slug string, err error) {

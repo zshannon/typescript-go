@@ -187,11 +187,6 @@ func compileV3WithContext(ctx context.Context, files map[string][]byte, pkg *v3P
 
 	// Build with esbuild using options from package.json
 	esbuildStart := time.Now()
-	_, buildSpan := startSpan(ctx, "fly_tsgo.esbuild.build",
-		attribute.String("fly_tsgo.compile.entry_point", entryPoint),
-		attribute.Bool("fly_tsgo.esbuild.bundle", opts.Bundle),
-		attribute.String("fly_tsgo.esbuild.format", esbuildFormatName(opts.Format)),
-	)
 	result := api.Build(api.BuildOptions{
 		Bundle:            opts.Bundle,
 		EntryPoints:       []string{entryPoint},
@@ -291,13 +286,15 @@ func compileV3WithContext(ctx context.Context, files map[string][]byte, pkg *v3P
 		}},
 	})
 	esbuildDuration := time.Since(esbuildStart)
-	buildSpan.SetAttributes(
+	span.SetAttributes(
+		attribute.Bool("fly_tsgo.esbuild.bundle", opts.Bundle),
 		attribute.Float64("fly_tsgo.esbuild.duration_ms", spanDurationMS(esbuildDuration)),
 		attribute.Int("fly_tsgo.esbuild.errors.count", len(result.Errors)),
+		attribute.String("fly_tsgo.esbuild.format", esbuildFormatName(opts.Format)),
 		attribute.Int("fly_tsgo.esbuild.output_files.count", len(result.OutputFiles)),
 		attribute.Int("fly_tsgo.esbuild.resolver_calls.count", resolverCalls),
+		attribute.String("fly_tsgo.compile.entry_point", entryPoint),
 	)
-	buildSpan.End()
 	log.Printf("[PERF] esbuild.Build V3: %v (resolver called %d times)", esbuildDuration, resolverCalls)
 
 	if len(result.Errors) > 0 {

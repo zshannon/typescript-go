@@ -265,23 +265,18 @@ func typecheckV3WithContext(ctx context.Context, files map[string][]byte, tsconf
 	extendedConfigCache := &tsc.ExtendedConfigCache{}
 	host := compiler.NewCachedFSCompilerHost("/", wrappedFS, bundled.LibPath(), extendedConfigCache, nil)
 
-	_, programSpan := startSpan(ctx, "fly_tsgo.typescript.program.create",
-		attribute.Int("fly_tsgo.typecheck.entrypoints.count", len(fileNames)),
-	)
 	program := compiler.NewProgram(compiler.ProgramOptions{
 		Config: config,
 		Host:   host,
 	})
-	programSpan.End()
+	span.SetAttributes(attribute.Int("fly_tsgo.typecheck.entrypoints.count", len(fileNames)))
 
 	// Get diagnostics
-	_, diagnosticsSpan := startSpan(ctx, "fly_tsgo.typescript.diagnostics")
 	diagnostics := program.GetSyntacticDiagnostics(ctx, nil)
 	if len(diagnostics) == 0 {
 		diagnostics = append(diagnostics, program.GetSemanticDiagnostics(ctx, nil)...)
 	}
-	diagnosticsSpan.SetAttributes(attribute.Int("fly_tsgo.typecheck.diagnostics.count", len(diagnostics)))
-	diagnosticsSpan.End()
+	span.SetAttributes(attribute.Int("fly_tsgo.typecheck.diagnostics.count", len(diagnostics)))
 
 	if len(diagnostics) > 0 {
 		errors := make([]DiagnosticErrorV2, 0, len(diagnostics))

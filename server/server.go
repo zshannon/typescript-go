@@ -219,6 +219,7 @@ func ensureVersionSynced(ctx context.Context, version string) error {
 	// List all objects with prefix "{version}/"
 	var keys []string
 	var continuationToken *string
+	var listPages int
 	for {
 		input := &s3.ListObjectsV2Input{
 			Bucket: aws.String(s3Bucket),
@@ -228,18 +229,12 @@ func ensureVersionSynced(ctx context.Context, version string) error {
 			input.ContinuationToken = continuationToken
 		}
 
-		_, listSpan := startSpan(ctx, "fly_tsgo.s3.list_objects",
-			attribute.String("fly_tsgo.s3.key_kind", "version_files"),
-		)
 		page, err := s3Client.ListObjectsV2(ctx, input)
 		if err != nil {
-			recordSpanError(listSpan, "err-s3-list-version-files", err)
-			listSpan.End()
 			recordSpanError(span, "err-s3-list-version-files", err)
 			return fmt.Errorf("failed to list S3 objects: %w", err)
 		}
-		listSpan.SetAttributes(attribute.Int("fly_tsgo.s3.objects.count", len(page.Contents)))
-		listSpan.End()
+		listPages++
 		for _, obj := range page.Contents {
 			if obj.Key != nil {
 				keys = append(keys, *obj.Key)
@@ -315,6 +310,11 @@ func ensureVersionSynced(ctx context.Context, version string) error {
 	wg.Wait()
 
 	duration := time.Since(start)
+	span.SetAttributes(
+		attribute.Float64("fly_tsgo.version.sync.duration_ms", spanDurationMS(duration)),
+		attribute.Int("fly_tsgo.version.sync.download_errors.count", int(downloadErrors)),
+		attribute.Int("fly_tsgo.version.sync.list_pages.count", listPages),
+	)
 	log.Printf("[SYNC] Completed sync for version %s: %d files in %v (%d errors)",
 		version, len(keys), duration, downloadErrors)
 
@@ -418,13 +418,7 @@ func isDiskFullError(err error) bool {
 
 // downloadFile downloads a single file from S3 to local disk
 func downloadFile(ctx context.Context, key, localPath string) error {
-	ctx, span := startSpan(ctx, "fly_tsgo.s3.download_file",
-		attribute.String("fly_tsgo.s3.key_kind", "version_file"),
-	)
-	defer span.End()
-
 	if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
-		recordSpanError(span, "err-s3-download-mkdir", err)
 		return err
 	}
 
@@ -433,20 +427,17 @@ func downloadFile(ctx context.Context, key, localPath string) error {
 		Key:    aws.String(key),
 	})
 	if err != nil {
-		recordSpanError(span, "err-s3-download-get-object", err)
 		return err
 	}
 	defer result.Body.Close()
 
 	f, err := os.Create(localPath)
 	if err != nil {
-		recordSpanError(span, "err-s3-download-create-file", err)
 		return err
 	}
 	defer f.Close()
 
 	_, err = io.Copy(f, result.Body)
-	recordSpanError(span, "err-s3-download-copy", err)
 	return err
 }
 
@@ -1113,6 +1104,8 @@ func flushDeps(w http.ResponseWriter, req *http.Request) {
 	// Clear S3 deps tarballs
 	if s3Client != nil {
 		var deleted int
+		var deleteErrors int
+		var listPages int
 		var continuationToken *string
 		for {
 			input := &s3.ListObjectsV2Input{
@@ -1122,34 +1115,25 @@ func flushDeps(w http.ResponseWriter, req *http.Request) {
 			if continuationToken != nil {
 				input.ContinuationToken = continuationToken
 			}
-			_, listSpan := startSpan(ctx, "fly_tsgo.s3.list_objects",
-				attribute.String("fly_tsgo.s3.key_kind", "deps_tarballs"),
-			)
 			page, err := s3Client.ListObjectsV2(ctx, input)
 			if err != nil {
-				recordSpanError(listSpan, "err-flush-deps-list-s3", err)
-				listSpan.End()
 				recordSpanError(span, "err-flush-deps-list-s3", err)
 				log.Printf("[FLUSH] Failed to list S3 deps: %v", err)
 				break
 			}
-			listSpan.SetAttributes(attribute.Int("fly_tsgo.s3.objects.count", len(page.Contents)))
-			listSpan.End()
+			listPages++
 			for _, obj := range page.Contents {
 				if obj.Key != nil {
-					_, deleteSpan := startSpan(ctx, "fly_tsgo.s3.delete_object",
-						attribute.String("fly_tsgo.s3.key_kind", "deps_tarball"),
-					)
 					if _, err := s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
 						Bucket: aws.String(s3Bucket),
 						Key:    obj.Key,
 					}); err != nil {
-						recordSpanError(deleteSpan, "err-flush-deps-delete-s3", err)
+						deleteErrors++
+						recordSpanError(span, "err-flush-deps-delete-s3", err)
 						log.Printf("[FLUSH] Failed to delete S3 object %s: %v", *obj.Key, err)
 					} else {
 						deleted++
 					}
-					deleteSpan.End()
 				}
 			}
 			if page.IsTruncated == nil || !*page.IsTruncated {
@@ -1158,7 +1142,11 @@ func flushDeps(w http.ResponseWriter, req *http.Request) {
 			continuationToken = page.NextContinuationToken
 		}
 		log.Printf("[FLUSH] Deleted %d S3 deps tarballs", deleted)
-		span.SetAttributes(attribute.Int("fly_tsgo.deps.flush.s3_deleted.count", deleted))
+		span.SetAttributes(
+			attribute.Int("fly_tsgo.deps.flush.s3_deleted.count", deleted),
+			attribute.Int("fly_tsgo.deps.flush.s3_delete_errors.count", deleteErrors),
+			attribute.Int("fly_tsgo.deps.flush.s3_list_pages.count", listPages),
+		)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1691,10 +1679,7 @@ func main() {
 	}
 
 	ctx := context.Background()
-	shutdownTelemetry, err := initTelemetry(ctx)
-	if err != nil {
-		log.Fatalf("Failed to initialize OpenTelemetry: %v", err)
-	}
+	shutdownTelemetry := initTelemetry(ctx)
 
 	// Initialize AWS SDK
 	cfg, err := config.LoadDefaultConfig(ctx)
@@ -1722,16 +1707,16 @@ func main() {
 
 	// Set up routes
 	mux := http.NewServeMux()
-	mux.Handle("/", otelRoute("GET /", loggingMiddleware(hello)))
-	mux.Handle("/build", otelRoute("POST /build", loggingMiddleware(authMiddleware(build))))
-	mux.Handle("/health", otelRoute("GET /health", loggingMiddleware(health)))
-	mux.Handle("/sync", otelRoute("POST /sync", loggingMiddleware(authMiddleware(syncVersion))))
-	mux.Handle("/typecheck", otelRoute("POST /typecheck", loggingMiddleware(authMiddleware(typecheck))))
-	mux.Handle("/v2/build", otelRoute("POST /v2/build", loggingMiddleware(authMiddleware(buildV2))))
-	mux.Handle("/v2/typecheck", otelRoute("POST /v2/typecheck", loggingMiddleware(authMiddleware(typecheckV2))))
-	mux.Handle("/v3/compile", otelRoute("POST /v3/compile", loggingMiddleware(authMiddleware(compileV3Handler))))
-	mux.Handle("/v3/flush-deps", otelRoute("POST /v3/flush-deps", loggingMiddleware(authMiddleware(flushDeps))))
-	mux.Handle("/v3/typecheck", otelRoute("POST /v3/typecheck", loggingMiddleware(authMiddleware(typecheckV3Handler))))
+	mux.HandleFunc("/{$}", hello)
+	mux.HandleFunc("/build", authMiddleware(build))
+	mux.HandleFunc("/health", health)
+	mux.HandleFunc("/sync", authMiddleware(syncVersion))
+	mux.HandleFunc("/typecheck", authMiddleware(typecheck))
+	mux.HandleFunc("/v2/build", authMiddleware(buildV2))
+	mux.HandleFunc("/v2/typecheck", authMiddleware(typecheckV2))
+	mux.HandleFunc("/v3/compile", authMiddleware(compileV3Handler))
+	mux.HandleFunc("/v3/flush-deps", authMiddleware(flushDeps))
+	mux.HandleFunc("/v3/typecheck", authMiddleware(typecheckV3Handler))
 
 	// Start Prometheus metrics server on port 9091
 	go startMetricsServer()
@@ -1739,7 +1724,7 @@ func main() {
 	// Create HTTP server with graceful shutdown support
 	srv := &http.Server{
 		Addr:    ":8080",
-		Handler: mux,
+		Handler: otelHandler(loggingMiddleware(mux.ServeHTTP)),
 	}
 
 	// Start server in goroutine
