@@ -1749,7 +1749,10 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Printf("Server shutdown error: %v", err)
 	}
-	if err := shutdownTelemetry(shutdownCtx); err != nil {
+
+	telemetryShutdownCtx, telemetryShutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer telemetryShutdownCancel()
+	if err := shutdownTelemetry(telemetryShutdownCtx); err != nil {
 		log.Printf("OpenTelemetry shutdown error: %v", err)
 	}
 
