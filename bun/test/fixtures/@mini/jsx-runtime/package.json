@@ -1,20 +1,20 @@
 {
-  "name": "@mini/jsx-runtime",
-  "version": "1.0.0",
-  "types": "./index.d.ts",
-  "main": "./index.js",
-  "exports": {
-    ".": {
-      "types": "./index.d.ts",
-      "default": "./index.js"
-    },
-    "./jsx-runtime": {
-      "types": "./jsx-runtime.d.ts",
-      "default": "./jsx-runtime.js"
-    },
-    "./jsx-dev-runtime": {
-      "types": "./jsx-runtime.d.ts",
-      "default": "./jsx-runtime.js"
+    "name": "@mini/jsx-runtime",
+    "version": "1.0.0",
+    "types": "./index.d.ts",
+    "main": "./index.js",
+    "exports": {
+        ".": {
+            "types": "./index.d.ts",
+            "default": "./index.js"
+        },
+        "./jsx-runtime": {
+            "types": "./jsx-runtime.d.ts",
+            "default": "./jsx-runtime.js"
+        },
+        "./jsx-dev-runtime": {
+            "types": "./jsx-runtime.d.ts",
+            "default": "./jsx-runtime.js"
+        }
     }
-  }
 }

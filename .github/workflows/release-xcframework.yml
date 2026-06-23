@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version tag (e.g., 0.1.0)"
+        description: 'Version tag (e.g., 0.1.0)'
         required: true
         type: string
 
@@ -22,7 +22,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.25.0"
+          go-version: '1.25.0'
           cache: true
 
       - name: Show Xcode version
@@ -98,7 +98,7 @@ jobs:
             Co-Authored-By: Claude <noreply@anthropic.com>
           branch: release/${{ inputs.version }}
           delete-branch: true
-          title: "Release TSCBridge ${{ inputs.version }}"
+          title: 'Release TSCBridge ${{ inputs.version }}'
           body: |
             ## Release TSCBridge ${{ inputs.version }}
 

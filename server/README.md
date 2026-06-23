@@ -206,7 +206,7 @@ The `esbuild` field maps directly to esbuild options. Only these fields are supp
 | `minifySyntax` | bool | `true` | Simplify syntax constructs |
 | `minifyWhitespace` | bool | `true` | Remove unnecessary whitespace |
 | `platform` | `"browser"` \| `"node"` \| `"neutral"` | `"browser"` | Target platform |
-| `target` | string | `"es2022"` | JavaScript target (`es2020`, `es2021`, `es2022`, `es2023`, `esnext`) |
+| `target` | string | `"es2022"` | JavaScript target (`es2020`, `es2021`, `es2022`, `es2023`, `es2024`, `es2025`, `esnext`) |
 
 **JSX settings** (factory, fragment, import source) come from `tsconfig.json`, not from the esbuild field.
 
@@ -239,7 +239,7 @@ If `/tsconfig.json` is included in the upload, the server parses its `compilerOp
 | Field | Values |
 |-------|--------|
 | `strict` | `true` / `false` |
-| `target` | `"es2020"`, `"es2021"`, `"es2022"`, `"es2023"`, `"esnext"` |
+| `target` | `"es2020"`, `"es2021"`, `"es2022"`, `"es2023"`, `"es2024"`, `"es2025"`, `"esnext"` |
 | `module` | `"commonjs"`, `"esnext"`, `"nodenext"` |
 | `moduleResolution` | `"bundler"`, `"nodenext"`, `"node"` |
 | `jsx` | `"react"`, `"react-jsx"`, `"react-jsxdev"`, `"preserve"` |

@@ -310,7 +310,7 @@ type extendedConfigCacheAdapter struct {
 	cache *collections.SyncMap[tspath.Path, *tsoptions.ExtendedConfigCacheEntry]
 }
 
-func (a *extendedConfigCacheAdapter) GetExtendedConfig(fileName string, path tspath.Path, resolutionStack []string, host tsoptions.ParseConfigHost) *tsoptions.ExtendedConfigCacheEntry {
+func (a *extendedConfigCacheAdapter) GetExtendedConfig(fileName string, path tspath.Path, resolutionStack []tspath.Path, host tsoptions.ParseConfigHost) *tsoptions.ExtendedConfigCacheEntry {
 	if entry, ok := a.cache.Load(path); ok {
 		return entry
 	}
@@ -363,6 +363,23 @@ func (c *callbackVFS) WriteFile(path string, data string) error {
 		return nil
 	}
 	return c.osvfs.WriteFile(path, data)
+}
+
+func (c *callbackVFS) AppendFile(path string, data string) error {
+	c.mu.RLock()
+	content, ok := c.writtenFiles[path]
+	c.mu.RUnlock()
+	if !ok {
+		content = c.resolver.ResolveFile(path)
+	}
+	content += data
+	if c.resolver.WriteFile(path, content) {
+		c.mu.Lock()
+		c.writtenFiles[path] = content
+		c.mu.Unlock()
+		return nil
+	}
+	return c.osvfs.AppendFile(path, data)
 }
 
 func (c *callbackVFS) Remove(path string) error {
@@ -476,6 +493,7 @@ func (e *simpleDirEntry) Type() fs.FileMode {
 	}
 	return 0
 }
+
 func (e *simpleDirEntry) Info() (fs.FileInfo, error) {
 	return &simpleFileInfo{name: e.name, isDir: e.isDir}, nil
 }
@@ -488,7 +506,7 @@ type simpleFileInfo struct {
 
 func (i *simpleFileInfo) Name() string       { return i.name }
 func (i *simpleFileInfo) Size() int64        { return i.size }
-func (i *simpleFileInfo) Mode() fs.FileMode  { return 0644 }
+func (i *simpleFileInfo) Mode() fs.FileMode  { return 0o644 }
 func (i *simpleFileInfo) ModTime() time.Time { return time.Time{} }
 func (i *simpleFileInfo) IsDir() bool        { return i.isDir }
 func (i *simpleFileInfo) Sys() interface{}   { return nil }
@@ -641,13 +659,14 @@ func buildWithConfig(projectPath string, printErrors bool, configFile string, re
 
 	if len(allDiagnostics) == configFileParsingDiagnosticsLength {
 		_ = program.GetBindDiagnostics(ctx, nil)
-		allDiagnostics = append(allDiagnostics, program.GetOptionsDiagnostics(ctx)...)
+		allDiagnostics = append(allDiagnostics, program.GetProgramDiagnostics()...)
 
 		if options.ListFilesOnly.IsFalseOrUnknown() {
 			allDiagnostics = append(allDiagnostics, program.GetGlobalDiagnostics(ctx)...)
 
 			if len(allDiagnostics) == configFileParsingDiagnosticsLength {
 				allDiagnostics = append(allDiagnostics, program.GetSemanticDiagnostics(ctx, nil)...)
+				allDiagnostics = append(allDiagnostics, program.GetGlobalDiagnostics(ctx)...)
 			}
 		}
 

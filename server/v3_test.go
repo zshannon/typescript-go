@@ -35,10 +35,10 @@ func setupV3DepCache(t *testing.T, lockContent string) string {
 
 	// @crayonnow/core
 	coreDir := filepath.Join(nmDir, "@crayonnow", "core")
-	if err := os.MkdirAll(coreDir, 0755); err != nil {
+	if err := os.MkdirAll(coreDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(coreDir, "package.json"), []byte(`{"name": "@crayonnow/core", "version": "1.0.0", "main": "index.js", "types": "index.d.ts", "exports": {".": {"types": "./index.d.ts", "default": "./index.js"}, "./jsx-runtime": {"types": "./jsx-runtime.d.ts", "default": "./jsx-runtime.js"}}}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(coreDir, "package.json"), []byte(`{"name": "@crayonnow/core", "version": "1.0.0", "main": "index.js", "types": "index.d.ts", "exports": {".": {"types": "./index.d.ts", "default": "./index.js"}, "./jsx-runtime": {"types": "./jsx-runtime.d.ts", "default": "./jsx-runtime.js"}}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(coreDir, "index.d.ts"), []byte(`export interface FlexProps { style?: any; children?: any; }
@@ -46,42 +46,42 @@ export declare function Flex(props: FlexProps): any;
 export interface ButtonProps { onClick?: () => void; style?: any; children?: any; }
 export declare function Button(props: ButtonProps): any;
 export interface TextProps { style?: any; children?: any; }
-export declare function Text(props: TextProps): any;`), 0644); err != nil {
+export declare function Text(props: TextProps): any;`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(coreDir, "index.js"), []byte(`exports.Flex = function(props) { return {type: 'Flex', props}; };
 exports.Button = function(props) { return {type: 'Button', props}; };
-exports.Text = function(props) { return {type: 'Text', props}; };`), 0644); err != nil {
+exports.Text = function(props) { return {type: 'Text', props}; };`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(coreDir, "jsx-runtime.d.ts"), []byte(`export namespace JSX { interface Element {} interface IntrinsicElements { [key: string]: any; } }
 export function jsx(type: any, props: any, key?: any): any;
 export function jsxs(type: any, props: any, key?: any): any;
-export function Fragment(props: any): any;`), 0644); err != nil {
+export function Fragment(props: any): any;`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(coreDir, "jsx-runtime.js"), []byte(`exports.jsx = function(type, props) { return {type, props}; };
 exports.jsxs = exports.jsx;
-exports.Fragment = function(props) { return props.children; };`), 0644); err != nil {
+exports.Fragment = function(props) { return props.children; };`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	// react
 	reactDir := filepath.Join(nmDir, "react")
-	if err := os.MkdirAll(reactDir, 0755); err != nil {
+	if err := os.MkdirAll(reactDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(reactDir, "package.json"), []byte(`{"name": "react", "version": "18.0.0", "main": "index.js", "types": "index.d.ts"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(reactDir, "package.json"), []byte(`{"name": "react", "version": "18.0.0", "main": "index.js", "types": "index.d.ts"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(reactDir, "index.d.ts"), []byte(`export function useState<T>(init: T): [T, (value: T) => void];
 export function useEffect(fn: () => void | (() => void), deps?: any[]): void;
-export function createElement(type: any, props: any, children?: any): any;`), 0644); err != nil {
+export function createElement(type: any, props: any, children?: any): any;`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(reactDir, "index.js"), []byte(`exports.useState = function(init) { return [init, function() {}]; };
 exports.useEffect = function(fn, deps) { };
-exports.createElement = function(type, props, children) { return {type, props, children}; };`), 0644); err != nil {
+exports.createElement = function(type, props, children) { return {type, props, children}; };`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -109,10 +109,10 @@ func TestNewDiskFSFromDeps(t *testing.T) {
 
 	// Create a fake node_modules structure
 	nmDir := filepath.Join(tmpDir, "node_modules", "zod")
-	if err := os.MkdirAll(nmDir, 0755); err != nil {
+	if err := os.MkdirAll(nmDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(nmDir, "index.d.ts"), []byte("export declare function string(): any;"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(nmDir, "index.d.ts"), []byte("export declare function string(): any;"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -434,14 +434,14 @@ func TestExtractNpmTarball(t *testing.T) {
 	tw.WriteHeader(&tar.Header{
 		Name:     "package/",
 		Typeflag: tar.TypeDir,
-		Mode:     0755,
+		Mode:     0o755,
 	})
 
 	// Add a file inside package/
 	content := []byte(`{"name": "@flickfyi/core", "version": "0.0.8"}`)
 	tw.WriteHeader(&tar.Header{
 		Name: "package/package.json",
-		Mode: 0644,
+		Mode: 0o644,
 		Size: int64(len(content)),
 	})
 	tw.Write(content)
@@ -450,7 +450,7 @@ func TestExtractNpmTarball(t *testing.T) {
 	jsContent := []byte(`module.exports = {}`)
 	tw.WriteHeader(&tar.Header{
 		Name: "package/dist/index.js",
-		Mode: 0644,
+		Mode: 0o644,
 		Size: int64(len(jsContent)),
 	})
 	tw.Write(jsContent)
@@ -493,7 +493,7 @@ func TestV3CompileHandler_MissingMain(t *testing.T) {
 	lockContent := []byte("missing-main-lock")
 	hash := hashBunLock(lockContent)
 	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
-	if err := os.MkdirAll(depDir, 0755); err != nil {
+	if err := os.MkdirAll(depDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -523,7 +523,7 @@ func TestV3TypecheckHandler_NoMainRequired(t *testing.T) {
 	lockContent := []byte("no-main-typecheck-lock")
 	hash := hashBunLock(lockContent)
 	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
-	if err := os.MkdirAll(depDir, 0755); err != nil {
+	if err := os.MkdirAll(depDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -570,10 +570,10 @@ func TestResolveDeps_LocalHit(t *testing.T) {
 	lockContent := []byte("test lockfile")
 	hash := hashBunLock(lockContent)
 	depDir := filepath.Join(tmpDir, "deps", hash, "node_modules", "zod")
-	if err := os.MkdirAll(depDir, 0755); err != nil {
+	if err := os.MkdirAll(depDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(depDir, "index.js"), []byte("module.exports = {}"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(depDir, "index.js"), []byte("module.exports = {}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -603,7 +603,7 @@ func TestResolveDeps_S3Hit(t *testing.T) {
 	content := []byte("module.exports = {}")
 	tw.WriteHeader(&tar.Header{
 		Name: "node_modules/zod/index.js",
-		Mode: 0644,
+		Mode: 0o644,
 		Size: int64(len(content)),
 	})
 	tw.Write(content)
@@ -639,7 +639,7 @@ func TestTypecheckV3_PassingCode(t *testing.T) {
 
 	hash := hashBunLock([]byte("test-lock"))
 	depDir := filepath.Join(tmpDir, "deps", hash, "node_modules")
-	if err := os.MkdirAll(depDir, 0755); err != nil {
+	if err := os.MkdirAll(depDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -663,7 +663,7 @@ func TestTypecheckV3_TypeError(t *testing.T) {
 
 	hash := hashBunLock([]byte("test-lock"))
 	depDir := filepath.Join(tmpDir, "deps", hash, "node_modules")
-	if err := os.MkdirAll(depDir, 0755); err != nil {
+	if err := os.MkdirAll(depDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -692,7 +692,7 @@ func TestCompileV3_SimpleBundle(t *testing.T) {
 
 	hash := hashBunLock([]byte("test-lock"))
 	depDir := filepath.Join(tmpDir, "deps", hash, "node_modules")
-	if err := os.MkdirAll(depDir, 0755); err != nil {
+	if err := os.MkdirAll(depDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -748,7 +748,7 @@ func TestV3TypecheckHandler_Pass(t *testing.T) {
 	lockContent := []byte("test-lock-for-handler")
 	hash := hashBunLock(lockContent)
 	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
-	if err := os.MkdirAll(depDir, 0755); err != nil {
+	if err := os.MkdirAll(depDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -795,7 +795,7 @@ func TestV3CompileHandler_Success(t *testing.T) {
 	lockContent := []byte("compile-handler-lock")
 	hash := hashBunLock(lockContent)
 	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
-	if err := os.MkdirAll(depDir, 0755); err != nil {
+	if err := os.MkdirAll(depDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -838,13 +838,13 @@ func TestDeleteOldestVersion_IncludesDeps(t *testing.T) {
 
 	// Create a version dir (old)
 	versionDir := filepath.Join(tmpDir, "5.7.0")
-	os.MkdirAll(versionDir, 0755)
+	os.MkdirAll(versionDir, 0o755)
 	oldTime := time.Now().Add(-2 * time.Hour)
 	os.Chtimes(versionDir, oldTime, oldTime)
 
 	// Create a deps dir (newer)
 	depsDir := filepath.Join(tmpDir, "deps", "abc123")
-	os.MkdirAll(depsDir, 0755)
+	os.MkdirAll(depsDir, 0o755)
 
 	// deleteOldestVersion should delete the older version dir first
 	deleted := deleteOldestVersion("")
@@ -1066,7 +1066,7 @@ func TestV3TypeErrorAcrossFiles(t *testing.T) {
 	lockContent := "type-error-across-files-lock"
 	hash := hashBunLock([]byte(lockContent))
 	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
-	if err := os.MkdirAll(depDir, 0755); err != nil {
+	if err := os.MkdirAll(depDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1131,7 +1131,7 @@ func TestV3CompileWithTypecheck(t *testing.T) {
 	lockContent := "compile-with-typecheck-lock"
 	hash := hashBunLock([]byte(lockContent))
 	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
-	if err := os.MkdirAll(depDir, 0755); err != nil {
+	if err := os.MkdirAll(depDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1172,7 +1172,7 @@ func TestV3CompileSkipTypecheck(t *testing.T) {
 	lockContent := "skip-typecheck-lock"
 	hash := hashBunLock([]byte(lockContent))
 	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
-	if err := os.MkdirAll(depDir, 0755); err != nil {
+	if err := os.MkdirAll(depDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1212,7 +1212,7 @@ func TestV3StrictVsNonStrict(t *testing.T) {
 	lockContent := "strict-test-lock"
 	hash := hashBunLock([]byte(lockContent))
 	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
-	if err := os.MkdirAll(depDir, 0755); err != nil {
+	if err := os.MkdirAll(depDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1282,7 +1282,7 @@ func TestV3EsbuildESMOutput(t *testing.T) {
 	lockContent := "esm-output-lock"
 	hash := hashBunLock([]byte(lockContent))
 	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
-	if err := os.MkdirAll(depDir, 0755); err != nil {
+	if err := os.MkdirAll(depDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1336,16 +1336,16 @@ func TestV3EsbuildExternals(t *testing.T) {
 	// Also add a zod package to the dep cache so resolution doesn't fail at typecheck
 	hash := hashBunLock([]byte(lockContent))
 	zodDir := filepath.Join(diskCachePath, "deps", hash, "node_modules", "zod")
-	if err := os.MkdirAll(zodDir, 0755); err != nil {
+	if err := os.MkdirAll(zodDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(zodDir, "package.json"), []byte(`{"name": "zod", "version": "3.23.0", "main": "index.js", "types": "index.d.ts"}`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(zodDir, "package.json"), []byte(`{"name": "zod", "version": "3.23.0", "main": "index.js", "types": "index.d.ts"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(zodDir, "index.js"), []byte(`exports.z = { string: function() { return {}; } };`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(zodDir, "index.js"), []byte(`exports.z = { string: function() { return {}; } };`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(zodDir, "index.d.ts"), []byte(`export declare const z: any;`), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(zodDir, "index.d.ts"), []byte(`export declare const z: any;`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1411,7 +1411,7 @@ func TestV3BadRequest_InvalidPackageJSON(t *testing.T) {
 	lockContent := "invalid-pkg-json-lock"
 	hash := hashBunLock([]byte(lockContent))
 	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
-	if err := os.MkdirAll(depDir, 0755); err != nil {
+	if err := os.MkdirAll(depDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1444,10 +1444,10 @@ func TestV3TypecheckHandler_WithS3Packages(t *testing.T) {
 	hash := hashBunLock(lockContent)
 	depBase := filepath.Join(diskCachePath, "deps", hash)
 	coreDir := filepath.Join(depBase, "node_modules", "@flickfyi", "core")
-	os.MkdirAll(coreDir, 0755)
-	os.WriteFile(filepath.Join(coreDir, "package.json"), []byte(`{"name": "@flickfyi/core", "version": "0.0.8", "main": "index.js", "types": "index.d.ts"}`), 0644)
-	os.WriteFile(filepath.Join(coreDir, "index.d.ts"), []byte(`export declare function Flex(props: any): any;`), 0644)
-	os.WriteFile(filepath.Join(coreDir, "index.js"), []byte(`exports.Flex = function() {};`), 0644)
+	os.MkdirAll(coreDir, 0o755)
+	os.WriteFile(filepath.Join(coreDir, "package.json"), []byte(`{"name": "@flickfyi/core", "version": "0.0.8", "main": "index.js", "types": "index.d.ts"}`), 0o644)
+	os.WriteFile(filepath.Join(coreDir, "index.d.ts"), []byte(`export declare function Flex(props: any): any;`), 0o644)
+	os.WriteFile(filepath.Join(coreDir, "index.js"), []byte(`exports.Flex = function() {};`), 0o644)
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -1521,7 +1521,7 @@ func TestV3_ResolveS3_EmptyList(t *testing.T) {
 	lockContent := []byte("empty-resolve-s3-lock")
 	hash := hashBunLock(lockContent)
 	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
-	os.MkdirAll(depDir, 0755)
+	os.MkdirAll(depDir, 0o755)
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -1622,7 +1622,7 @@ func TestV3RelativeImports(t *testing.T) {
 	lockContent := "relative-imports-lock"
 	hash := hashBunLock([]byte(lockContent))
 	depDir := filepath.Join(diskCachePath, "deps", hash, "node_modules")
-	if err := os.MkdirAll(depDir, 0755); err != nil {
+	if err := os.MkdirAll(depDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1733,6 +1733,8 @@ func TestParseTSConfig(t *testing.T) {
 			{"es2021", core.ScriptTargetES2021},
 			{"es2022", core.ScriptTargetES2022},
 			{"es2023", core.ScriptTargetES2023},
+			{"es2024", core.ScriptTargetES2024},
+			{"es2025", core.ScriptTargetES2025},
 			{"esnext", core.ScriptTargetESNext},
 		}
 		for _, tc := range cases {
@@ -1917,7 +1919,7 @@ func TestCompileV3_MissingEntryPoint(t *testing.T) {
 	diskCachePath = tmpDir
 
 	hash := hashBunLock([]byte("missing-entry-lock"))
-	os.MkdirAll(filepath.Join(tmpDir, "deps", hash, "node_modules"), 0755)
+	os.MkdirAll(filepath.Join(tmpDir, "deps", hash, "node_modules"), 0o755)
 
 	files := map[string][]byte{
 		"/src/other.ts": []byte("export const x = 1;"),
@@ -1939,7 +1941,7 @@ func TestTypecheckV3_NoTSFiles(t *testing.T) {
 	diskCachePath = tmpDir
 
 	hash := hashBunLock([]byte("no-ts-lock"))
-	os.MkdirAll(filepath.Join(tmpDir, "deps", hash, "node_modules"), 0755)
+	os.MkdirAll(filepath.Join(tmpDir, "deps", hash, "node_modules"), 0o755)
 
 	files := map[string][]byte{
 		"/src/data.json": []byte(`{"key": "value"}`),
@@ -1988,7 +1990,7 @@ func TestExtractNpmTarball_DirectoryTraversal(t *testing.T) {
 		malicious := []byte("pwned")
 		tw.WriteHeader(&tar.Header{
 			Name: "/etc/evil",
-			Mode: 0644,
+			Mode: 0o644,
 			Size: int64(len(malicious)),
 		})
 		tw.Write(malicious)
@@ -1997,7 +1999,7 @@ func TestExtractNpmTarball_DirectoryTraversal(t *testing.T) {
 		legit := []byte("ok")
 		tw.WriteHeader(&tar.Header{
 			Name: "package/index.js",
-			Mode: 0644,
+			Mode: 0o644,
 			Size: int64(len(legit)),
 		})
 		tw.Write(legit)
@@ -2008,7 +2010,7 @@ func TestExtractNpmTarball_DirectoryTraversal(t *testing.T) {
 		defer os.RemoveAll(tmpDir)
 
 		destDir := filepath.Join(tmpDir, "node_modules", "pkg")
-		os.MkdirAll(destDir, 0755)
+		os.MkdirAll(destDir, 0o755)
 		err := extractNpmTarball(bytes.NewReader(buf.Bytes()), destDir)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -2034,7 +2036,7 @@ func TestExtractNpmTarball_DirectoryTraversal(t *testing.T) {
 		legit := []byte("content")
 		tw.WriteHeader(&tar.Header{
 			Name: "package/lib/main.js",
-			Mode: 0644,
+			Mode: 0o644,
 			Size: int64(len(legit)),
 		})
 		tw.Write(legit)
@@ -2045,7 +2047,7 @@ func TestExtractNpmTarball_DirectoryTraversal(t *testing.T) {
 		defer os.RemoveAll(tmpDir)
 
 		destDir := filepath.Join(tmpDir, "node_modules", "pkg")
-		os.MkdirAll(destDir, 0755)
+		os.MkdirAll(destDir, 0o755)
 		err := extractNpmTarball(bytes.NewReader(buf.Bytes()), destDir)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -2109,7 +2111,7 @@ func TestCompileV3_BareMainPath(t *testing.T) {
 	diskCachePath = tmpDir
 
 	hash := hashBunLock([]byte("bare-main-lock"))
-	os.MkdirAll(filepath.Join(tmpDir, "deps", hash, "node_modules"), 0755)
+	os.MkdirAll(filepath.Join(tmpDir, "deps", hash, "node_modules"), 0o755)
 
 	files := map[string][]byte{
 		"/src/index.ts": []byte("export const hello = 'world';"),
@@ -2179,7 +2181,10 @@ func TestEsbuildOptions_AllTargets(t *testing.T) {
 		{api.ES2020, "es2020"},
 		{api.ES2021, "es2021"},
 		{api.ES2022, ""},
+		{api.ES2022, "es2022"},
 		{api.ES2023, "es2023"},
+		{api.ES2024, "es2024"},
+		{api.ES2025, "es2025"},
 		{api.ESNext, "esnext"},
 	}
 	for _, tt := range tests {
@@ -2198,7 +2203,7 @@ func TestV3CompileHandler_Globals(t *testing.T) {
 	hash := hashBunLock(lockContent)
 	depBase := filepath.Join(diskCachePath, "deps", hash)
 	nmDir := filepath.Join(depBase, "node_modules")
-	os.MkdirAll(nmDir, 0755)
+	os.MkdirAll(nmDir, 0o755)
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -2248,7 +2253,7 @@ func TestV3CompileHandler_GlobalsAndExternals(t *testing.T) {
 	hash := hashBunLock(lockContent)
 	depBase := filepath.Join(diskCachePath, "deps", hash)
 	nmDir := filepath.Join(depBase, "node_modules")
-	os.MkdirAll(nmDir, 0755)
+	os.MkdirAll(nmDir, 0o755)
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -2306,21 +2311,21 @@ func TestV3CompileHandler_GlobalsFromNodeModules(t *testing.T) {
 
 	// Create a fake @flickfyi/photon package that imports react
 	photonDir := filepath.Join(nmDir, "@flickfyi", "photon")
-	os.MkdirAll(photonDir, 0755)
-	os.WriteFile(filepath.Join(photonDir, "package.json"), []byte(`{"name": "@flickfyi/photon", "version": "0.0.2", "main": "index.js"}`), 0644)
+	os.MkdirAll(photonDir, 0o755)
+	os.WriteFile(filepath.Join(photonDir, "package.json"), []byte(`{"name": "@flickfyi/photon", "version": "0.0.2", "main": "index.js"}`), 0o644)
 	os.WriteFile(filepath.Join(photonDir, "index.js"), []byte(`
 var React = require('react');
 exports.useSpring = function(config) { return React.useState(config); };
-`), 0644)
+`), 0o644)
 
 	// Create a fake react package (should NOT be bundled — globals should catch it)
 	reactDir := filepath.Join(nmDir, "react")
-	os.MkdirAll(reactDir, 0755)
-	os.WriteFile(filepath.Join(reactDir, "package.json"), []byte(`{"name": "react", "version": "19.2.3", "main": "index.js"}`), 0644)
+	os.MkdirAll(reactDir, 0o755)
+	os.WriteFile(filepath.Join(reactDir, "package.json"), []byte(`{"name": "react", "version": "19.2.3", "main": "index.js"}`), 0o644)
 	os.WriteFile(filepath.Join(reactDir, "index.js"), []byte(`
 exports.useState = function(init) { return [init, function() {}]; };
 exports.createElement = function(type, props) { return {type: type, props: props}; };
-`), 0644)
+`), 0o644)
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -2389,35 +2394,35 @@ func TestV3CompileHandler_GlobalsFromJSXRuntime(t *testing.T) {
 
 	// @flickfyi/core with jsx-runtime that imports react
 	coreDir := filepath.Join(nmDir, "@flickfyi", "core")
-	os.MkdirAll(coreDir, 0755)
+	os.MkdirAll(coreDir, 0o755)
 	os.WriteFile(filepath.Join(coreDir, "package.json"), []byte(`{
 		"name": "@flickfyi/core", "version": "0.0.8", "main": "index.js",
 		"exports": {
 			".": {"default": "./index.js"},
 			"./jsx-runtime": {"default": "./jsx-runtime.js"}
 		}
-	}`), 0644)
+	}`), 0o644)
 	os.WriteFile(filepath.Join(coreDir, "index.js"), []byte(`
 var React = require('react');
 exports.Text = function(props) { return React.createElement('span', null, props.children); };
 exports.Flex = function(props) { return React.createElement('div', null, props.children); };
-`), 0644)
+`), 0o644)
 	os.WriteFile(filepath.Join(coreDir, "jsx-runtime.js"), []byte(`
 var React = require('react');
 exports.jsx = function(type, props, key) { return React.createElement(type, props); };
 exports.jsxs = exports.jsx;
 exports.Fragment = React.Fragment;
-`), 0644)
+`), 0o644)
 
 	// react package (should NOT be bundled)
 	reactDir := filepath.Join(nmDir, "react")
-	os.MkdirAll(reactDir, 0755)
-	os.WriteFile(filepath.Join(reactDir, "package.json"), []byte(`{"name": "react", "version": "19.2.3", "main": "index.js"}`), 0644)
+	os.MkdirAll(reactDir, 0o755)
+	os.WriteFile(filepath.Join(reactDir, "package.json"), []byte(`{"name": "react", "version": "19.2.3", "main": "index.js"}`), 0o644)
 	os.WriteFile(filepath.Join(reactDir, "index.js"), []byte(`
 exports.useState = function(init) { return [init, function() {}]; };
 exports.createElement = function(type, props) { return {type: type, props: props}; };
 exports.Fragment = 'react.fragment';
-`), 0644)
+`), 0o644)
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -2491,51 +2496,51 @@ func TestV3CompileHandler_GlobalsSubpathFromESMChunk(t *testing.T) {
 
 	// @flickfyi/photon with ESM entries and a shared chunk
 	photonDir := filepath.Join(nmDir, "@flickfyi", "photon", "dist")
-	os.MkdirAll(photonDir, 0755)
+	os.MkdirAll(photonDir, 0o755)
 	os.WriteFile(filepath.Join(nmDir, "@flickfyi", "photon", "package.json"), []byte(`{
 		"name": "@flickfyi/photon", "version": "0.0.4",
 		"exports": {
 			".": {"import": "./dist/index.js"},
 			"./jsx-runtime": {"import": "./dist/jsx-runtime.js"}
 		}
-	}`), 0644)
+	}`), 0o644)
 	os.WriteFile(filepath.Join(photonDir, "index.js"), []byte(`
 import './chunk-SHARED.js';
 export function Text(props) { return props.children; }
 export function Flex(props) { return props.children; }
-`), 0644)
+`), 0o644)
 	os.WriteFile(filepath.Join(photonDir, "jsx-runtime.js"), []byte(`
 import './chunk-SHARED.js';
 import { Fragment } from 'react/jsx-runtime';
 export { Fragment };
 export const jsx = (type, props) => _CRAYONCORE_$REACT.createElement(type, props);
 export const jsxs = jsx;
-`), 0644)
+`), 0o644)
 	// Shared chunk that imports react/jsx-runtime (the problematic import)
 	os.WriteFile(filepath.Join(photonDir, "chunk-SHARED.js"), []byte(`
 export { jsx as a } from 'react/jsx-runtime';
-`), 0644)
+`), 0o644)
 
 	// react package with jsx-runtime subpath
 	reactDir := filepath.Join(nmDir, "react")
-	os.MkdirAll(reactDir, 0755)
+	os.MkdirAll(reactDir, 0o755)
 	os.WriteFile(filepath.Join(reactDir, "package.json"), []byte(`{
 		"name": "react", "version": "19.2.3", "main": "index.js",
 		"exports": {
 			".": "./index.js",
 			"./jsx-runtime": "./jsx-runtime.js"
 		}
-	}`), 0644)
+	}`), 0o644)
 	os.WriteFile(filepath.Join(reactDir, "index.js"), []byte(`
 exports.createElement = function(type, props) { return {type: type, props: props}; };
 exports.Fragment = 'react.fragment';
-`), 0644)
+`), 0o644)
 	os.WriteFile(filepath.Join(reactDir, "jsx-runtime.js"), []byte(`
 var React = require('./index.js');
 exports.jsx = React.createElement;
 exports.jsxs = React.createElement;
 exports.Fragment = React.Fragment;
-`), 0644)
+`), 0o644)
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -2594,7 +2599,7 @@ func TestFlushDeps_ClearsDiskAndS3(t *testing.T) {
 	content := []byte("module.exports = {}")
 	tw.WriteHeader(&tar.Header{
 		Name: "node_modules/zod/index.js",
-		Mode: 0644,
+		Mode: 0o644,
 		Size: int64(len(content)),
 	})
 	tw.Write(content)

@@ -167,6 +167,10 @@ func parseTSConfig(tsconfigRaw []byte) (*core.CompilerOptions, error) {
 		opts.Target = core.ScriptTargetES2022
 	case "es2023":
 		opts.Target = core.ScriptTargetES2023
+	case "es2024":
+		opts.Target = core.ScriptTargetES2024
+	case "es2025":
+		opts.Target = core.ScriptTargetES2025
 	case "esnext":
 		opts.Target = core.ScriptTargetESNext
 	}
