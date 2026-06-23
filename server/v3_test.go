@@ -2928,6 +2928,69 @@ func TestFlushDepsHash_WaitsForInFlightUpload(t *testing.T) {
 	}
 }
 
+func TestResolveDeps_WaitsForTargetedFlush(t *testing.T) {
+	mockS3 := setupTestServerWithMockS3(t)
+	resetDepInstallInFlightForTest(t)
+
+	lockContent := []byte("resolve-waits-for-targeted-flush")
+	hash := hashBunLock(lockContent)
+	depDir := filepath.Join(diskCachePath, "deps", hash)
+	if err := os.MkdirAll(filepath.Join(depDir, "node_modules", "zod"), 0755); err != nil {
+		t.Fatalf("seed dep dir: %v", err)
+	}
+	key := depsCacheS3Key(hash)
+	mockS3.files[key] = "cached"
+
+	inflight := newDepInstallResult()
+	inflight.path = depDir
+	close(inflight.ready)
+	depInstallMu.Lock()
+	depInstallInFlight[hash] = inflight
+	depInstallMu.Unlock()
+
+	flushDone := make(chan error, 1)
+	go func() {
+		_, err := flushDepsHash(context.Background(), hash)
+		flushDone <- err
+	}()
+
+	waitForFlushInFlightForTest(t, hash)
+
+	resolveCtx, cancelResolve := context.WithCancel(context.Background())
+	resolveDone := make(chan error, 1)
+	go func() {
+		pkg := &v3PackageJSON{Dependencies: map[string]string{"zod": "3.23.0"}}
+		_, err := resolveDeps(resolveCtx, lockContent, pkg, []byte(`{"dependencies":{"zod":"3.23.0"}}`))
+		resolveDone <- err
+	}()
+
+	select {
+	case err := <-resolveDone:
+		t.Fatalf("resolveDeps returned while targeted flush was active: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	cancelResolve()
+	select {
+	case err := <-resolveDone:
+		if err != context.Canceled {
+			t.Fatalf("expected canceled resolve while waiting for flush, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("resolveDeps did not stop waiting after context cancellation")
+	}
+
+	close(inflight.done)
+	select {
+	case err := <-flushDone:
+		if err != nil {
+			t.Fatalf("flush after in-flight upload: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("flush did not finish after in-flight upload completed")
+	}
+}
+
 func TestCloseDepInstallResult_RemovesEntryBeforeWakingWaiters(t *testing.T) {
 	resetDepInstallInFlightForTest(t)
 
@@ -3095,13 +3158,39 @@ func seedDepsTarball(t *testing.T, mockS3 *MockS3Client, key string, name string
 func resetDepInstallInFlightForTest(t *testing.T) {
 	t.Helper()
 	depInstallMu.Lock()
-	previous := depInstallInFlight
+	previousInstalls := depInstallInFlight
+	previousFlushes := depFlushInFlight
 	depInstallInFlight = make(map[string]*depInstallResult)
+	depFlushInFlight = make(map[string]chan struct{})
 	depInstallMu.Unlock()
 
 	t.Cleanup(func() {
 		depInstallMu.Lock()
-		depInstallInFlight = previous
+		depInstallInFlight = previousInstalls
+		depFlushInFlight = previousFlushes
 		depInstallMu.Unlock()
 	})
+}
+
+func waitForFlushInFlightForTest(t *testing.T, hash string) {
+	t.Helper()
+
+	deadline := time.After(time.Second)
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		depInstallMu.Lock()
+		_, exists := depFlushInFlight[hash]
+		depInstallMu.Unlock()
+		if exists {
+			return
+		}
+
+		select {
+		case <-deadline:
+			t.Fatal("flush did not mark hash as in-flight")
+		case <-ticker.C:
+		}
+	}
 }

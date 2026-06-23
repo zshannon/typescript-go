@@ -1244,6 +1244,12 @@ func flushAllDeps(ctx context.Context) (flushDepsResult, error) {
 func flushDepsHash(ctx context.Context, hash string) (flushDepsResult, error) {
 	var result flushDepsResult
 
+	finishFlush, err := beginDepFlush(ctx, hash)
+	if err != nil {
+		return result, fmt.Errorf("wait for dependency flush %s: %w", hash, err)
+	}
+	defer finishFlush()
+
 	if err := waitForDepInstall(ctx, hash); err != nil {
 		return result, fmt.Errorf("wait for in-flight dependency install %s: %w", hash, err)
 	}

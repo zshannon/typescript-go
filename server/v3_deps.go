@@ -39,6 +39,7 @@ type depInstallResult struct {
 var (
 	depInstallMu       sync.Mutex
 	depInstallInFlight = make(map[string]*depInstallResult)
+	depFlushInFlight   = make(map[string]chan struct{})
 )
 
 func newDepInstallResult() *depInstallResult {
@@ -80,6 +81,11 @@ func resolveDeps(ctx context.Context, lockContent []byte, pkg *v3PackageJSON, ra
 
 	hash := hashBunLock(lockContent)
 	depDir := depsCacheDir(hash)
+
+	if err := waitForDepFlush(ctx, hash); err != nil {
+		recordSpanError(span, "err-deps-flush-wait", err)
+		return "", err
+	}
 
 	// Tier 1: local disk check
 	nmDir := filepath.Join(depDir, "node_modules")
@@ -192,6 +198,58 @@ func waitForDepInstall(ctx context.Context, hash string) error {
 	}
 
 	return waitForDepInstallResult(ctx, inflight)
+}
+
+func beginDepFlush(ctx context.Context, hash string) (func(), error) {
+	for {
+		depInstallMu.Lock()
+		if done, ok := depFlushInFlight[hash]; ok {
+			depInstallMu.Unlock()
+			if err := waitForClosed(ctx, done); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		done := make(chan struct{})
+		depFlushInFlight[hash] = done
+		depInstallMu.Unlock()
+
+		return func() {
+			depInstallMu.Lock()
+			current := depFlushInFlight[hash]
+			if current == done {
+				delete(depFlushInFlight, hash)
+			}
+			depInstallMu.Unlock()
+			if current == done {
+				close(done)
+			}
+		}, nil
+	}
+}
+
+func waitForDepFlush(ctx context.Context, hash string) error {
+	for {
+		depInstallMu.Lock()
+		done := depFlushInFlight[hash]
+		depInstallMu.Unlock()
+		if done == nil {
+			return nil
+		}
+		if err := waitForClosed(ctx, done); err != nil {
+			return err
+		}
+	}
+}
+
+func waitForClosed(ctx context.Context, done <-chan struct{}) error {
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func waitForDepInstallReady(ctx context.Context, result *depInstallResult) error {
