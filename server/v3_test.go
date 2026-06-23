@@ -627,6 +627,55 @@ func TestResolveDeps_S3Hit(t *testing.T) {
 	}
 }
 
+func TestInstallDeps_CachesOnlyNodeModules(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "deps-install-cache-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+	diskCachePath = tmpDir
+
+	binDir := filepath.Join(tmpDir, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	fakeBun := filepath.Join(binDir, "bun")
+	if err := os.WriteFile(fakeBun, []byte("#!/bin/sh\nmkdir -p node_modules/zod\nprintf 'module.exports = {}\\n' > node_modules/zod/index.js\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	lockContent := []byte("install cache test lockfile")
+	hash := hashBunLock(lockContent)
+	depDir := depsCacheDir(hash)
+	pkg := &v3PackageJSON{Dependencies: map[string]string{"zod": "3.23.0"}}
+
+	path, err := installDeps(
+		context.Background(),
+		hash,
+		depDir,
+		lockContent,
+		pkg,
+		[]byte(`{"dependencies":{"zod":"3.23.0"},"type":"module"}`),
+		newDepInstallResult(),
+	)
+	if err != nil {
+		t.Fatalf("installDeps failed: %v", err)
+	}
+	if path != depDir {
+		t.Fatalf("expected %s, got %s", depDir, path)
+	}
+	if _, err := os.Stat(filepath.Join(depDir, "node_modules", "zod", "index.js")); err != nil {
+		t.Fatalf("node_modules should be cached: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(depDir, "package.json")); !os.IsNotExist(err) {
+		t.Fatalf("package.json should not be cached, stat err: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(depDir, "bun.lock")); !os.IsNotExist(err) {
+		t.Fatalf("bun.lock should not be cached, stat err: %v", err)
+	}
+}
+
 // Task 8: typecheckV3 tests
 
 func TestTypecheckV3_PassingCode(t *testing.T) {

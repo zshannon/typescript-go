@@ -325,12 +325,13 @@ func installDeps(ctx context.Context, hash string, depDir string, lockContent []
 		return "", fmt.Errorf("remove stale depDir: %w", err)
 	}
 
-	// Attempt rename first (fast if same filesystem), fall back to copy
-	if err := os.Rename(filepath.Join(tmpDir), depDir); err != nil {
-		if err2 := os.MkdirAll(depDir, 0o755); err2 != nil {
-			recordSpanError(span, "err-deps-mkdir-cache-dir", err2)
-			return "", fmt.Errorf("mkdir depDir: %w", err2)
-		}
+	if err := os.MkdirAll(depDir, 0o755); err != nil {
+		recordSpanError(span, "err-deps-mkdir-cache-dir", err)
+		return "", fmt.Errorf("mkdir depDir: %w", err)
+	}
+
+	// Attempt rename first (fast if same filesystem), fall back to copy.
+	if err := os.Rename(tmpNM, destNM); err != nil {
 		if err2 := copyDir(tmpNM, destNM); err2 != nil {
 			recordSpanError(span, "err-deps-copy-node-modules", err2)
 			return "", fmt.Errorf("copy node_modules: %w", err2)
