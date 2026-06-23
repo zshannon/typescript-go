@@ -21,6 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"go.opentelemetry.io/otel/attribute"
+	"golang.org/x/sync/errgroup"
 )
 
 // depInstallResult holds the outcome of a dep install operation.
@@ -131,7 +132,7 @@ func resolveDepsFromS3(ctx context.Context, hash string, depDir string) (string,
 	}
 	defer out.Body.Close()
 
-	if err := os.MkdirAll(depDir, 0755); err != nil {
+	if err := os.MkdirAll(depDir, 0o755); err != nil {
 		return "", fmt.Errorf("mkdir %s: %w", depDir, err)
 	}
 
@@ -157,17 +158,17 @@ func installDeps(ctx context.Context, hash string, depDir string, lockContent []
 	}
 	defer os.RemoveAll(tmpDir)
 
-	if err := os.WriteFile(filepath.Join(tmpDir, "package.json"), rawPackageJSON, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "package.json"), rawPackageJSON, 0o644); err != nil {
 		return "", fmt.Errorf("write package.json: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(tmpDir, "bun.lock"), lockContent, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "bun.lock"), lockContent, 0o644); err != nil {
 		return "", fmt.Errorf("write bun.lock: %w", err)
 	}
 
 	// Pre-seed private S3 packages into node_modules before bun install
 	if len(pkg.ResolveS3) > 0 {
 		nmDir := filepath.Join(tmpDir, "node_modules")
-		if err := os.MkdirAll(nmDir, 0755); err != nil {
+		if err := os.MkdirAll(nmDir, 0o755); err != nil {
 			recordSpanError(span, "err-deps-mkdir-node-modules", err)
 			return "", fmt.Errorf("mkdir node_modules: %w", err)
 		}
@@ -192,7 +193,7 @@ func installDeps(ctx context.Context, hash string, depDir string, lockContent []
 	depInstallDuration.Observe(time.Since(start).Seconds())
 
 	// Move node_modules to cache location
-	if err := os.MkdirAll(filepath.Dir(depDir), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(depDir), 0o755); err != nil {
 		return "", fmt.Errorf("mkdir cache parent: %w", err)
 	}
 
@@ -201,7 +202,7 @@ func installDeps(ctx context.Context, hash string, depDir string, lockContent []
 
 	// Attempt rename first (fast if same filesystem), fall back to copy
 	if err := os.Rename(filepath.Join(tmpDir), depDir); err != nil {
-		if err2 := os.MkdirAll(depDir, 0755); err2 != nil {
+		if err2 := os.MkdirAll(depDir, 0o755); err2 != nil {
 			recordSpanError(span, "err-deps-mkdir-cache-dir", err2)
 			return "", fmt.Errorf("mkdir depDir: %w", err2)
 		}
@@ -230,8 +231,61 @@ func uploadDepsToS3(ctx context.Context, hash string, depDir string) {
 	ctx, span := startSpan(ctx, "fly_tsgo.deps.s3_upload")
 	defer span.End()
 
-	var buf bytes.Buffer
-	gw := gzip.NewWriter(&buf)
+	pr, pw := io.Pipe()
+	writeResult := make(chan tarGzWriteResult, 1)
+	go func() {
+		result := writeDepsTarGz(pw, depDir)
+		if result.err != nil {
+			_ = pw.CloseWithError(result.err)
+		} else {
+			result.err = pw.Close()
+		}
+		writeResult <- result
+	}()
+
+	key := "deps/" + hash + ".tar.gz"
+	_, err := s3Client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(s3Bucket),
+		Body:   pr,
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		_ = pr.CloseWithError(err)
+	}
+	result := <-writeResult
+	if result.bytes > 0 {
+		span.SetAttributes(attribute.Int64("fly_tsgo.s3.body.bytes", result.bytes))
+	}
+	if err != nil {
+		recordSpanError(span, "err-s3-put-deps-tarball", err)
+		log.Printf("uploadDepsToS3: PutObject error for %s: %v", key, err)
+		return
+	}
+	if result.err != nil {
+		recordSpanError(span, "err-deps-upload-tarball-stream", result.err)
+		log.Printf("uploadDepsToS3: tar.gz stream error for %s: %v", key, result.err)
+	}
+}
+
+type tarGzWriteResult struct {
+	bytes int64
+	err   error
+}
+
+type countingWriter struct {
+	w     io.Writer
+	bytes int64
+}
+
+func (w *countingWriter) Write(p []byte) (int, error) {
+	n, err := w.w.Write(p)
+	w.bytes += int64(n)
+	return n, err
+}
+
+func writeDepsTarGz(w io.Writer, depDir string) tarGzWriteResult {
+	cw := &countingWriter{w: w}
+	gw := gzip.NewWriter(cw)
 	tw := tar.NewWriter(gw)
 
 	nmDir := filepath.Join(depDir, "node_modules")
@@ -243,7 +297,6 @@ func uploadDepsToS3(ctx context.Context, hash string, depDir string) {
 		if err != nil {
 			return err
 		}
-		// Use forward slashes in tar headers
 		rel = filepath.ToSlash(rel)
 
 		header, err := tar.FileInfoHeader(info, "")
@@ -260,42 +313,30 @@ func uploadDepsToS3(ctx context.Context, hash string, depDir string) {
 			if err != nil {
 				return err
 			}
-			defer f.Close()
 			if _, err := io.Copy(tw, f); err != nil {
+				f.Close()
+				return err
+			}
+			if err := f.Close(); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		recordSpanError(span, "err-deps-upload-walk", err)
-		log.Printf("uploadDepsToS3: walk error for hash %s: %v", hash, err)
-		return
+		_ = tw.Close()
+		_ = gw.Close()
+		return tarGzWriteResult{bytes: cw.bytes, err: err}
 	}
 
 	if err := tw.Close(); err != nil {
-		recordSpanError(span, "err-deps-upload-tar-close", err)
-		log.Printf("uploadDepsToS3: tw.Close error: %v", err)
-		return
+		_ = gw.Close()
+		return tarGzWriteResult{bytes: cw.bytes, err: err}
 	}
 	if err := gw.Close(); err != nil {
-		recordSpanError(span, "err-deps-upload-gzip-close", err)
-		log.Printf("uploadDepsToS3: gw.Close error: %v", err)
-		return
+		return tarGzWriteResult{bytes: cw.bytes, err: err}
 	}
-
-	key := "deps/" + hash + ".tar.gz"
-	span.SetAttributes(attribute.Int("fly_tsgo.s3.body.bytes", buf.Len()))
-	_, err = s3Client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(s3Bucket),
-		Body:   bytes.NewReader(buf.Bytes()),
-		Key:    aws.String(key),
-	})
-	if err != nil {
-		recordSpanError(span, "err-s3-put-deps-tarball", err)
-		log.Printf("uploadDepsToS3: PutObject error for %s: %v", key, err)
-		return
-	}
+	return tarGzWriteResult{bytes: cw.bytes}
 }
 
 // extractTarGz extracts a tar.gz stream into destDir.
@@ -326,14 +367,14 @@ func extractTarGz(r io.Reader, destDir string) error {
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, os.FileMode(header.Mode)|0755); err != nil {
+			if err := os.MkdirAll(target, os.FileMode(header.Mode)|0o755); err != nil {
 				return fmt.Errorf("mkdir %s: %w", target, err)
 			}
 		case tar.TypeReg, tar.TypeRegA:
-			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return fmt.Errorf("mkdir parent %s: %w", target, err)
 			}
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode)|0644)
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode)|0o644)
 			if err != nil {
 				return fmt.Errorf("create %s: %w", target, err)
 			}
@@ -373,7 +414,7 @@ func copyFile(src, dst string, mode os.FileMode) error {
 	}
 	defer in.Close()
 
-	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
 
@@ -444,14 +485,14 @@ func extractNpmTarball(r io.Reader, destDir string) error {
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, os.FileMode(header.Mode)|0755); err != nil {
+			if err := os.MkdirAll(target, os.FileMode(header.Mode)|0o755); err != nil {
 				return fmt.Errorf("mkdir %s: %w", target, err)
 			}
 		case tar.TypeReg, tar.TypeRegA:
-			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return fmt.Errorf("mkdir parent %s: %w", target, err)
 			}
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode)|0644)
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode)|0o644)
 			if err != nil {
 				return fmt.Errorf("create %s: %w", target, err)
 			}
@@ -472,30 +513,41 @@ func preseedS3Packages(ctx context.Context, pkg *v3PackageJSON, nodeModulesDir s
 		return fmt.Errorf("s3 client not configured")
 	}
 
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(4)
 	for _, name := range pkg.ResolveS3 {
-		version, err := lookupS3PackageVersion(pkg, name)
-		if err != nil {
-			return err
-		}
-
-		key := "packages/" + name + "/" + version + ".tgz"
-		out, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
-			Bucket: aws.String(s3Bucket),
-			Key:    aws.String(key),
+		name := name
+		g.Go(func() error {
+			return preseedS3Package(ctx, pkg, nodeModulesDir, name)
 		})
-		if err != nil {
-			return fmt.Errorf("s3 get %s: %w", key, err)
-		}
-		defer out.Body.Close()
+	}
 
-		pkgDir := filepath.Join(nodeModulesDir, name)
-		if err := os.MkdirAll(pkgDir, 0755); err != nil {
-			return fmt.Errorf("mkdir %s: %w", pkgDir, err)
-		}
+	return g.Wait()
+}
 
-		if err := extractNpmTarball(out.Body, pkgDir); err != nil {
-			return fmt.Errorf("extract %s: %w", name, err)
-		}
+func preseedS3Package(ctx context.Context, pkg *v3PackageJSON, nodeModulesDir string, name string) error {
+	version, err := lookupS3PackageVersion(pkg, name)
+	if err != nil {
+		return err
+	}
+
+	key := "packages/" + name + "/" + version + ".tgz"
+	out, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s3Bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return fmt.Errorf("s3 get %s: %w", key, err)
+	}
+	defer out.Body.Close()
+
+	pkgDir := filepath.Join(nodeModulesDir, name)
+	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", pkgDir, err)
+	}
+
+	if err := extractNpmTarball(out.Body, pkgDir); err != nil {
+		return fmt.Errorf("extract %s: %w", name, err)
 	}
 
 	return nil

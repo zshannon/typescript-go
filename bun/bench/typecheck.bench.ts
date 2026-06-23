@@ -8,13 +8,13 @@ import tsgo from "../src/index";
 
 // Sample code for benchmarks
 const samples = {
-  simple: `
+    simple: `
     const x: number = 42;
     const y: string = "hello";
     const z: boolean = true;
   `,
 
-  interface: `
+    interface: `
     interface User {
       id: number;
       name: string;
@@ -46,7 +46,7 @@ const samples = {
     };
   `,
 
-  generics: `
+    generics: `
     function identity<T>(value: T): T {
       return value;
     }
@@ -74,7 +74,7 @@ const samples = {
     const result: Result<number, string> = ok(42);
   `,
 
-  react: `
+    react: `
     import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
     interface Todo {
@@ -145,7 +145,7 @@ const samples = {
     export default TodoApp;
   `,
 
-  complex: `
+    complex: `
     // Complex TypeScript with advanced features
     type DeepPartial<T> = {
       [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
@@ -219,52 +219,52 @@ const samples = {
 
 // Benchmark runner
 interface BenchResult {
-  name: string;
-  iterations: number;
-  totalMs: number;
-  avgMs: number;
-  minMs: number;
-  maxMs: number;
-  opsPerSec: number;
+    name: string;
+    iterations: number;
+    totalMs: number;
+    avgMs: number;
+    minMs: number;
+    maxMs: number;
+    opsPerSec: number;
 }
 
 async function bench(name: string, fn: () => void | Promise<void>, iterations = 100): Promise<BenchResult> {
-  // Warmup
-  for (let i = 0; i < 5; i++) await fn();
+    // Warmup
+    for (let i = 0; i < 5; i++) await fn();
 
-  const times: number[] = [];
-  const start = performance.now();
+    const times: number[] = [];
+    const start = performance.now();
 
-  for (let i = 0; i < iterations; i++) {
-    const iterStart = performance.now();
-    await fn();
-    times.push(performance.now() - iterStart);
-  }
+    for (let i = 0; i < iterations; i++) {
+        const iterStart = performance.now();
+        await fn();
+        times.push(performance.now() - iterStart);
+    }
 
-  const totalMs = performance.now() - start;
-  const avgMs = totalMs / iterations;
-  const minMs = Math.min(...times);
-  const maxMs = Math.max(...times);
+    const totalMs = performance.now() - start;
+    const avgMs = totalMs / iterations;
+    const minMs = Math.min(...times);
+    const maxMs = Math.max(...times);
 
-  return {
-    name,
-    iterations,
-    totalMs,
-    avgMs,
-    minMs,
-    maxMs,
-    opsPerSec: 1000 / avgMs,
-  };
+    return {
+        name,
+        iterations,
+        totalMs,
+        avgMs,
+        minMs,
+        maxMs,
+        opsPerSec: 1000 / avgMs,
+    };
 }
 
 function formatResult(r: BenchResult): string {
-  return [
-    `${r.name}:`,
-    `  avg: ${r.avgMs.toFixed(2)}ms`,
-    `  min: ${r.minMs.toFixed(2)}ms`,
-    `  max: ${r.maxMs.toFixed(2)}ms`,
-    `  ops/sec: ${r.opsPerSec.toFixed(1)}`,
-  ].join("\n");
+    return [
+        `${r.name}:`,
+        `  avg: ${r.avgMs.toFixed(2)}ms`,
+        `  min: ${r.minMs.toFixed(2)}ms`,
+        `  max: ${r.maxMs.toFixed(2)}ms`,
+        `  ops/sec: ${r.opsPerSec.toFixed(1)}`,
+    ].join("\n");
 }
 
 // Run benchmarks
@@ -278,33 +278,43 @@ const results: BenchResult[] = [];
 // Single file benchmarks
 console.log("--- Single File Type Checking ---\n");
 
-results.push(await bench("simple (3 vars)", () => {
-  tsgo.typecheck(samples.simple, "simple.ts");
-}, 100));
+results.push(
+    await bench("simple (3 vars)", () => {
+        tsgo.typecheck(samples.simple, "simple.ts");
+    }, 100),
+);
 console.log(formatResult(results[results.length - 1]));
 console.log("");
 
-results.push(await bench("interface (2 interfaces)", () => {
-  tsgo.typecheck(samples.interface, "interface.ts");
-}, 100));
+results.push(
+    await bench("interface (2 interfaces)", () => {
+        tsgo.typecheck(samples.interface, "interface.ts");
+    }, 100),
+);
 console.log(formatResult(results[results.length - 1]));
 console.log("");
 
-results.push(await bench("generics (Result type)", () => {
-  tsgo.typecheck(samples.generics, "generics.ts");
-}, 100));
+results.push(
+    await bench("generics (Result type)", () => {
+        tsgo.typecheck(samples.generics, "generics.ts");
+    }, 100),
+);
 console.log(formatResult(results[results.length - 1]));
 console.log("");
 
-results.push(await bench("react (Todo app)", () => {
-  tsgo.typecheck(samples.react, "react.tsx");
-}, 50));
+results.push(
+    await bench("react (Todo app)", () => {
+        tsgo.typecheck(samples.react, "react.tsx");
+    }, 50),
+);
 console.log(formatResult(results[results.length - 1]));
 console.log("");
 
-results.push(await bench("complex (HTTP client)", () => {
-  tsgo.typecheck(samples.complex, "complex.ts");
-}, 50));
+results.push(
+    await bench("complex (HTTP client)", () => {
+        tsgo.typecheck(samples.complex, "complex.ts");
+    }, 50),
+);
 console.log(formatResult(results[results.length - 1]));
 console.log("");
 
@@ -312,11 +322,11 @@ console.log("");
 console.log("--- Multi-File Type Checking ---\n");
 
 const multiFileProject = {
-  "types.ts": `
+    "types.ts": `
     export interface User { id: number; name: string; email: string; }
     export interface Post { id: number; title: string; author: User; }
   `,
-  "api.ts": `
+    "api.ts": `
     import { User, Post } from './types';
     export async function fetchUser(id: number): Promise<User> {
       return { id, name: 'User ' + id, email: 'user@example.com' };
@@ -326,7 +336,7 @@ const multiFileProject = {
       return [{ id: 1, title: 'Post', author: user }];
     }
   `,
-  "App.tsx": `
+    "App.tsx": `
     import React, { useState, useEffect } from 'react';
     import { User, Post } from './types';
     import { fetchUser, fetchPosts } from './api';
@@ -351,9 +361,11 @@ const multiFileProject = {
   `,
 };
 
-results.push(await bench("multi-file (3 files)", () => {
-  tsgo.typecheckMultiple(multiFileProject, { jsx: "react-jsx", strict: true });
-}, 50));
+results.push(
+    await bench("multi-file (3 files)", () => {
+        tsgo.typecheckMultiple(multiFileProject, { jsx: "react-jsx", strict: true });
+    }, 50),
+);
 console.log(formatResult(results[results.length - 1]));
 console.log("");
 
@@ -366,30 +378,34 @@ const tempDir = `${benchDir}/.temp`;
 await Bun.$`mkdir -p ${tempDir}`;
 await Bun.write(`${tempDir}/index.tsx`, samples.react);
 
-results.push(await bench("bundle react app", async () => {
-  await Bun.build({
-    entrypoints: [`${tempDir}/index.tsx`],
-    outdir: `${tempDir}/out`,
-    minify: true,
-    external: [], // Bundle everything
-  });
-}, 20));
+results.push(
+    await bench("bundle react app", async () => {
+        await Bun.build({
+            entrypoints: [`${tempDir}/index.tsx`],
+            outdir: `${tempDir}/out`,
+            minify: true,
+            external: [], // Bundle everything
+        });
+    }, 20),
+);
 console.log(formatResult(results[results.length - 1]));
 console.log("");
 
 // Combined pipeline
 console.log("--- Full Pipeline (typecheck + bundle) ---\n");
 
-results.push(await bench("typecheck + bundle", async () => {
-  // Type check
-  tsgo.typecheck(samples.react, "App.tsx");
-  // Bundle
-  await Bun.build({
-    entrypoints: [`${tempDir}/index.tsx`],
-    outdir: `${tempDir}/out`,
-    minify: true,
-  });
-}, 20));
+results.push(
+    await bench("typecheck + bundle", async () => {
+        // Type check
+        tsgo.typecheck(samples.react, "App.tsx");
+        // Bundle
+        await Bun.build({
+            entrypoints: [`${tempDir}/index.tsx`],
+            outdir: `${tempDir}/out`,
+            minify: true,
+        });
+    }, 20),
+);
 console.log(formatResult(results[results.length - 1]));
 console.log("");
 
@@ -401,5 +417,5 @@ console.log("=== Summary ===\n");
 console.log("| Benchmark | Avg (ms) | Ops/sec |");
 console.log("|-----------|----------|---------|");
 for (const r of results) {
-  console.log(`| ${r.name.padEnd(25)} | ${r.avgMs.toFixed(2).padStart(8)} | ${r.opsPerSec.toFixed(1).padStart(7)} |`);
+    console.log(`| ${r.name.padEnd(25)} | ${r.avgMs.toFixed(2).padStart(8)} | ${r.opsPerSec.toFixed(1).padStart(7)} |`);
 }

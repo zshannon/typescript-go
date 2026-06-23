@@ -128,7 +128,7 @@ func (m *MockS3Client) GetObject(ctx context.Context, params *s3.GetObjectInput,
 	m.getObjectCalls++
 	key := aws.ToString(params.Key)
 	m.readFileCalls = append(m.readFileCalls, key)
-	
+
 	// Mock file content based on the requested key
 	content, exists := m.files[key]
 	if !exists {
@@ -225,7 +225,7 @@ declare module 'react' {
 		}
 		m.files[key] = content
 	}
-	
+
 	return &s3.GetObjectOutput{
 		Body: io.NopCloser(strings.NewReader(content)),
 	}, nil
@@ -235,15 +235,15 @@ func (m *MockS3Client) ListObjectsV2(ctx context.Context, params *s3.ListObjects
 	m.listObjectsCalls++
 	prefix := aws.ToString(params.Prefix)
 	delimiter := aws.ToString(params.Delimiter)
-	
+
 	var objects []types.Object
 	dirs := make(map[string]bool)
-	
+
 	// Find all files matching the prefix
 	for key := range m.files {
 		if strings.HasPrefix(key, prefix) {
 			relativePath := strings.TrimPrefix(key, prefix)
-			
+
 			// If delimiter is set, check for "directories"
 			if delimiter != "" && strings.Contains(relativePath, delimiter) {
 				// This is in a subdirectory
@@ -253,13 +253,13 @@ func (m *MockS3Client) ListObjectsV2(ctx context.Context, params *s3.ListObjects
 				// This is a direct file
 				keyCopy := key
 				objects = append(objects, types.Object{
-					Key: &keyCopy,
+					Key:  &keyCopy,
 					Size: aws.Int64(int64(len(m.files[key]))),
 				})
 			}
 		}
 	}
-	
+
 	// Convert directories to CommonPrefixes
 	var commonPrefixes []types.CommonPrefix
 	for dir := range dirs {
@@ -268,9 +268,9 @@ func (m *MockS3Client) ListObjectsV2(ctx context.Context, params *s3.ListObjects
 			Prefix: &dirCopy,
 		})
 	}
-	
+
 	return &s3.ListObjectsV2Output{
-		Contents: objects,
+		Contents:       objects,
 		CommonPrefixes: commonPrefixes,
 	}, nil
 }
@@ -305,10 +305,10 @@ func NewFileBasedMockS3Client() *FileBasedMockS3Client {
 
 func (m *FileBasedMockS3Client) GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
 	key := *params.Key
-	
+
 	// Convert S3 key to file path
 	filePath := filepath.Join(m.basePath, key)
-	
+
 	// Read the file
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -320,12 +320,12 @@ func (m *FileBasedMockS3Client) GetObject(ctx context.Context, params *s3.GetObj
 				file, err = os.Open(altPath)
 			}
 		}
-		
+
 		if err != nil {
 			return nil, fmt.Errorf("key not found: %s (tried %s): %w", key, filePath, err)
 		}
 	}
-	
+
 	return &s3.GetObjectOutput{
 		Body: file, // os.File already implements io.ReadCloser
 	}, nil
@@ -336,36 +336,35 @@ func (m *FileBasedMockS3Client) ListObjectsV2(ctx context.Context, params *s3.Li
 	if params.Prefix != nil {
 		prefix = *params.Prefix
 	}
-	
+
 	basePath := filepath.Join(m.basePath, prefix)
-	
+
 	var objects []types.Object
-	
+
 	// Walk the directory
 	err := filepath.Walk(basePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil // Skip errors
 		}
-		
+
 		if !info.IsDir() {
 			// Convert file path back to S3 key
 			relPath, _ := filepath.Rel(m.basePath, path)
 			relPath = strings.ReplaceAll(relPath, string(filepath.Separator), "/")
-			
+
 			size := info.Size()
 			objects = append(objects, types.Object{
 				Key:  &relPath,
 				Size: &size,
 			})
 		}
-		
+
 		return nil
 	})
-	
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &s3.ListObjectsV2Output{
 		Contents: objects,
 	}, nil
@@ -381,14 +380,14 @@ func (m *FileBasedMockS3Client) DeleteObject(ctx context.Context, params *s3.Del
 func (m *FileBasedMockS3Client) PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
 	key := aws.ToString(params.Key)
 	filePath := filepath.Join(m.basePath, key)
-	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
 		return nil, err
 	}
 	data, err := io.ReadAll(params.Body)
 	if err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
+	if err := os.WriteFile(filePath, data, 0o644); err != nil {
 		return nil, err
 	}
 	return &s3.PutObjectOutput{}, nil
@@ -400,24 +399,24 @@ func LoadRealS3Content(t *testing.T, mockS3 *MockS3Client) {
 	if content, err := os.ReadFile("/tmp/crayonnow-package.json"); err == nil {
 		mockS3.files["0.0.4/node_modules/@crayonnow/core/package.json"] = string(content)
 	}
-	
+
 	if content, err := os.ReadFile("/tmp/crayonnow-index.d.ts"); err == nil {
 		mockS3.files["0.0.4/node_modules/@crayonnow/core/dist/index.d.ts"] = string(content)
 		// Also put it at the root for TypeScript resolution
 		mockS3.files["0.0.4/node_modules/@crayonnow/core/index.d.ts"] = string(content)
 	}
-	
+
 	if content, err := os.ReadFile("/tmp/crayonnow-jsx-runtime.d.ts"); err == nil {
 		mockS3.files["0.0.4/node_modules/@crayonnow/core/dist/jsx-runtime.d.ts"] = string(content)
 		mockS3.files["0.0.4/node_modules/@crayonnow/core/jsx-runtime.d.ts"] = string(content)
 	}
-	
+
 	// Load React types
 	if content, err := os.ReadFile("/tmp/react-types.d.ts"); err == nil {
 		mockS3.files["0.0.4/node_modules/@types/react/index.d.ts"] = string(content)
 		mockS3.files["0.0.4/node_modules/react/index.d.ts"] = string(content)
 	}
-	
+
 	// React package.json
 	mockS3.files["0.0.4/node_modules/react/package.json"] = `{
 		"name": "react",
@@ -425,7 +424,7 @@ func LoadRealS3Content(t *testing.T, mockS3 *MockS3Client) {
 		"main": "index.js",
 		"types": "index.d.ts"
 	}`
-	
+
 	// Add JavaScript implementations (minimal stubs for runtime)
 	mockS3.files["0.0.4/node_modules/@crayonnow/core/dist/index.js"] = `
 exports.Button = function(props) { return {type: 'Button', props}; };
@@ -433,7 +432,7 @@ exports.Text = function(props) { return {type: 'Text', props}; };
 exports.Flex = function(props) { return {type: 'Flex', props}; };
 exports.Picker = function(props) { return {type: 'Picker', props}; };
 `
-	
+
 	mockS3.files["0.0.4/node_modules/@crayonnow/core/dist/jsx-runtime.js"] = `
 exports.jsx = function(type, props) { return {type, props}; };
 exports.jsxs = exports.jsx;

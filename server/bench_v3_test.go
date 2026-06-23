@@ -39,7 +39,7 @@ func setupV3BenchServer(b *testing.B) {
 
 	// @crayonnow/core
 	coreDir := filepath.Join(nmDir, "@crayonnow", "core")
-	if err := os.MkdirAll(coreDir, 0755); err != nil {
+	if err := os.MkdirAll(coreDir, 0o755); err != nil {
 		b.Fatalf("Failed to create core dir: %v", err)
 	}
 	writeOrFatal(b, filepath.Join(coreDir, "package.json"),
@@ -70,7 +70,7 @@ exports.jsxs = exports.jsx;`)
 
 	// react
 	reactDir := filepath.Join(nmDir, "react")
-	if err := os.MkdirAll(reactDir, 0755); err != nil {
+	if err := os.MkdirAll(reactDir, 0o755); err != nil {
 		b.Fatalf("Failed to create react dir: %v", err)
 	}
 	writeOrFatal(b, filepath.Join(reactDir, "package.json"),
@@ -97,7 +97,7 @@ exports.useState = function(init) { return [init, function() {}]; };`)
 // writeOrFatal writes content to a file path, failing the benchmark on error.
 func writeOrFatal(b *testing.B, path, content string) {
 	b.Helper()
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		b.Fatalf("Failed to write %s: %v", path, err)
 	}
 }
@@ -267,17 +267,23 @@ func BenchmarkV3HTTP(b *testing.B) {
 
 	// Pre-serialize multipart bodies outside the benchmark loop
 	mediumTypecheckBody, mediumTypecheckCT := buildV3BenchMultipart(
-		singleFileFixture(fixtureMediumComponent), benchPackageJSON, string(benchTsconfigRaw), benchLockContent)
+		singleFileFixture(fixtureMediumComponent), benchPackageJSON, string(benchTsconfigRaw), benchLockContent,
+	)
 	multiFileTypecheckBody, multiFileTypecheckCT := buildV3BenchMultipart(
-		fixtureMultiFile, benchPackageJSON, string(benchTsconfigRaw), benchLockContent)
+		fixtureMultiFile, benchPackageJSON, string(benchTsconfigRaw), benchLockContent,
+	)
 	mediumBuildBody, mediumBuildCT := buildV3BenchMultipart(
-		singleFileFixture(fixtureMediumComponent), benchPackageJSON, string(benchTsconfigRaw), benchLockContent)
+		singleFileFixture(fixtureMediumComponent), benchPackageJSON, string(benchTsconfigRaw), benchLockContent,
+	)
 	multiFileBuildBody, multiFileBuildCT := buildV3BenchMultipart(
-		fixtureMultiFile, benchPackageJSON, string(benchTsconfigRaw), benchLockContent)
+		fixtureMultiFile, benchPackageJSON, string(benchTsconfigRaw), benchLockContent,
+	)
 	mediumBuildSkipBody, mediumBuildSkipCT := buildV3BenchMultipart(
-		singleFileFixture(fixtureMediumComponent), benchPackageJSON, string(benchTsconfigRaw), benchLockContent)
+		singleFileFixture(fixtureMediumComponent), benchPackageJSON, string(benchTsconfigRaw), benchLockContent,
+	)
 	multiFileBuildSkipBody, multiFileBuildSkipCT := buildV3BenchMultipart(
-		fixtureMultiFile, benchPackageJSON, string(benchTsconfigRaw), benchLockContent)
+		fixtureMultiFile, benchPackageJSON, string(benchTsconfigRaw), benchLockContent,
+	)
 
 	cases := []httpCase{
 		{mediumBuildBody.Bytes(), mediumBuildCT, compileV3Handler, "POST", "Build/MediumComponent", "/v3/compile"},

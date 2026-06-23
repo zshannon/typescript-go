@@ -493,6 +493,7 @@ func (e *simpleDirEntry) Type() fs.FileMode {
 	}
 	return 0
 }
+
 func (e *simpleDirEntry) Info() (fs.FileInfo, error) {
 	return &simpleFileInfo{name: e.name, isDir: e.isDir}, nil
 }
@@ -505,7 +506,7 @@ type simpleFileInfo struct {
 
 func (i *simpleFileInfo) Name() string       { return i.name }
 func (i *simpleFileInfo) Size() int64        { return i.size }
-func (i *simpleFileInfo) Mode() fs.FileMode  { return 0644 }
+func (i *simpleFileInfo) Mode() fs.FileMode  { return 0o644 }
 func (i *simpleFileInfo) ModTime() time.Time { return time.Time{} }
 func (i *simpleFileInfo) IsDir() bool        { return i.isDir }
 func (i *simpleFileInfo) Sys() interface{}   { return nil }

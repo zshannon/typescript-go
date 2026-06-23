@@ -1,76 +1,76 @@
 {
-  "name": "@flickfyi/tsgo",
-  "version": "0.1.5",
-  "description": "Blazing fast TypeScript type checker powered by TypeScript-Go, accessible via Bun FFI",
-  "keywords": [
-    "typescript",
-    "type-checker",
-    "typecheck",
-    "ffi",
-    "bun",
-    "go",
-    "fast",
-    "jsx",
-    "react"
-  ],
-  "author": "Flick",
-  "license": "Apache-2.0",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/zshannon/typescript-go"
-  },
-  "homepage": "https://github.com/zshannon/typescript-go#readme",
-  "bugs": {
-    "url": "https://github.com/zshannon/typescript-go/issues"
-  },
-  "type": "module",
-  "main": "./dist/index.js",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "default": "./dist/index.js"
+    "name": "@flickfyi/tsgo",
+    "version": "0.1.5",
+    "description": "Blazing fast TypeScript type checker powered by TypeScript-Go, accessible via Bun FFI",
+    "keywords": [
+        "typescript",
+        "type-checker",
+        "typecheck",
+        "ffi",
+        "bun",
+        "go",
+        "fast",
+        "jsx",
+        "react"
+    ],
+    "author": "Flick",
+    "license": "Apache-2.0",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/zshannon/typescript-go"
+    },
+    "homepage": "https://github.com/zshannon/typescript-go#readme",
+    "bugs": {
+        "url": "https://github.com/zshannon/typescript-go/issues"
+    },
+    "type": "module",
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js",
+            "default": "./dist/index.js"
+        }
+    },
+    "files": [
+        "dist",
+        "README.md",
+        "LICENSE"
+    ],
+    "engines": {
+        "bun": ">=1.0.0"
+    },
+    "scripts": {
+        "build": "bun run build:native && bun build ./src/index.ts --outdir ./dist --target bun",
+        "build:types": "bun x tsc -p tsconfig.json --declaration --emitDeclarationOnly",
+        "build:native": "./scripts/build-native.sh current",
+        "build:native:all": "./scripts/build-native.sh all",
+        "build:native:darwin-arm64": "./scripts/build-native.sh darwin-arm64",
+        "build:native:darwin-x64": "./scripts/build-native.sh darwin-x64",
+        "build:native:linux-arm64": "./scripts/build-native.sh linux-arm64",
+        "build:native:linux-x64": "./scripts/build-native.sh linux-x64",
+        "build:native:win32-x64": "./scripts/build-native.sh win32-x64",
+        "generate:platforms": "bun run scripts/generate-platform-packages.ts",
+        "prepublishOnly": "bun build ./src/index.ts --outdir ./dist --target bun && bun run build:types",
+        "test": "bun test",
+        "bench": "bun run bench/typecheck.bench.ts",
+        "clean": "rm -rf dist node_modules",
+        "postversion": "bun run scripts/sync-versions.ts"
+    },
+    "devDependencies": {
+        "@mini/jsx-runtime": "file:./test/fixtures/@mini/jsx-runtime",
+        "@types/bun": "latest",
+        "@types/react": "19.2.7",
+        "react": "19.2.1",
+        "typescript": "^5.0.0"
+    },
+    "optionalDependencies": {
+        "@flickfyi/tsgo-darwin-arm64": "0.1.5",
+        "@flickfyi/tsgo-darwin-x64": "0.1.5",
+        "@flickfyi/tsgo-linux-arm64": "0.1.5",
+        "@flickfyi/tsgo-linux-x64": "0.1.5",
+        "@flickfyi/tsgo-win32-x64": "0.1.5"
     }
-  },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
-  "engines": {
-    "bun": ">=1.0.0"
-  },
-  "scripts": {
-    "build": "bun run build:native && bun build ./src/index.ts --outdir ./dist --target bun",
-    "build:types": "bun x tsc -p tsconfig.json --declaration --emitDeclarationOnly",
-    "build:native": "./scripts/build-native.sh current",
-    "build:native:all": "./scripts/build-native.sh all",
-    "build:native:darwin-arm64": "./scripts/build-native.sh darwin-arm64",
-    "build:native:darwin-x64": "./scripts/build-native.sh darwin-x64",
-    "build:native:linux-arm64": "./scripts/build-native.sh linux-arm64",
-    "build:native:linux-x64": "./scripts/build-native.sh linux-x64",
-    "build:native:win32-x64": "./scripts/build-native.sh win32-x64",
-    "generate:platforms": "bun run scripts/generate-platform-packages.ts",
-    "prepublishOnly": "bun build ./src/index.ts --outdir ./dist --target bun && bun run build:types",
-    "test": "bun test",
-    "bench": "bun run bench/typecheck.bench.ts",
-    "clean": "rm -rf dist node_modules",
-    "postversion": "bun run scripts/sync-versions.ts"
-  },
-  "devDependencies": {
-    "@mini/jsx-runtime": "file:./test/fixtures/@mini/jsx-runtime",
-    "@types/bun": "latest",
-    "@types/react": "19.2.7",
-    "react": "19.2.1",
-    "typescript": "^5.0.0"
-  },
-  "optionalDependencies": {
-    "@flickfyi/tsgo-darwin-arm64": "0.1.5",
-    "@flickfyi/tsgo-darwin-x64": "0.1.5",
-    "@flickfyi/tsgo-linux-arm64": "0.1.5",
-    "@flickfyi/tsgo-linux-x64": "0.1.5",
-    "@flickfyi/tsgo-win32-x64": "0.1.5"
-  }
 }

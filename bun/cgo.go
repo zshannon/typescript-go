@@ -27,7 +27,6 @@ import "C"
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
@@ -40,17 +39,18 @@ import (
 	"github.com/microsoft/typescript-go/internal/bundled"
 	"github.com/microsoft/typescript-go/internal/compiler"
 	"github.com/microsoft/typescript-go/internal/core"
+	"github.com/microsoft/typescript-go/internal/json"
 	"github.com/microsoft/typescript-go/internal/locale"
 	"github.com/microsoft/typescript-go/internal/tsoptions"
 	"github.com/microsoft/typescript-go/internal/vfs"
 	"github.com/microsoft/typescript-go/internal/vfs/osvfs"
 )
 
-var debugMode = os.Getenv("TSGO_DEBUG") == "1"
+var debugMode = os.Getenv("TSGO_DEBUG") == "1" //nolint:forbidigo
 
-func debugLog(format string, args ...interface{}) {
+func debugLogf(format string, args ...any) {
 	if debugMode {
-		fmt.Fprintf(os.Stderr, "[TSGO] "+format+"\n", args...)
+		_, _ = fmt.Fprintf(os.Stderr, "[TSGO] "+format+"\n", args...) //nolint:forbidigo
 	}
 }
 
@@ -202,19 +202,19 @@ func (h *HybridFS) toRealPath(path string) string {
 		// /node_modules/... -> {projectDir}/node_modules/...
 		if strings.HasPrefix(path, "/node_modules/") {
 			realPath := h.projectDir + path
-			debugLog("toRealPath: %s -> %s", path, realPath)
+			debugLogf("toRealPath: %s -> %s", path, realPath)
 			return realPath
 		}
 		// Already a real path under projectDir/node_modules - pass through
 		nodeModulesPrefix := h.projectDir + "/node_modules/"
 		if strings.HasPrefix(path, nodeModulesPrefix) {
-			debugLog("toRealPath: %s -> %s (passthrough)", path, path)
+			debugLogf("toRealPath: %s -> %s (passthrough)", path, path)
 			return path
 		}
 		// Handle absolute real paths (after symlink resolution)
 		// These are paths like /Users/... that exist on the real filesystem
 		if h.diskFS.FileExists(path) || h.diskFS.DirectoryExists(path) {
-			debugLog("toRealPath: %s -> %s (real filesystem path)", path, path)
+			debugLogf("toRealPath: %s -> %s (real filesystem path)", path, path)
 			return path
 		}
 		// /project/... -> keep in memory
@@ -225,34 +225,34 @@ func (h *HybridFS) toRealPath(path string) string {
 func (h *HybridFS) FileExists(path string) bool {
 	// Check in-memory first
 	if h.memFS.FileExists(path) {
-		debugLog("FileExists (mem): %s = true", path)
+		debugLogf("FileExists (mem): %s = true", path)
 		return true
 	}
 	// Check real filesystem for node_modules
 	realPath := h.toRealPath(path)
 	if realPath != "" {
 		exists := h.diskFS.FileExists(realPath)
-		debugLog("FileExists (disk): %s (%s) = %v", path, realPath, exists)
+		debugLogf("FileExists (disk): %s (%s) = %v", path, realPath, exists)
 		return exists
 	}
-	debugLog("FileExists: %s = false (no mapping)", path)
+	debugLogf("FileExists: %s = false (no mapping)", path)
 	return false
 }
 
 func (h *HybridFS) ReadFile(path string) (string, bool) {
 	// Check in-memory first
 	if content, ok := h.memFS.ReadFile(path); ok {
-		debugLog("ReadFile (mem): %s = found (%d bytes)", path, len(content))
+		debugLogf("ReadFile (mem): %s = found (%d bytes)", path, len(content))
 		return content, true
 	}
 	// Check real filesystem for node_modules
 	realPath := h.toRealPath(path)
 	if realPath != "" {
 		content, ok := h.diskFS.ReadFile(realPath)
-		debugLog("ReadFile (disk): %s (%s) = %v (%d bytes)", path, realPath, ok, len(content))
+		debugLogf("ReadFile (disk): %s (%s) = %v (%d bytes)", path, realPath, ok, len(content))
 		return content, ok
 	}
-	debugLog("ReadFile: %s = not found (no mapping)", path)
+	debugLogf("ReadFile: %s = not found (no mapping)", path)
 	return "", false
 }
 
@@ -270,16 +270,16 @@ func (h *HybridFS) Remove(path string) error {
 
 func (h *HybridFS) DirectoryExists(path string) bool {
 	if h.memFS.DirectoryExists(path) {
-		debugLog("DirectoryExists (mem): %s = true", path)
+		debugLogf("DirectoryExists (mem): %s = true", path)
 		return true
 	}
 	realPath := h.toRealPath(path)
 	if realPath != "" {
 		exists := h.diskFS.DirectoryExists(realPath)
-		debugLog("DirectoryExists (disk): %s (%s) = %v", path, realPath, exists)
+		debugLogf("DirectoryExists (disk): %s (%s) = %v", path, realPath, exists)
 		return exists
 	}
-	debugLog("DirectoryExists: %s = false (no mapping)", path)
+	debugLogf("DirectoryExists: %s = false (no mapping)", path)
 	return false
 }
 
@@ -361,6 +361,26 @@ type TypeCheckResult struct {
 	Success     bool         `json:"success"`
 	Diagnostics []Diagnostic `json:"diagnostics,omitempty"`
 	Duration    float64      `json:"duration_ms"`
+}
+
+func typeCheckResultJSON(result TypeCheckResult) string {
+	jsonBytes, err := json.Marshal(result)
+	if err == nil {
+		return string(jsonBytes)
+	}
+	errorResult := TypeCheckResult{
+		Success: false,
+		Diagnostics: []Diagnostic{{
+			Code:     0,
+			Category: "error",
+			Message:  "Failed to marshal result: " + err.Error(),
+		}},
+	}
+	jsonBytes, err = json.Marshal(errorResult)
+	if err == nil {
+		return string(jsonBytes)
+	}
+	return `{"success":false,"diagnostics":[{"code":0,"category":"error","message":"Failed to marshal result"}]}`
 }
 
 func calculateLineColumn(text string, pos int) (line, column int) {
@@ -508,20 +528,7 @@ func tsgo_typecheck(code *C.char, fileName *C.char, projectDir *C.char) *C.char 
 
 	result := typeCheckCode(goCode, goFileName, nil, goProjectDir)
 
-	jsonBytes, err := json.Marshal(result)
-	if err != nil {
-		errorResult := TypeCheckResult{
-			Success: false,
-			Diagnostics: []Diagnostic{{
-				Code:     0,
-				Category: "error",
-				Message:  "Failed to marshal result: " + err.Error(),
-			}},
-		}
-		jsonBytes, _ = json.Marshal(errorResult)
-	}
-
-	return C.CString(string(jsonBytes))
+	return C.CString(typeCheckResultJSON(result))
 }
 
 //export tsgo_typecheck_with_options
@@ -536,7 +543,7 @@ func tsgo_typecheck_with_options(code *C.char, fileName *C.char, optionsJSON *C.
 	}
 
 	// Parse options from JSON
-	var optionsMap map[string]interface{}
+	var optionsMap map[string]any
 	var options *core.CompilerOptions
 
 	if goOptionsJSON != "" {
@@ -681,7 +688,7 @@ func tsgo_typecheck_with_options(code *C.char, fileName *C.char, optionsJSON *C.
 			}
 
 			// Parse lib array
-			if lib, ok := optionsMap["lib"].([]interface{}); ok {
+			if lib, ok := optionsMap["lib"].([]any); ok {
 				for _, l := range lib {
 					if s, ok := l.(string); ok {
 						options.Lib = append(options.Lib, s)
@@ -693,20 +700,7 @@ func tsgo_typecheck_with_options(code *C.char, fileName *C.char, optionsJSON *C.
 
 	result := typeCheckCode(goCode, goFileName, options, goProjectDir)
 
-	jsonBytes, err := json.Marshal(result)
-	if err != nil {
-		errorResult := TypeCheckResult{
-			Success: false,
-			Diagnostics: []Diagnostic{{
-				Code:     0,
-				Category: "error",
-				Message:  "Failed to marshal result: " + err.Error(),
-			}},
-		}
-		jsonBytes, _ = json.Marshal(errorResult)
-	}
-
-	return C.CString(string(jsonBytes))
+	return C.CString(typeCheckResultJSON(result))
 }
 
 //export tsgo_typecheck_multiple
@@ -728,8 +722,7 @@ func tsgo_typecheck_multiple(filesJSON *C.char, optionsJSON *C.char, projectDir 
 				Message:  "Failed to parse files JSON: " + err.Error(),
 			}},
 		}
-		jsonBytes, _ := json.Marshal(errorResult)
-		return C.CString(string(jsonBytes))
+		return C.CString(typeCheckResultJSON(errorResult))
 	}
 
 	// Create in-memory filesystem
@@ -767,7 +760,7 @@ func tsgo_typecheck_multiple(filesJSON *C.char, optionsJSON *C.char, projectDir 
 	}
 
 	if goOptionsJSON != "" {
-		var optionsMap map[string]interface{}
+		var optionsMap map[string]any
 		if err := json.Unmarshal([]byte(goOptionsJSON), &optionsMap); err == nil {
 			if strict, ok := optionsMap["strict"].(bool); ok && strict {
 				options.Strict = core.TSTrue
@@ -821,8 +814,7 @@ func tsgo_typecheck_multiple(filesJSON *C.char, optionsJSON *C.char, projectDir 
 		Duration:    duration,
 	}
 
-	jsonBytes, _ := json.Marshal(result)
-	return C.CString(string(jsonBytes))
+	return C.CString(typeCheckResultJSON(result))
 }
 
 //export tsgo_free_string

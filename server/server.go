@@ -418,7 +418,7 @@ func isDiskFullError(err error) bool {
 
 // downloadFile downloads a single file from S3 to local disk
 func downloadFile(ctx context.Context, key, localPath string) error {
-	if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
 		return err
 	}
 
@@ -1681,7 +1681,7 @@ func main() {
 	if diskCachePath == "" {
 		diskCachePath = "/data/cache"
 	}
-	if err := os.MkdirAll(diskCachePath, 0755); err != nil {
+	if err := os.MkdirAll(diskCachePath, 0o755); err != nil {
 		log.Fatalf("Failed to create disk cache directory %s: %v", diskCachePath, err)
 	}
 

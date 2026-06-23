@@ -81,8 +81,8 @@ func TestCriticalBugFix(t *testing.T) {
 		{
 			name: "bare package with only main field",
 			setupFiles: map[string]string{
-				"/node_modules/simple-pkg/package.json": `{"main": "lib/index.js"}`,
-				"/node_modules/simple-pkg/lib/index.js": `require("./helper")`,
+				"/node_modules/simple-pkg/package.json":  `{"main": "lib/index.js"}`,
+				"/node_modules/simple-pkg/lib/index.js":  `require("./helper")`,
 				"/node_modules/simple-pkg/lib/helper.js": `module.exports = "helper"`,
 			},
 			importPath: "./helper",
@@ -90,14 +90,14 @@ func TestCriticalBugFix(t *testing.T) {
 			expected:   "/node_modules/simple-pkg/lib/helper.js",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := NewMockFS()
 			for path, content := range tt.setupFiles {
 				fs.AddFile(path, content)
 			}
-			
+
 			result := resolveModule(fs, tt.importPath, tt.importer)
 			if result != tt.expected {
 				t.Errorf("Expected %s, got %s", tt.expected, result)
@@ -190,14 +190,14 @@ func TestModuleResolution(t *testing.T) {
 			expected:   "/node_modules/pkg/utils.js",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := NewMockFS()
 			for path, content := range tt.setupFiles {
 				fs.AddFile(path, content)
 			}
-			
+
 			result := resolveModule(fs, tt.importPath, tt.importer)
 			if result != tt.expected {
 				t.Errorf("Expected %s, got %s", tt.expected, result)
@@ -244,7 +244,7 @@ func TestPathSecurity(t *testing.T) {
 			shouldPass: false,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validatePath(tt.path)
@@ -256,13 +256,13 @@ func TestPathSecurity(t *testing.T) {
 			}
 		})
 	}
-	
+
 	// Test path traversal with module resolution
 	t.Run("prevent traversal via bare package importer", func(t *testing.T) {
 		fs := NewMockFS()
 		fs.AddFile("/etc/passwd", "sensitive")
 		fs.AddFile("/node_modules/evil/package.json", `{"main": "index.js"}`)
-		
+
 		result := resolveModule(fs, "../../etc/passwd", "evil")
 		if result != "" {
 			t.Errorf("Should block path traversal from bare package, got: %s", result)
@@ -306,14 +306,14 @@ func TestErrorHandling(t *testing.T) {
 			expected:   "/node_modules/empty/index.js",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := NewMockFS()
 			for path, content := range tt.setupFiles {
 				fs.AddFile(path, content)
 			}
-			
+
 			result := resolveModule(fs, tt.importPath, "")
 			if result != tt.expected {
 				t.Errorf("Expected %s, got %s", tt.expected, result)
@@ -368,15 +368,15 @@ func TestResolvePackageExports(t *testing.T) {
 			expected: []string{"./lib/utils.js"},
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			results := resolvePackageExports(tt.exports, tt.subpath)
-			
+
 			if len(results) != len(tt.expected) {
 				t.Fatalf("Expected %d results, got %d: %v", len(tt.expected), len(results), results)
 			}
-			
+
 			for i, exp := range tt.expected {
 				if results[i] != exp {
 					t.Errorf("Result %d: expected %s, got %s", i, exp, results[i])
@@ -391,10 +391,10 @@ func TestResolvePackageExports(t *testing.T) {
 // not relative to the subpath name.
 //
 // Bug reproduction: zod-schema-faker/v4
-//   1. zod-schema-faker/v4 resolves to ./dist/v4/zod-schema-faker.cjs via exports
-//   2. That file contains require("../randexp-IynBq8em.cjs")
-//   3. Should resolve to ./dist/randexp-IynBq8em.cjs (going up from dist/v4/)
-//   4. Bug: was resolving to ./v4/randexp-IynBq8em.cjs (treating "v4" as the dir)
+//  1. zod-schema-faker/v4 resolves to ./dist/v4/zod-schema-faker.cjs via exports
+//  2. That file contains require("../randexp-IynBq8em.cjs")
+//  3. Should resolve to ./dist/randexp-IynBq8em.cjs (going up from dist/v4/)
+//  4. Bug: was resolving to ./v4/randexp-IynBq8em.cjs (treating "v4" as the dir)
 func TestSubpathExportRelativeImports(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -484,13 +484,13 @@ func TestResolutionPriority(t *testing.T) {
 		}`)
 		fs.AddFile("/node_modules/pkg/old.js", `module.exports = "old"`)
 		fs.AddFile("/node_modules/pkg/new.js", `module.exports = "new"`)
-		
+
 		result := resolveModule(fs, "pkg", "")
 		if result != "/node_modules/pkg/new.js" {
 			t.Errorf("Should prefer exports over main, got: %s", result)
 		}
 	})
-	
+
 	t.Run("import takes precedence over require for tree-shaking", func(t *testing.T) {
 		fs := NewMockFS()
 		fs.AddFile("/node_modules/pkg/package.json", `{
@@ -510,4 +510,3 @@ func TestResolutionPriority(t *testing.T) {
 		}
 	})
 }
-

@@ -5,11 +5,11 @@ on:
     branches:
       - main
     paths:
-      - "go.mod"
-      - "go.sum"
-      - "internal/**"
-      - "server/**"
-      - ".github/workflows/server-test.yml"
+      - 'go.mod'
+      - 'go.sum'
+      - 'internal/**'
+      - 'server/**'
+      - '.github/workflows/server-test.yml'
 
 jobs:
   test:
@@ -22,7 +22,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.26"
+          go-version: '1.26'
           cache-dependency-path: server/go.sum
 
       - name: Run server tests

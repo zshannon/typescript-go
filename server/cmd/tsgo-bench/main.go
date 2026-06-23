@@ -269,7 +269,7 @@ export default () => {
 		},
 	},
 	{
-		name: "TypeError",
+		name:  "TypeError",
 		files: map[string]string{"/index.tsx": `export const x: string = 123;`},
 	},
 	{
@@ -386,7 +386,7 @@ func parsePrivateKey(encoded string) (*ecdsa.PrivateKey, error) {
 
 	priv := &ecdsa.PrivateKey{
 		PublicKey: ecdsa.PublicKey{Curve: elliptic.P256()},
-		D:        new(big.Int).SetBytes(decoded),
+		D:         new(big.Int).SetBytes(decoded),
 	}
 	priv.PublicKey.X, priv.PublicKey.Y = priv.PublicKey.Curve.ScalarBaseMult(priv.D.Bytes())
 	return priv, nil

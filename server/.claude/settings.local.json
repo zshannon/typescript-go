@@ -1,15 +1,15 @@
 {
-  "permissions": {
-    "allow": [
-      "Bash(npm run deploy:server)",
-      "Bash(docker stop:*)",
-      "Bash(docker rm:*)",
-      "Bash(npm run build:docker:*)",
-      "WebFetch(domain:fly.io)",
-      "Bash(go get:*)",
-      "Bash(go build:*)",
-      "WebSearch"
-    ],
-    "deny": []
-  }
+    "permissions": {
+        "allow": [
+            "Bash(npm run deploy:server)",
+            "Bash(docker stop:*)",
+            "Bash(docker rm:*)",
+            "Bash(npm run build:docker:*)",
+            "WebFetch(domain:fly.io)",
+            "Bash(go get:*)",
+            "Bash(go build:*)",
+            "WebSearch"
+        ],
+        "deny": []
+    }
 }

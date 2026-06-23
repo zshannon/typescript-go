@@ -11,7 +11,7 @@ typedef struct {
 typedef struct {
 	// Logging and Output Control
 	int color;                    // StderrColor enum
-	int log_level;               // LogLevel enum  
+	int log_level;               // LogLevel enum
 	int log_limit;               // int
 	char** log_override_keys;    // keys for map[string]LogLevel
 	int* log_override_values;    // values for map[string]LogLevel
@@ -22,7 +22,7 @@ typedef struct {
 	char* source_root;           // string
 	int sources_content;         // SourcesContent enum
 
-	// Target and Compatibility  
+	// Target and Compatibility
 	int target;                  // Target enum
 	int* engine_names;           // EngineName enum array
 	char** engine_versions;      // string array for engine versions
@@ -112,14 +112,14 @@ typedef struct {
 	int errors_count;            // count of errors
 	c_message* warnings;         // array of warning messages
 	int warnings_count;          // count of warnings
-	
+
 	char* code;                  // transformed code as string
 	int code_length;             // length of code
 	char* source_map;            // source map as string (optional)
 	int source_map_length;       // length of map (0 if no map)
 	char* legal_comments;        // legal comments as string (optional)
 	int legal_comments_length;   // length of legal comments (0 if none)
-	
+
 	char** mangle_cache_keys;    // keys for mangle cache
 	char** mangle_cache_values;  // values for mangle cache
 	int mangle_cache_count;      // count of mangle cache entries
@@ -229,7 +229,7 @@ typedef struct {
 
 typedef struct {
 	char* filter;                // filter regex for the callback
-	char* namespace;             // namespace filter (optional) 
+	char* namespace;             // namespace filter (optional)
 	on_load_callback callback;   // callback function pointer
 	void* callback_data;         // Swift closure context
 } c_plugin_load_hook;
@@ -249,7 +249,7 @@ typedef struct {
 typedef struct {
 	// Logging and Output Control
 	int color;                    // StderrColor enum
-	int log_level;               // LogLevel enum  
+	int log_level;               // LogLevel enum
 	int log_limit;               // int
 	char** log_override_keys;    // keys for map[string]LogLevel
 	int* log_override_values;    // values for map[string]LogLevel
@@ -260,7 +260,7 @@ typedef struct {
 	char* source_root;           // string
 	int sources_content;         // SourcesContent enum
 
-	// Target and Compatibility  
+	// Target and Compatibility
 	int target;                  // Target enum
 	int* engine_names;           // EngineName enum array
 	char** engine_versions;      // string array for engine versions
@@ -579,6 +579,11 @@ func esbuild_target_es2024() C.int {
 	return C.int(api.ES2024)
 }
 
+//export esbuild_target_es2025
+func esbuild_target_es2025() C.int {
+	return C.int(api.ES2025)
+}
+
 //export esbuild_get_all_target_values
 func esbuild_get_all_target_values() *C.c_int_array {
 	targets := []C.int{
@@ -595,6 +600,7 @@ func esbuild_get_all_target_values() *C.c_int_array {
 		C.int(api.ES2022),
 		C.int(api.ES2023),
 		C.int(api.ES2024),
+		C.int(api.ES2025),
 	}
 
 	count := len(targets)
@@ -1186,7 +1192,7 @@ func esbuild_free_transform_options(opts *C.c_transform_options) {
 	if opts == nil {
 		return
 	}
-	
+
 	// Free all string fields
 	if opts.source_root != nil {
 		C.free(unsafe.Pointer(opts.source_root))
@@ -1221,7 +1227,7 @@ func esbuild_free_transform_options(opts *C.c_transform_options) {
 	if opts.sourcefile != nil {
 		C.free(unsafe.Pointer(opts.sourcefile))
 	}
-	
+
 	// Free string arrays
 	if opts.log_override_keys != nil {
 		for i := 0; i < int(opts.log_override_count); i++ {
@@ -1234,7 +1240,7 @@ func esbuild_free_transform_options(opts *C.c_transform_options) {
 	if opts.log_override_values != nil {
 		C.free(unsafe.Pointer(opts.log_override_values))
 	}
-	
+
 	if opts.engine_names != nil {
 		C.free(unsafe.Pointer(opts.engine_names))
 	}
@@ -1246,10 +1252,10 @@ func esbuild_free_transform_options(opts *C.c_transform_options) {
 		}
 		C.free(unsafe.Pointer(opts.engine_versions))
 	}
-	
+
 	// Free other arrays (supported, mangle_cache, drop_labels, define, pure)
 	// ... similar pattern for all array fields
-	
+
 	C.free(unsafe.Pointer(opts))
 }
 
@@ -1280,7 +1286,7 @@ func esbuild_free_location(loc *C.c_location) {
 	if loc == nil {
 		return
 	}
-	
+
 	if loc.file != nil {
 		C.free(unsafe.Pointer(loc.file))
 	}
@@ -1293,7 +1299,7 @@ func esbuild_free_location(loc *C.c_location) {
 	if loc.suggestion != nil {
 		C.free(unsafe.Pointer(loc.suggestion))
 	}
-	
+
 	C.free(unsafe.Pointer(loc))
 }
 
@@ -1302,7 +1308,7 @@ func esbuild_free_note_contents(note *C.c_note) {
 	if note == nil {
 		return
 	}
-	
+
 	if note.text != nil {
 		C.free(unsafe.Pointer(note.text))
 	}
@@ -1316,7 +1322,7 @@ func esbuild_free_note(note *C.c_note) {
 	if note == nil {
 		return
 	}
-	
+
 	esbuild_free_note_contents(note)
 	C.free(unsafe.Pointer(note))
 }
@@ -1326,7 +1332,7 @@ func esbuild_free_message_contents(msg *C.c_message) {
 	if msg == nil {
 		return
 	}
-	
+
 	if msg.id != nil {
 		C.free(unsafe.Pointer(msg.id))
 	}
@@ -1339,7 +1345,7 @@ func esbuild_free_message_contents(msg *C.c_message) {
 	if msg.location != nil {
 		esbuild_free_location(msg.location)
 	}
-	
+
 	// Free notes array
 	if msg.notes != nil {
 		noteSlice := (*[1 << 28]C.c_note)(unsafe.Pointer(msg.notes))[:msg.notes_count:msg.notes_count]
@@ -1356,7 +1362,7 @@ func esbuild_free_message(msg *C.c_message) {
 	if msg == nil {
 		return
 	}
-	
+
 	esbuild_free_message_contents(msg)
 	C.free(unsafe.Pointer(msg))
 }
@@ -1366,7 +1372,7 @@ func esbuild_free_transform_result(result *C.c_transform_result) {
 	if result == nil {
 		return
 	}
-	
+
 	// Free errors array
 	if result.errors != nil {
 		errorSlice := (*[1 << 28]C.c_message)(unsafe.Pointer(result.errors))[:result.errors_count:result.errors_count]
@@ -1376,7 +1382,7 @@ func esbuild_free_transform_result(result *C.c_transform_result) {
 		}
 		C.free(unsafe.Pointer(result.errors))
 	}
-	
+
 	// Free warnings array
 	if result.warnings != nil {
 		warningSlice := (*[1 << 28]C.c_message)(unsafe.Pointer(result.warnings))[:result.warnings_count:result.warnings_count]
@@ -1386,7 +1392,7 @@ func esbuild_free_transform_result(result *C.c_transform_result) {
 		}
 		C.free(unsafe.Pointer(result.warnings))
 	}
-	
+
 	// Free string fields
 	if result.code != nil {
 		C.free(unsafe.Pointer(result.code))
@@ -1397,7 +1403,7 @@ func esbuild_free_transform_result(result *C.c_transform_result) {
 	if result.legal_comments != nil {
 		C.free(unsafe.Pointer(result.legal_comments))
 	}
-	
+
 	// Free mangle cache arrays
 	if result.mangle_cache_keys != nil {
 		keySlice := (*[1 << 28]*C.char)(unsafe.Pointer(result.mangle_cache_keys))[:result.mangle_cache_count:result.mangle_cache_count]
@@ -1417,7 +1423,7 @@ func esbuild_free_transform_result(result *C.c_transform_result) {
 		}
 		C.free(unsafe.Pointer(result.mangle_cache_values))
 	}
-	
+
 	C.free(unsafe.Pointer(result))
 }
 
@@ -1426,18 +1432,18 @@ func esbuild_transform(code *C.char, opts *C.c_transform_options) *C.c_transform
 	if code == nil || opts == nil {
 		return nil
 	}
-	
+
 	// Convert C string to Go string
 	sourceCode := C.GoString(code)
-	
+
 	// Convert C options to Go options
 	transformOpts := api.TransformOptions{}
-	
+
 	// Basic settings
 	transformOpts.Color = api.StderrColor(opts.color)
 	transformOpts.LogLevel = api.LogLevel(opts.log_level)
 	transformOpts.LogLimit = int(opts.log_limit)
-	
+
 	// Source map
 	transformOpts.Sourcemap = api.SourceMap(opts.sourcemap)
 	if opts.source_root != nil {
@@ -1445,17 +1451,17 @@ func esbuild_transform(code *C.char, opts *C.c_transform_options) *C.c_transform
 		transformOpts.SourceRoot = sourceRoot
 	}
 	transformOpts.SourcesContent = api.SourcesContent(opts.sources_content)
-	
+
 	// Target and platform
 	transformOpts.Target = api.Target(opts.target)
 	transformOpts.Platform = api.Platform(opts.platform)
 	transformOpts.Format = api.Format(opts.format)
-	
+
 	if opts.global_name != nil {
 		globalName := C.GoString(opts.global_name)
 		transformOpts.GlobalName = globalName
 	}
-	
+
 	// Minification
 	if opts.mangle_props != nil {
 		mangleProps := C.GoString(opts.mangle_props)
@@ -1473,7 +1479,7 @@ func esbuild_transform(code *C.char, opts *C.c_transform_options) *C.c_transform
 	transformOpts.TreeShaking = api.TreeShaking(opts.tree_shaking)
 	transformOpts.IgnoreAnnotations = opts.ignore_annotations != 0
 	transformOpts.LegalComments = api.LegalComments(opts.legal_comments)
-	
+
 	// JSX
 	transformOpts.JSX = api.JSX(opts.jsx)
 	if opts.jsx_factory != nil {
@@ -1490,13 +1496,13 @@ func esbuild_transform(code *C.char, opts *C.c_transform_options) *C.c_transform
 	}
 	transformOpts.JSXDev = opts.jsx_dev != 0
 	transformOpts.JSXSideEffects = opts.jsx_side_effects != 0
-	
+
 	// TypeScript
 	if opts.tsconfig_raw != nil {
 		tsconfigRaw := C.GoString(opts.tsconfig_raw)
 		transformOpts.TsconfigRaw = tsconfigRaw
 	}
-	
+
 	// Code injection
 	if opts.banner != nil {
 		banner := C.GoString(opts.banner)
@@ -1506,7 +1512,7 @@ func esbuild_transform(code *C.char, opts *C.c_transform_options) *C.c_transform
 		footer := C.GoString(opts.footer)
 		transformOpts.Footer = footer
 	}
-	
+
 	// Input configuration
 	if opts.sourcefile != nil {
 		sourcefile := C.GoString(opts.sourcefile)
@@ -1514,43 +1520,43 @@ func esbuild_transform(code *C.char, opts *C.c_transform_options) *C.c_transform
 	}
 	transformOpts.Loader = api.Loader(opts.loader)
 	transformOpts.KeepNames = opts.keep_names != 0
-	
+
 	// Call esbuild transform
 	result := api.Transform(sourceCode, transformOpts)
-	
+
 	// Create C result
 	cResult := esbuild_create_transform_result()
 	if cResult == nil {
 		return nil
 	}
-	
+
 	// Convert code
 	if len(result.Code) > 0 {
 		cResult.code = C.CString(string(result.Code))
 		cResult.code_length = C.int(len(result.Code))
 	}
-	
+
 	// Convert source map
 	if len(result.Map) > 0 {
 		cResult.source_map = C.CString(string(result.Map))
 		cResult.source_map_length = C.int(len(result.Map))
 	}
-	
+
 	// Convert legal comments
 	if len(result.LegalComments) > 0 {
 		cResult.legal_comments = C.CString(string(result.LegalComments))
 		cResult.legal_comments_length = C.int(len(result.LegalComments))
 	}
-	
+
 	// Convert mangle cache
 	if len(result.MangleCache) > 0 {
 		cResult.mangle_cache_count = C.int(len(result.MangleCache))
 		cResult.mangle_cache_keys = (**C.char)(C.malloc(C.size_t(len(result.MangleCache)) * C.size_t(unsafe.Sizeof(uintptr(0)))))
 		cResult.mangle_cache_values = (**C.char)(C.malloc(C.size_t(len(result.MangleCache)) * C.size_t(unsafe.Sizeof(uintptr(0)))))
-		
+
 		keySlice := (*[1 << 28]*C.char)(unsafe.Pointer(cResult.mangle_cache_keys))[:len(result.MangleCache):len(result.MangleCache)]
 		valueSlice := (*[1 << 28]*C.char)(unsafe.Pointer(cResult.mangle_cache_values))[:len(result.MangleCache):len(result.MangleCache)]
-		
+
 		i := 0
 		for key, value := range result.MangleCache {
 			keySlice[i] = C.CString(key)
@@ -1558,12 +1564,12 @@ func esbuild_transform(code *C.char, opts *C.c_transform_options) *C.c_transform
 			i++
 		}
 	}
-	
+
 	// Convert errors with proper memory management
 	if len(result.Errors) > 0 {
 		cResult.errors = (*C.c_message)(C.malloc(C.size_t(len(result.Errors)) * C.size_t(unsafe.Sizeof(C.c_message{}))))
 		cResult.errors_count = C.int(len(result.Errors))
-		
+
 		errorsSlice := (*[1 << 20]C.c_message)(unsafe.Pointer(cResult.errors))[:len(result.Errors):len(result.Errors)]
 		for i, err := range result.Errors {
 			errorsSlice[i].id = C.CString(err.ID)
@@ -1572,7 +1578,7 @@ func esbuild_transform(code *C.char, opts *C.c_transform_options) *C.c_transform
 			errorsSlice[i].location = nil
 			errorsSlice[i].notes = nil
 			errorsSlice[i].notes_count = 0
-			
+
 			// Add location if available
 			if err.Location != nil {
 				loc := (*C.c_location)(C.malloc(C.size_t(unsafe.Sizeof(C.c_location{}))))
@@ -1590,12 +1596,12 @@ func esbuild_transform(code *C.char, opts *C.c_transform_options) *C.c_transform
 		cResult.errors = nil
 		cResult.errors_count = 0
 	}
-	
+
 	// Convert warnings with proper memory management
 	if len(result.Warnings) > 0 {
 		cResult.warnings = (*C.c_message)(C.malloc(C.size_t(len(result.Warnings)) * C.size_t(unsafe.Sizeof(C.c_message{}))))
 		cResult.warnings_count = C.int(len(result.Warnings))
-		
+
 		warningsSlice := (*[1 << 20]C.c_message)(unsafe.Pointer(cResult.warnings))[:len(result.Warnings):len(result.Warnings)]
 		for i, warn := range result.Warnings {
 			warningsSlice[i].id = C.CString(warn.ID)
@@ -1604,7 +1610,7 @@ func esbuild_transform(code *C.char, opts *C.c_transform_options) *C.c_transform
 			warningsSlice[i].location = nil
 			warningsSlice[i].notes = nil
 			warningsSlice[i].notes_count = 0
-			
+
 			// Add location if available
 			if warn.Location != nil {
 				loc := (*C.c_location)(C.malloc(C.size_t(unsafe.Sizeof(C.c_location{}))))
@@ -1622,7 +1628,7 @@ func esbuild_transform(code *C.char, opts *C.c_transform_options) *C.c_transform
 		cResult.warnings = nil
 		cResult.warnings_count = 0
 	}
-	
+
 	return cResult
 }
 
@@ -1646,7 +1652,7 @@ func esbuild_create_output_file() *C.esbuild_output_file {
 //export esbuild_create_build_options
 func esbuild_create_build_options() *C.esbuild_build_options {
 	options := (*C.esbuild_build_options)(C.malloc(C.size_t(unsafe.Sizeof(C.esbuild_build_options{}))))
-	
+
 	// Initialize all pointers to nil and counts to 0
 	options.log_override_keys = nil
 	options.log_override_values = nil
@@ -1716,14 +1722,14 @@ func esbuild_create_build_options() *C.esbuild_build_options {
 	options.entry_points_advanced = nil
 	options.entry_points_advanced_count = 0
 	options.stdin = nil
-	
+
 	return options
 }
 
 //export esbuild_create_build_result
 func esbuild_create_build_result() *C.esbuild_build_result {
 	result := (*C.esbuild_build_result)(C.malloc(C.size_t(unsafe.Sizeof(C.esbuild_build_result{}))))
-	
+
 	// Initialize all pointers to nil and counts to 0
 	result.errors = nil
 	result.errors_count = 0
@@ -1735,7 +1741,7 @@ func esbuild_create_build_result() *C.esbuild_build_result {
 	result.mangle_cache_keys = nil
 	result.mangle_cache_values = nil
 	result.mangle_cache_count = 0
-	
+
 	return result
 }
 
@@ -1744,14 +1750,14 @@ func esbuild_free_entry_point(ep *C.esbuild_entry_point) {
 	if ep == nil {
 		return
 	}
-	
+
 	if ep.input_path != nil {
 		C.free(unsafe.Pointer(ep.input_path))
 	}
 	if ep.output_path != nil {
 		C.free(unsafe.Pointer(ep.output_path))
 	}
-	
+
 	C.free(unsafe.Pointer(ep))
 }
 
@@ -1760,7 +1766,7 @@ func esbuild_free_stdin_options(stdin *C.esbuild_stdin_options) {
 	if stdin == nil {
 		return
 	}
-	
+
 	if stdin.contents != nil {
 		C.free(unsafe.Pointer(stdin.contents))
 	}
@@ -1770,7 +1776,7 @@ func esbuild_free_stdin_options(stdin *C.esbuild_stdin_options) {
 	if stdin.sourcefile != nil {
 		C.free(unsafe.Pointer(stdin.sourcefile))
 	}
-	
+
 	C.free(unsafe.Pointer(stdin))
 }
 
@@ -1779,7 +1785,7 @@ func esbuild_free_output_file(file *C.esbuild_output_file) {
 	if file == nil {
 		return
 	}
-	
+
 	if file.path != nil {
 		C.free(unsafe.Pointer(file.path))
 	}
@@ -1789,7 +1795,7 @@ func esbuild_free_output_file(file *C.esbuild_output_file) {
 	if file.hash != nil {
 		C.free(unsafe.Pointer(file.hash))
 	}
-	
+
 	C.free(unsafe.Pointer(file))
 }
 
@@ -1798,7 +1804,7 @@ func esbuild_free_build_options(opts *C.esbuild_build_options) {
 	if opts == nil {
 		return
 	}
-	
+
 	// Free arrays and their string contents
 	if opts.log_override_keys != nil {
 		for i := 0; i < int(opts.log_override_count); i++ {
@@ -1814,7 +1820,7 @@ func esbuild_free_build_options(opts *C.esbuild_build_options) {
 	if opts.log_override_values != nil {
 		C.free(unsafe.Pointer(opts.log_override_values))
 	}
-	
+
 	// Free simple string fields
 	if opts.source_root != nil {
 		C.free(unsafe.Pointer(opts.source_root))
@@ -1867,13 +1873,13 @@ func esbuild_free_build_options(opts *C.esbuild_build_options) {
 	if opts.asset_names != nil {
 		C.free(unsafe.Pointer(opts.asset_names))
 	}
-	
+
 	// Free more complex arrays (simplified for now - full implementation would free all arrays)
-	
+
 	if opts.stdin != nil {
 		esbuild_free_stdin_options(opts.stdin)
 	}
-	
+
 	C.free(unsafe.Pointer(opts))
 }
 
@@ -1882,7 +1888,7 @@ func esbuild_free_build_result(result *C.esbuild_build_result) {
 	if result == nil {
 		return
 	}
-	
+
 	// Free errors array
 	if result.errors != nil {
 		for i := 0; i < int(result.errors_count); i++ {
@@ -1891,7 +1897,7 @@ func esbuild_free_build_result(result *C.esbuild_build_result) {
 		}
 		C.free(unsafe.Pointer(result.errors))
 	}
-	
+
 	// Free warnings array
 	if result.warnings != nil {
 		for i := 0; i < int(result.warnings_count); i++ {
@@ -1900,7 +1906,7 @@ func esbuild_free_build_result(result *C.esbuild_build_result) {
 		}
 		C.free(unsafe.Pointer(result.warnings))
 	}
-	
+
 	// Free output files array
 	if result.output_files != nil {
 		for i := 0; i < int(result.output_files_count); i++ {
@@ -1917,12 +1923,12 @@ func esbuild_free_build_result(result *C.esbuild_build_result) {
 		}
 		C.free(unsafe.Pointer(result.output_files))
 	}
-	
+
 	// Free metafile
 	if result.metafile != nil {
 		C.free(unsafe.Pointer(result.metafile))
 	}
-	
+
 	// Free mangle cache
 	if result.mangle_cache_keys != nil {
 		for i := 0; i < int(result.mangle_cache_count); i++ {
@@ -1942,7 +1948,7 @@ func esbuild_free_build_result(result *C.esbuild_build_result) {
 		}
 		C.free(unsafe.Pointer(result.mangle_cache_values))
 	}
-	
+
 	C.free(unsafe.Pointer(result))
 }
 
@@ -1950,19 +1956,19 @@ func esbuild_free_build_result(result *C.esbuild_build_result) {
 func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 	// Convert C options to Go BuildOptions
 	buildOpts := api.BuildOptions{}
-	
+
 	// Basic logging options
 	buildOpts.Color = api.StderrColor(opts.color)
 	buildOpts.LogLevel = api.LogLevel(opts.log_level)
 	buildOpts.LogLimit = int(opts.log_limit)
-	
+
 	// Source map options
 	buildOpts.Sourcemap = api.SourceMap(opts.sourcemap)
 	if opts.source_root != nil {
 		buildOpts.SourceRoot = C.GoString(opts.source_root)
 	}
 	buildOpts.SourcesContent = api.SourcesContent(opts.sources_content)
-	
+
 	// Target and compatibility
 	buildOpts.Target = api.Target(opts.target)
 	buildOpts.Platform = api.Platform(opts.platform)
@@ -1970,7 +1976,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 	if opts.global_name != nil {
 		buildOpts.GlobalName = C.GoString(opts.global_name)
 	}
-	
+
 	// Build configuration
 	buildOpts.Bundle = opts.bundle != 0
 	buildOpts.PreserveSymlinks = opts.preserve_symlinks != 0
@@ -1987,7 +1993,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 	buildOpts.Metafile = opts.metafile != 0
 	buildOpts.Write = opts.write != 0
 	buildOpts.AllowOverwrite = opts.allow_overwrite != 0
-	
+
 	// Entry points
 	if opts.entry_points_count > 0 && opts.entry_points != nil {
 		entryPointsSlice := (*[1000]*C.char)(unsafe.Pointer(opts.entry_points))[:opts.entry_points_count:opts.entry_points_count]
@@ -1997,7 +2003,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			}
 		}
 	}
-	
+
 	// Stdin configuration
 	if opts.stdin != nil {
 		stdinOpts := &api.StdinOptions{
@@ -2008,7 +2014,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 		}
 		buildOpts.Stdin = stdinOpts
 	}
-	
+
 	// Minification and Property Mangling
 	if opts.mangle_props != nil {
 		buildOpts.MangleProps = C.GoString(opts.mangle_props)
@@ -2017,7 +2023,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 		buildOpts.ReserveProps = C.GoString(opts.reserve_props)
 	}
 	buildOpts.MangleQuoted = api.MangleQuoted(opts.mangle_quoted)
-	
+
 	// Convert mangle cache
 	if opts.mangle_cache_count > 0 && opts.mangle_cache_keys != nil && opts.mangle_cache_values != nil {
 		buildOpts.MangleCache = make(map[string]interface{})
@@ -2031,9 +2037,9 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			}
 		}
 	}
-	
+
 	buildOpts.Drop = api.Drop(opts.drop)
-	
+
 	// Convert drop labels
 	if opts.drop_labels_count > 0 && opts.drop_labels != nil {
 		labelsSlice := (*[1000]*C.char)(unsafe.Pointer(opts.drop_labels))[:opts.drop_labels_count:opts.drop_labels_count]
@@ -2043,7 +2049,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			}
 		}
 	}
-	
+
 	buildOpts.MinifyWhitespace = opts.minify_whitespace != 0
 	buildOpts.MinifyIdentifiers = opts.minify_identifiers != 0
 	buildOpts.MinifySyntax = opts.minify_syntax != 0
@@ -2052,7 +2058,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 	buildOpts.TreeShaking = api.TreeShaking(opts.tree_shaking)
 	buildOpts.IgnoreAnnotations = opts.ignore_annotations != 0
 	buildOpts.LegalComments = api.LegalComments(opts.legal_comments)
-	
+
 	// JSX Configuration
 	buildOpts.JSX = api.JSX(opts.jsx)
 	if opts.jsx_factory != nil {
@@ -2066,7 +2072,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 	}
 	buildOpts.JSXDev = opts.jsx_dev != 0
 	buildOpts.JSXSideEffects = opts.jsx_side_effects != 0
-	
+
 	// TypeScript Configuration
 	if opts.tsconfig != nil {
 		buildOpts.Tsconfig = C.GoString(opts.tsconfig)
@@ -2074,7 +2080,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 	if opts.tsconfig_raw != nil {
 		buildOpts.TsconfigRaw = C.GoString(opts.tsconfig_raw)
 	}
-	
+
 	// Code Injection - Banner
 	if opts.banner_count > 0 && opts.banner_keys != nil && opts.banner_values != nil {
 		buildOpts.Banner = make(map[string]string)
@@ -2088,7 +2094,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			}
 		}
 	}
-	
+
 	// Code Injection - Footer
 	if opts.footer_count > 0 && opts.footer_keys != nil && opts.footer_values != nil {
 		buildOpts.Footer = make(map[string]string)
@@ -2102,7 +2108,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			}
 		}
 	}
-	
+
 	// Code Transformation - Define
 	if opts.define_count > 0 && opts.define_keys != nil && opts.define_values != nil {
 		buildOpts.Define = make(map[string]string)
@@ -2116,7 +2122,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			}
 		}
 	}
-	
+
 	// Code Transformation - Pure
 	if opts.pure_count > 0 && opts.pure != nil {
 		pureSlice := (*[1000]*C.char)(unsafe.Pointer(opts.pure))[:opts.pure_count:opts.pure_count]
@@ -2126,14 +2132,14 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			}
 		}
 	}
-	
+
 	buildOpts.KeepNames = opts.keep_names != 0
-	
+
 	// Additional Build Configuration
 	if opts.abs_working_dir != nil {
 		buildOpts.AbsWorkingDir = C.GoString(opts.abs_working_dir)
 	}
-	
+
 	// Module Resolution - External
 	if opts.external_count > 0 && opts.external != nil {
 		externalSlice := (*[1000]*C.char)(unsafe.Pointer(opts.external))[:opts.external_count:opts.external_count]
@@ -2143,9 +2149,9 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			}
 		}
 	}
-	
+
 	buildOpts.Packages = api.Packages(opts.packages)
-	
+
 	// Module Resolution - Alias
 	if opts.alias_count > 0 && opts.alias_keys != nil && opts.alias_values != nil {
 		buildOpts.Alias = make(map[string]string)
@@ -2159,7 +2165,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			}
 		}
 	}
-	
+
 	// Module Resolution - MainFields
 	if opts.main_fields_count > 0 && opts.main_fields != nil {
 		fieldsSlice := (*[1000]*C.char)(unsafe.Pointer(opts.main_fields))[:opts.main_fields_count:opts.main_fields_count]
@@ -2169,7 +2175,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			}
 		}
 	}
-	
+
 	// Module Resolution - Conditions
 	if opts.conditions_count > 0 && opts.conditions != nil {
 		conditionsSlice := (*[1000]*C.char)(unsafe.Pointer(opts.conditions))[:opts.conditions_count:opts.conditions_count]
@@ -2179,7 +2185,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			}
 		}
 	}
-	
+
 	// Module Resolution - Loader (by extension)
 	if opts.loader_count > 0 && opts.loader_keys != nil && opts.loader_values != nil {
 		buildOpts.Loader = make(map[string]api.Loader)
@@ -2193,7 +2199,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			}
 		}
 	}
-	
+
 	// Module Resolution - ResolveExtensions
 	if opts.resolve_extensions_count > 0 && opts.resolve_extensions != nil {
 		extensionsSlice := (*[1000]*C.char)(unsafe.Pointer(opts.resolve_extensions))[:opts.resolve_extensions_count:opts.resolve_extensions_count]
@@ -2203,7 +2209,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			}
 		}
 	}
-	
+
 	// Module Resolution - OutExtension
 	if opts.out_extension_count > 0 && opts.out_extension_keys != nil && opts.out_extension_values != nil {
 		buildOpts.OutExtension = make(map[string]string)
@@ -2217,12 +2223,12 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			}
 		}
 	}
-	
+
 	// Module Resolution - PublicPath
 	if opts.public_path != nil {
 		buildOpts.PublicPath = C.GoString(opts.public_path)
 	}
-	
+
 	// Module Resolution - Inject
 	if opts.inject_count > 0 && opts.inject != nil {
 		injectSlice := (*[1000]*C.char)(unsafe.Pointer(opts.inject))[:opts.inject_count:opts.inject_count]
@@ -2232,7 +2238,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			}
 		}
 	}
-	
+
 	// Module Resolution - NodePaths
 	if opts.node_paths_count > 0 && opts.node_paths != nil {
 		pathsSlice := (*[1000]*C.char)(unsafe.Pointer(opts.node_paths))[:opts.node_paths_count:opts.node_paths_count]
@@ -2242,7 +2248,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			}
 		}
 	}
-	
+
 	// Naming Templates
 	if opts.entry_names != nil {
 		buildOpts.EntryNames = C.GoString(opts.entry_names)
@@ -2253,7 +2259,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 	if opts.asset_names != nil {
 		buildOpts.AssetNames = C.GoString(opts.asset_names)
 	}
-	
+
 	// Advanced Entry Points
 	if opts.entry_points_advanced_count > 0 && opts.entry_points_advanced != nil {
 		entryPointsSlice := (*[1000]C.esbuild_entry_point)(unsafe.Pointer(opts.entry_points_advanced))[:opts.entry_points_advanced_count:opts.entry_points_advanced_count]
@@ -2265,7 +2271,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			buildOpts.EntryPointsAdvanced = append(buildOpts.EntryPointsAdvanced, advancedEP)
 		}
 	}
-	
+
 	// Log Override
 	if opts.log_override_count > 0 && opts.log_override_keys != nil && opts.log_override_values != nil {
 		buildOpts.LogOverride = make(map[string]api.LogLevel)
@@ -2279,7 +2285,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			}
 		}
 	}
-	
+
 	// Engine/Compatibility - Engines
 	if opts.engines_count > 0 && opts.engine_names != nil && opts.engine_versions != nil {
 		engineNamesSlice := (*[1000]C.int)(unsafe.Pointer(opts.engine_names))[:opts.engines_count:opts.engines_count]
@@ -2294,7 +2300,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			}
 		}
 	}
-	
+
 	// Engine/Compatibility - Supported
 	if opts.supported_count > 0 && opts.supported_keys != nil && opts.supported_values != nil {
 		buildOpts.Supported = make(map[string]bool)
@@ -2308,11 +2314,11 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			}
 		}
 	}
-	
+
 	// Plugin configuration
 	if opts.plugins_count > 0 && opts.plugins != nil {
 		pluginsSlice := (*[1000]C.c_plugin)(unsafe.Pointer(opts.plugins))[:opts.plugins_count:opts.plugins_count]
-		
+
 		for _, cPlugin := range pluginsSlice {
 			// Create a Go plugin from the C plugin
 			goPlugin := api.Plugin{
@@ -2321,14 +2327,14 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 					// Handle resolve hooks
 					if cPlugin.resolve_hooks_count > 0 && cPlugin.resolve_hooks != nil {
 						resolveHooksSlice := (*[1000]C.c_plugin_resolve_hook)(unsafe.Pointer(cPlugin.resolve_hooks))[:cPlugin.resolve_hooks_count:cPlugin.resolve_hooks_count]
-						
+
 						for _, hook := range resolveHooksSlice {
 							filter := C.GoString(hook.filter)
 							var namespace string
 							if hook.namespace != nil {
 								namespace = C.GoString(hook.namespace)
 							}
-							
+
 							build.OnResolve(api.OnResolveOptions{
 								Filter:    filter,
 								Namespace: namespace,
@@ -2336,7 +2342,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 								// Convert Go args to C args
 								cArgs := (*C.c_on_resolve_args)(C.malloc(C.sizeof_c_on_resolve_args))
 								defer C.free(unsafe.Pointer(cArgs))
-								
+
 								cArgs.path = C.CString(args.Path)
 								defer C.free(unsafe.Pointer(cArgs.path))
 								cArgs.importer = C.CString(args.Importer)
@@ -2346,12 +2352,12 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 								cArgs.resolve_dir = C.CString(args.ResolveDir)
 								defer C.free(unsafe.Pointer(cArgs.resolve_dir))
 								cArgs.kind = C.int(args.Kind)
-								
+
 								// Call the Swift callback
 								result := C.swift_plugin_on_resolve_callback(cArgs, hook.callback_data)
 								if result != nil {
 									defer C.free(unsafe.Pointer(result))
-									
+
 									// Convert C result to Go result
 									goResult := api.OnResolveResult{}
 									if result.path != nil {
@@ -2370,7 +2376,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 											goResult.SideEffects = api.SideEffectsFalse
 										}
 									}
-									
+
 									// Handle errors
 									if result.errors_count > 0 && result.errors != nil {
 										errorsSlice := (*[1000]C.c_message)(unsafe.Pointer(result.errors))[:result.errors_count:result.errors_count]
@@ -2384,7 +2390,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 											goResult.Errors = append(goResult.Errors, goError)
 										}
 									}
-									
+
 									// Handle warnings
 									if result.warnings_count > 0 && result.warnings != nil {
 										warningsSlice := (*[1000]C.c_message)(unsafe.Pointer(result.warnings))[:result.warnings_count:result.warnings_count]
@@ -2398,26 +2404,26 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 											goResult.Warnings = append(goResult.Warnings, goWarning)
 										}
 									}
-									
+
 									return goResult, nil
 								}
-								
+
 								return api.OnResolveResult{}, nil
 							})
 						}
 					}
-					
+
 					// Handle load hooks
 					if cPlugin.load_hooks_count > 0 && cPlugin.load_hooks != nil {
 						loadHooksSlice := (*[1000]C.c_plugin_load_hook)(unsafe.Pointer(cPlugin.load_hooks))[:cPlugin.load_hooks_count:cPlugin.load_hooks_count]
-						
+
 						for _, hook := range loadHooksSlice {
 							filter := C.GoString(hook.filter)
 							var namespace string
 							if hook.namespace != nil {
 								namespace = C.GoString(hook.namespace)
 							}
-							
+
 							build.OnLoad(api.OnLoadOptions{
 								Filter:    filter,
 								Namespace: namespace,
@@ -2425,19 +2431,19 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 								// Convert Go args to C args
 								cArgs := (*C.c_on_load_args)(C.malloc(C.sizeof_c_on_load_args))
 								defer C.free(unsafe.Pointer(cArgs))
-								
+
 								cArgs.path = C.CString(args.Path)
 								defer C.free(unsafe.Pointer(cArgs.path))
 								cArgs.namespace = C.CString(args.Namespace)
 								defer C.free(unsafe.Pointer(cArgs.namespace))
 								cArgs.suffix = C.CString(args.Suffix)
 								defer C.free(unsafe.Pointer(cArgs.suffix))
-								
+
 								// Call the Swift callback
 								result := C.swift_plugin_on_load_callback(cArgs, hook.callback_data)
 								if result != nil {
 									defer C.free(unsafe.Pointer(result))
-									
+
 									// Convert C result to Go result
 									goResult := api.OnLoadResult{}
 									if result.contents != nil {
@@ -2450,7 +2456,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 									if result.resolve_dir != nil {
 										goResult.ResolveDir = C.GoString(result.resolve_dir)
 									}
-									
+
 									// Handle errors
 									if result.errors_count > 0 && result.errors != nil {
 										errorsSlice := (*[1000]C.c_message)(unsafe.Pointer(result.errors))[:result.errors_count:result.errors_count]
@@ -2464,7 +2470,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 											goResult.Errors = append(goResult.Errors, goError)
 										}
 									}
-									
+
 									// Handle warnings
 									if result.warnings_count > 0 && result.warnings != nil {
 										warningsSlice := (*[1000]C.c_message)(unsafe.Pointer(result.warnings))[:result.warnings_count:result.warnings_count]
@@ -2478,15 +2484,15 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 											goResult.Warnings = append(goResult.Warnings, goWarning)
 										}
 									}
-									
+
 									return goResult, nil
 								}
-								
+
 								return api.OnLoadResult{}, nil
 							})
 						}
 					}
-					
+
 					// Handle start/end callbacks
 					if cPlugin.on_start != nil {
 						build.OnStart(func() (api.OnStartResult, error) {
@@ -2494,7 +2500,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 							return api.OnStartResult{}, nil
 						})
 					}
-					
+
 					if cPlugin.on_end != nil {
 						build.OnEnd(func(result *api.BuildResult) (api.OnEndResult, error) {
 							C.swift_plugin_on_end_callback(cPlugin.end_data)
@@ -2503,23 +2509,23 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 					}
 				},
 			}
-			
+
 			buildOpts.Plugins = append(buildOpts.Plugins, goPlugin)
 		}
 	}
-	
+
 	// Perform the build
 	result := api.Build(buildOpts)
-	
+
 	// Convert result to C structure
 	cResult := esbuild_create_build_result()
-	
+
 	// Convert errors
 	if len(result.Errors) > 0 {
 		cResult.errors_count = C.int(len(result.Errors))
 		cResult.errors = (*C.c_message)(C.malloc(C.size_t(uintptr(len(result.Errors)) * unsafe.Sizeof(C.c_message{}))))
 		errorsSlice := (*[1000]C.c_message)(unsafe.Pointer(cResult.errors))[:len(result.Errors):len(result.Errors)]
-		
+
 		for i, err := range result.Errors {
 			errorsSlice[i].id = C.CString(err.ID)
 			errorsSlice[i].plugin_name = C.CString(err.PluginName)
@@ -2527,7 +2533,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			errorsSlice[i].location = nil
 			errorsSlice[i].notes = nil
 			errorsSlice[i].notes_count = 0
-			
+
 			if err.Location != nil {
 				loc := esbuild_create_location()
 				loc.file = C.CString(err.Location.File)
@@ -2544,13 +2550,13 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 		cResult.errors = nil
 		cResult.errors_count = 0
 	}
-	
+
 	// Convert warnings (similar to errors)
 	if len(result.Warnings) > 0 {
 		cResult.warnings_count = C.int(len(result.Warnings))
 		cResult.warnings = (*C.c_message)(C.malloc(C.size_t(uintptr(len(result.Warnings)) * unsafe.Sizeof(C.c_message{}))))
 		warningsSlice := (*[1000]C.c_message)(unsafe.Pointer(cResult.warnings))[:len(result.Warnings):len(result.Warnings)]
-		
+
 		for i, warn := range result.Warnings {
 			warningsSlice[i].id = C.CString(warn.ID)
 			warningsSlice[i].plugin_name = C.CString(warn.PluginName)
@@ -2558,7 +2564,7 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 			warningsSlice[i].location = nil
 			warningsSlice[i].notes = nil
 			warningsSlice[i].notes_count = 0
-			
+
 			if warn.Location != nil {
 				loc := esbuild_create_location()
 				loc.file = C.CString(warn.Location.File)
@@ -2575,13 +2581,13 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 		cResult.warnings = nil
 		cResult.warnings_count = 0
 	}
-	
+
 	// Convert output files
 	if len(result.OutputFiles) > 0 {
 		cResult.output_files_count = C.int(len(result.OutputFiles))
 		cResult.output_files = (*C.esbuild_output_file)(C.malloc(C.size_t(uintptr(len(result.OutputFiles)) * unsafe.Sizeof(C.esbuild_output_file{}))))
 		filesSlice := (*[1000]C.esbuild_output_file)(unsafe.Pointer(cResult.output_files))[:len(result.OutputFiles):len(result.OutputFiles)]
-		
+
 		for i, file := range result.OutputFiles {
 			filesSlice[i].path = C.CString(file.Path)
 			filesSlice[i].contents = C.CString(string(file.Contents))
@@ -2592,19 +2598,19 @@ func esbuild_build(opts *C.esbuild_build_options) *C.esbuild_build_result {
 		cResult.output_files = nil
 		cResult.output_files_count = 0
 	}
-	
+
 	// Convert metafile
 	if result.Metafile != "" {
 		cResult.metafile = C.CString(result.Metafile)
 	} else {
 		cResult.metafile = nil
 	}
-	
+
 	// Convert mangle cache (simplified)
 	cResult.mangle_cache_keys = nil
 	cResult.mangle_cache_values = nil
 	cResult.mangle_cache_count = 0
-	
+
 	return cResult
 }
 

@@ -30,10 +30,22 @@
  * ```
  */
 
-import { dlopen, FFIType, ptr, CString, type Pointer } from "bun:ffi";
+import {
+    CString,
+    dlopen,
+    FFIType,
+    type Pointer,
+    ptr,
+} from "bun:ffi";
 import { existsSync } from "fs";
-import { join, dirname } from "path";
-import { platform, arch } from "os";
+import {
+    arch,
+    platform,
+} from "os";
+import {
+    dirname,
+    join,
+} from "path";
 
 // ============================================================================
 // Types
@@ -44,53 +56,53 @@ import { platform, arch } from "os";
  * @see https://www.typescriptlang.org/tsconfig
  */
 export interface CompilerOptions {
-  // Target & Module
-  /** ECMAScript target version */
-  target?: "ES5" | "ES6" | "ES2015" | "ES2016" | "ES2017" | "ES2018" | "ES2019" | "ES2020" | "ES2021" | "ES2022" | "ESNext";
-  /** Module system to use */
-  module?: "CommonJS" | "AMD" | "UMD" | "System" | "ES6" | "ES2015" | "ES2020" | "ES2022" | "ESNext" | "Node16" | "NodeNext" | "Preserve";
-  /** Module resolution strategy */
-  moduleResolution?: "Classic" | "Node" | "Node10" | "Node16" | "NodeNext" | "Bundler";
-  /** Library files to include */
-  lib?: string[];
+    // Target & Module
+    /** ECMAScript target version */
+    target?: "ES5" | "ES6" | "ES2015" | "ES2016" | "ES2017" | "ES2018" | "ES2019" | "ES2020" | "ES2021" | "ES2022" | "ESNext";
+    /** Module system to use */
+    module?: "CommonJS" | "AMD" | "UMD" | "System" | "ES6" | "ES2015" | "ES2020" | "ES2022" | "ESNext" | "Node16" | "NodeNext" | "Preserve";
+    /** Module resolution strategy */
+    moduleResolution?: "Classic" | "Node" | "Node10" | "Node16" | "NodeNext" | "Bundler";
+    /** Library files to include */
+    lib?: string[];
 
-  // JSX Options
-  /** JSX emit mode */
-  jsx?: "react" | "react-jsx" | "react-jsxdev" | "preserve";
-  /** Module specifier for importing JSX factory functions (e.g., "react", "@emotion/react") */
-  jsxImportSource?: string;
-  /** JSX factory function (e.g., "React.createElement") */
-  jsxFactory?: string;
-  /** JSX fragment factory (e.g., "React.Fragment") */
-  jsxFragmentFactory?: string;
+    // JSX Options
+    /** JSX emit mode */
+    jsx?: "react" | "react-jsx" | "react-jsxdev" | "preserve";
+    /** Module specifier for importing JSX factory functions (e.g., "react", "@emotion/react") */
+    jsxImportSource?: string;
+    /** JSX factory function (e.g., "React.createElement") */
+    jsxFactory?: string;
+    /** JSX fragment factory (e.g., "React.Fragment") */
+    jsxFragmentFactory?: string;
 
-  // Strict Type Checking
-  /** Enable all strict type checking options */
-  strict?: boolean;
-  /** Enable strict null checks */
-  strictNullChecks?: boolean;
+    // Strict Type Checking
+    /** Enable all strict type checking options */
+    strict?: boolean;
+    /** Enable strict null checks */
+    strictNullChecks?: boolean;
 
-  // Module Interop
-  /** Enable ES module interop */
-  esModuleInterop?: boolean;
-  /** Allow importing JSON modules */
-  resolveJsonModule?: boolean;
-  /** Ensure each file can be safely transpiled */
-  isolatedModules?: boolean;
+    // Module Interop
+    /** Enable ES module interop */
+    esModuleInterop?: boolean;
+    /** Allow importing JSON modules */
+    resolveJsonModule?: boolean;
+    /** Ensure each file can be safely transpiled */
+    isolatedModules?: boolean;
 
-  // Output
-  /** Do not emit output files */
-  noEmit?: boolean;
-  /** Generate .d.ts declaration files */
-  declaration?: boolean;
+    // Output
+    /** Do not emit output files */
+    noEmit?: boolean;
+    /** Generate .d.ts declaration files */
+    declaration?: boolean;
 
-  // Other
-  /** Allow JavaScript files */
-  allowJs?: boolean;
-  /** Skip type checking of declaration files */
-  skipLibCheck?: boolean;
-  /** Enforce consistent casing in file names */
-  forceConsistentCasingInFileNames?: boolean;
+    // Other
+    /** Allow JavaScript files */
+    allowJs?: boolean;
+    /** Skip type checking of declaration files */
+    skipLibCheck?: boolean;
+    /** Enforce consistent casing in file names */
+    forceConsistentCasingInFileNames?: boolean;
 }
 
 /**
@@ -102,30 +114,30 @@ export type DiagnosticCategory = "error" | "warning" | "suggestion" | "message";
  * A diagnostic message from the type checker
  */
 export interface Diagnostic {
-  /** Error code (e.g., 2322 for type mismatch) */
-  code: number;
-  /** Diagnostic category */
-  category: DiagnosticCategory;
-  /** Human-readable error message */
-  message: string;
-  /** Source file path (for multi-file projects) */
-  file?: string;
-  /** 1-based line number */
-  line?: number;
-  /** 1-based column number */
-  column?: number;
+    /** Error code (e.g., 2322 for type mismatch) */
+    code: number;
+    /** Diagnostic category */
+    category: DiagnosticCategory;
+    /** Human-readable error message */
+    message: string;
+    /** Source file path (for multi-file projects) */
+    file?: string;
+    /** 1-based line number */
+    line?: number;
+    /** 1-based column number */
+    column?: number;
 }
 
 /**
  * Result of type checking operation
  */
 export interface TypeCheckResult {
-  /** Whether type checking passed with no errors */
-  success: boolean;
-  /** Array of diagnostic messages */
-  diagnostics: Diagnostic[];
-  /** Time taken in milliseconds */
-  duration_ms: number;
+    /** Whether type checking passed with no errors */
+    success: boolean;
+    /** Array of diagnostic messages */
+    diagnostics: Diagnostic[];
+    /** Time taken in milliseconds */
+    duration_ms: number;
 }
 
 // ============================================================================
@@ -136,66 +148,66 @@ export interface TypeCheckResult {
  * Get the path to the native binary for the current platform
  */
 function getBinaryPath(): string {
-  const currentPlatform = platform();
-  const currentArch = arch();
+    const currentPlatform = platform();
+    const currentArch = arch();
 
-  // Map Node.js platform/arch to our package names
-  const platformMap: Record<string, string> = {
-    darwin: "darwin",
-    linux: "linux",
-    win32: "win32",
-  };
+    // Map Node.js platform/arch to our package names
+    const platformMap: Record<string, string> = {
+        darwin: "darwin",
+        linux: "linux",
+        win32: "win32",
+    };
 
-  const archMap: Record<string, string> = {
-    arm64: "arm64",
-    x64: "x64",
-    x86_64: "x64",
-  };
+    const archMap: Record<string, string> = {
+        arm64: "arm64",
+        x64: "x64",
+        x86_64: "x64",
+    };
 
-  const plat = platformMap[currentPlatform];
-  const ar = archMap[currentArch];
+    const plat = platformMap[currentPlatform];
+    const ar = archMap[currentArch];
 
-  if (!plat || !ar) {
-    throw new Error(
-      `Unsupported platform: ${currentPlatform}-${currentArch}. ` +
-      `Supported platforms: darwin-arm64, darwin-x64, linux-arm64, linux-x64, win32-x64`
-    );
-  }
-
-  const packageName = `@flickfyi/tsgo-${plat}-${ar}`;
-  const packageNameNoScope = `tsgo-${plat}-${ar}`;
-  const extension = currentPlatform === "win32" ? ".dll" : currentPlatform === "darwin" ? ".dylib" : ".so";
-  const binaryName = `libtsgo${extension}`;
-
-  // Try to find the binary in various locations
-  const paths = [
-    // Development mode - binary in package root (for local testing)
-    join(import.meta.dir, "..", binaryName),
-    // Development mode - binary in binaries subdirectory
-    join(import.meta.dir, "..", "binaries", `${plat}-${ar}`, binaryName),
-    // Platform package installed in this package's node_modules
-    join(import.meta.dir, "..", "node_modules", packageName, binaryName),
-    // Bun hoisted - platform package is sibling in @flickfyi scope (no scope prefix needed)
-    join(import.meta.dir, "..", "..", packageNameNoScope, binaryName),
-    // Platform package installed at project root node_modules
-    join(process.cwd(), "node_modules", packageName, binaryName),
-    // Hoisted in monorepo - check parent directories
-    join(process.cwd(), "..", "node_modules", packageName, binaryName),
-    join(process.cwd(), "..", "..", "node_modules", packageName, binaryName),
-  ];
-
-  for (const p of paths) {
-    if (existsSync(p)) {
-      return p;
+    if (!plat || !ar) {
+        throw new Error(
+            `Unsupported platform: ${currentPlatform}-${currentArch}. ` +
+                `Supported platforms: darwin-arm64, darwin-x64, linux-arm64, linux-x64, win32-x64`,
+        );
     }
-  }
 
-  throw new Error(
-    `Could not find tsgo binary for ${currentPlatform}-${currentArch}.\n` +
-    `Tried paths:\n${paths.map(p => `  - ${p}`).join("\n")}\n\n` +
-    `Please ensure the platform-specific package is installed:\n` +
-    `  bun add @flickfyi/tsgo`
-  );
+    const packageName = `@flickfyi/tsgo-${plat}-${ar}`;
+    const packageNameNoScope = `tsgo-${plat}-${ar}`;
+    const extension = currentPlatform === "win32" ? ".dll" : currentPlatform === "darwin" ? ".dylib" : ".so";
+    const binaryName = `libtsgo${extension}`;
+
+    // Try to find the binary in various locations
+    const paths = [
+        // Development mode - binary in package root (for local testing)
+        join(import.meta.dir, "..", binaryName),
+        // Development mode - binary in binaries subdirectory
+        join(import.meta.dir, "..", "binaries", `${plat}-${ar}`, binaryName),
+        // Platform package installed in this package's node_modules
+        join(import.meta.dir, "..", "node_modules", packageName, binaryName),
+        // Bun hoisted - platform package is sibling in @flickfyi scope (no scope prefix needed)
+        join(import.meta.dir, "..", "..", packageNameNoScope, binaryName),
+        // Platform package installed at project root node_modules
+        join(process.cwd(), "node_modules", packageName, binaryName),
+        // Hoisted in monorepo - check parent directories
+        join(process.cwd(), "..", "node_modules", packageName, binaryName),
+        join(process.cwd(), "..", "..", "node_modules", packageName, binaryName),
+    ];
+
+    for (const p of paths) {
+        if (existsSync(p)) {
+            return p;
+        }
+    }
+
+    throw new Error(
+        `Could not find tsgo binary for ${currentPlatform}-${currentArch}.\n` +
+            `Tried paths:\n${paths.map(p => `  - ${p}`).join("\n")}\n\n` +
+            `Please ensure the platform-specific package is installed:\n` +
+            `  bun add @flickfyi/tsgo`,
+    );
 }
 
 // ============================================================================
@@ -205,26 +217,26 @@ function getBinaryPath(): string {
 const binaryPath = getBinaryPath();
 
 const lib = dlopen(binaryPath, {
-  tsgo_typecheck: {
-    args: [FFIType.ptr, FFIType.ptr, FFIType.ptr],
-    returns: FFIType.ptr,
-  },
-  tsgo_typecheck_with_options: {
-    args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr],
-    returns: FFIType.ptr,
-  },
-  tsgo_typecheck_multiple: {
-    args: [FFIType.ptr, FFIType.ptr, FFIType.ptr],
-    returns: FFIType.ptr,
-  },
-  tsgo_version: {
-    args: [],
-    returns: FFIType.ptr,
-  },
-  tsgo_free_string: {
-    args: [FFIType.ptr],
-    returns: FFIType.void,
-  },
+    tsgo_typecheck: {
+        args: [FFIType.ptr, FFIType.ptr, FFIType.ptr],
+        returns: FFIType.ptr,
+    },
+    tsgo_typecheck_with_options: {
+        args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr],
+        returns: FFIType.ptr,
+    },
+    tsgo_typecheck_multiple: {
+        args: [FFIType.ptr, FFIType.ptr, FFIType.ptr],
+        returns: FFIType.ptr,
+    },
+    tsgo_version: {
+        args: [],
+        returns: FFIType.ptr,
+    },
+    tsgo_free_string: {
+        args: [FFIType.ptr],
+        returns: FFIType.void,
+    },
 });
 
 // Get the wrapper directory for finding node_modules
@@ -237,40 +249,41 @@ const wrapperDir = process.cwd();
 
 /** Convert string to null-terminated C string buffer */
 function toCString(str: string): Buffer {
-  return Buffer.from(str + "\0", "utf8");
+    return Buffer.from(str + "\0", "utf8");
 }
 
 /** Read C string from pointer and free it */
 function readAndFreeString(pointer: Pointer | null): string {
-  if (!pointer) {
-    return "";
-  }
-  const cstr = new CString(pointer);
-  const result = cstr.toString();
-  lib.symbols.tsgo_free_string(pointer);
-  return result;
+    if (!pointer) {
+        return "";
+    }
+    const cstr = new CString(pointer);
+    const result = cstr.toString();
+    lib.symbols.tsgo_free_string(pointer);
+    return result;
 }
 
 function parseResult(resultPtr: Pointer | null): TypeCheckResult {
-  if (!resultPtr) {
-    return {
-      success: false,
-      diagnostics: [{ code: 0, category: "error", message: "FFI call returned null" }],
-      duration_ms: 0,
-    };
-  }
+    if (!resultPtr) {
+        return {
+            success: false,
+            diagnostics: [{ code: 0, category: "error", message: "FFI call returned null" }],
+            duration_ms: 0,
+        };
+    }
 
-  const resultStr = readAndFreeString(resultPtr);
+    const resultStr = readAndFreeString(resultPtr);
 
-  try {
-    return JSON.parse(resultStr);
-  } catch {
-    return {
-      success: false,
-      diagnostics: [{ code: 0, category: "error", message: `Failed to parse result: ${resultStr}` }],
-      duration_ms: 0,
-    };
-  }
+    try {
+        return JSON.parse(resultStr);
+    }
+    catch {
+        return {
+            success: false,
+            diagnostics: [{ code: 0, category: "error", message: `Failed to parse result: ${resultStr}` }],
+            duration_ms: 0,
+        };
+    }
 }
 
 // ============================================================================
@@ -288,10 +301,10 @@ function parseResult(resultPtr: Pointer | null): TypeCheckResult {
  * ```
  */
 function version(): string {
-  const resultPtr = lib.symbols.tsgo_version();
-  if (!resultPtr) return "unknown";
-  const cstr = new CString(resultPtr);
-  return cstr.toString();
+    const resultPtr = lib.symbols.tsgo_version();
+    if (!resultPtr) return "unknown";
+    const cstr = new CString(resultPtr);
+    return cstr.toString();
 }
 
 /**
@@ -322,16 +335,16 @@ function version(): string {
  * ```
  */
 function typecheck(code: string, fileName: string, projectDir?: string): TypeCheckResult {
-  const codeBuffer = toCString(code);
-  const fileNameBuffer = toCString(fileName);
-  const projectDirBuffer = toCString(projectDir || wrapperDir);
+    const codeBuffer = toCString(code);
+    const fileNameBuffer = toCString(fileName);
+    const projectDirBuffer = toCString(projectDir || wrapperDir);
 
-  const resultPtr = lib.symbols.tsgo_typecheck(
-    ptr(codeBuffer),
-    ptr(fileNameBuffer),
-    ptr(projectDirBuffer)
-  );
-  return parseResult(resultPtr);
+    const resultPtr = lib.symbols.tsgo_typecheck(
+        ptr(codeBuffer),
+        ptr(fileNameBuffer),
+        ptr(projectDirBuffer),
+    );
+    return parseResult(resultPtr);
 }
 
 /**
@@ -360,23 +373,23 @@ function typecheck(code: string, fileName: string, projectDir?: string): TypeChe
  * ```
  */
 function typecheckWithOptions(
-  code: string,
-  fileName: string,
-  options: CompilerOptions,
-  projectDir?: string
+    code: string,
+    fileName: string,
+    options: CompilerOptions,
+    projectDir?: string,
 ): TypeCheckResult {
-  const codeBuffer = toCString(code);
-  const fileNameBuffer = toCString(fileName);
-  const optionsBuffer = toCString(JSON.stringify(options));
-  const projectDirBuffer = toCString(projectDir || wrapperDir);
+    const codeBuffer = toCString(code);
+    const fileNameBuffer = toCString(fileName);
+    const optionsBuffer = toCString(JSON.stringify(options));
+    const projectDirBuffer = toCString(projectDir || wrapperDir);
 
-  const resultPtr = lib.symbols.tsgo_typecheck_with_options(
-    ptr(codeBuffer),
-    ptr(fileNameBuffer),
-    ptr(optionsBuffer),
-    ptr(projectDirBuffer)
-  );
-  return parseResult(resultPtr);
+    const resultPtr = lib.symbols.tsgo_typecheck_with_options(
+        ptr(codeBuffer),
+        ptr(fileNameBuffer),
+        ptr(optionsBuffer),
+        ptr(projectDirBuffer),
+    );
+    return parseResult(resultPtr);
 }
 
 /**
@@ -408,20 +421,20 @@ function typecheckWithOptions(
  * ```
  */
 function typecheckMultiple(
-  files: Record<string, string>,
-  options?: CompilerOptions,
-  projectDir?: string
+    files: Record<string, string>,
+    options?: CompilerOptions,
+    projectDir?: string,
 ): TypeCheckResult {
-  const filesBuffer = toCString(JSON.stringify(files));
-  const optionsBuffer = toCString(options ? JSON.stringify(options) : "");
-  const projectDirBuffer = toCString(projectDir || wrapperDir);
+    const filesBuffer = toCString(JSON.stringify(files));
+    const optionsBuffer = toCString(options ? JSON.stringify(options) : "");
+    const projectDirBuffer = toCString(projectDir || wrapperDir);
 
-  const resultPtr = lib.symbols.tsgo_typecheck_multiple(
-    ptr(filesBuffer),
-    ptr(optionsBuffer),
-    ptr(projectDirBuffer)
-  );
-  return parseResult(resultPtr);
+    const resultPtr = lib.symbols.tsgo_typecheck_multiple(
+        ptr(filesBuffer),
+        ptr(optionsBuffer),
+        ptr(projectDirBuffer),
+    );
+    return parseResult(resultPtr);
 }
 
 // ============================================================================
@@ -429,11 +442,11 @@ function typecheckMultiple(
 // ============================================================================
 
 const tsgo = {
-  version,
-  typecheck,
-  typecheckWithOptions,
-  typecheckMultiple,
+    version,
+    typecheck,
+    typecheckWithOptions,
+    typecheckMultiple,
 };
 
 export default tsgo;
-export { version, typecheck, typecheckWithOptions, typecheckMultiple };
+export { typecheck, typecheckMultiple, typecheckWithOptions, version };

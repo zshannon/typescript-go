@@ -181,8 +181,14 @@ func (c v3EsbuildConfig) esbuildOptions() api.BuildOptions {
 		opts.Target = api.ES2020
 	case "es2021":
 		opts.Target = api.ES2021
+	case "es2022":
+		opts.Target = api.ES2022
 	case "es2023":
 		opts.Target = api.ES2023
+	case "es2024":
+		opts.Target = api.ES2024
+	case "es2025":
+		opts.Target = api.ES2025
 	case "esnext":
 		opts.Target = api.ESNext
 	default:
