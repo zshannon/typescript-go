@@ -2639,3 +2639,370 @@ func TestFlushDeps_ClearsDiskAndS3(t *testing.T) {
 		t.Fatalf("S3 deps tarball should be deleted after flush")
 	}
 }
+
+func TestFlushAllDeps_PreservesInstallTempRoot(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "flush-temp-root-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+	diskCachePath = tmpDir
+	s3Client = nil
+	resetDepInstallInFlightForTest(t)
+
+	depDir := filepath.Join(diskCachePath, "deps", "hash", "node_modules", "zod")
+	if err := os.MkdirAll(depDir, 0755); err != nil {
+		t.Fatalf("seed dep dir: %v", err)
+	}
+	activeTmpDir := filepath.Join(depsInstallTempRoot(), "bun-install-active")
+	if err := os.MkdirAll(activeTmpDir, 0755); err != nil {
+		t.Fatalf("seed active temp dir: %v", err)
+	}
+
+	if _, err := flushAllDeps(context.Background()); err != nil {
+		t.Fatalf("flush all deps: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(diskCachePath, "deps")); !os.IsNotExist(err) {
+		t.Fatalf("disk deps dir should be deleted after flush")
+	}
+	if _, err := os.Stat(activeTmpDir); err != nil {
+		t.Fatalf("active install temp dir should remain outside deps flush tree: %v", err)
+	}
+}
+
+func TestDeleteOldestVersion_ReclaimsStaleInstallTempDir(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "stale-install-temp-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+	diskCachePath = tmpDir
+	s3Client = nil
+	resetDepInstallInFlightForTest(t)
+
+	staleTmpDir := filepath.Join(depsInstallTempRoot(), "bun-install-stale")
+	activeTmpDir := filepath.Join(depsInstallTempRoot(), "bun-install-active")
+	freshTmpDir := filepath.Join(depsInstallTempRoot(), "bun-install-fresh")
+	for _, dir := range []string{staleTmpDir, activeTmpDir, freshTmpDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("seed temp dir %s: %v", dir, err)
+		}
+	}
+
+	oldTime := time.Now().Add(-2 * staleDepInstallTempMinAge)
+	if err := os.Chtimes(staleTmpDir, oldTime, oldTime); err != nil {
+		t.Fatalf("age stale temp dir: %v", err)
+	}
+	if err := os.Chtimes(activeTmpDir, oldTime, oldTime); err != nil {
+		t.Fatalf("age active temp dir: %v", err)
+	}
+
+	inflight := newDepInstallResult()
+	setDepInstallTempDir(inflight, activeTmpDir)
+	depInstallMu.Lock()
+	depInstallInFlight["active"] = inflight
+	depInstallMu.Unlock()
+
+	if !deleteOldestVersion("") {
+		t.Fatal("expected stale install temp dir to be reclaimed")
+	}
+
+	if _, err := os.Stat(staleTmpDir); !os.IsNotExist(err) {
+		t.Fatalf("stale install temp dir should be deleted")
+	}
+	if _, err := os.Stat(activeTmpDir); err != nil {
+		t.Fatalf("active install temp dir should remain: %v", err)
+	}
+	if _, err := os.Stat(freshTmpDir); err != nil {
+		t.Fatalf("fresh install temp dir should remain: %v", err)
+	}
+}
+
+func TestFlushDeps_TargetedHashClearsOnlyThatHash(t *testing.T) {
+	mockS3 := setupTestServerWithMockS3(t)
+
+	lockA := []byte("targeted-flush-lock-a")
+	lockB := []byte("targeted-flush-lock-b")
+	hashA := hashBunLock(lockA)
+	hashB := hashBunLock(lockB)
+
+	depA := filepath.Join(diskCachePath, "deps", hashA, "node_modules", "a")
+	depB := filepath.Join(diskCachePath, "deps", hashB, "node_modules", "b")
+	if err := os.MkdirAll(depA, 0755); err != nil {
+		t.Fatalf("seed dep A: %v", err)
+	}
+	if err := os.MkdirAll(depB, 0755); err != nil {
+		t.Fatalf("seed dep B: %v", err)
+	}
+
+	keyA := depsCacheS3Key(hashA)
+	keyB := depsCacheS3Key(hashB)
+	mockS3.files[keyA] = "cached-a"
+	mockS3.files[keyB] = "cached-b"
+
+	req := httptest.NewRequest(http.MethodPost, "/v3/flush-deps?lock_hash="+hashA, nil)
+	w := httptest.NewRecorder()
+	flushDeps(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	if _, err := os.Stat(filepath.Join(diskCachePath, "deps", hashA)); !os.IsNotExist(err) {
+		t.Fatalf("targeted disk deps dir should be deleted")
+	}
+	if _, err := os.Stat(depB); err != nil {
+		t.Fatalf("other disk deps dir should remain: %v", err)
+	}
+	if _, exists := mockS3.files[keyA]; exists {
+		t.Fatalf("targeted S3 deps tarball should be deleted")
+	}
+	if _, exists := mockS3.files[keyB]; !exists {
+		t.Fatalf("other S3 deps tarball should remain")
+	}
+}
+
+func TestFlushDepsHash_WaitsForInFlightInstall(t *testing.T) {
+	mockS3 := setupTestServerWithMockS3(t)
+	resetDepInstallInFlightForTest(t)
+
+	lockContent := []byte("targeted-flush-inflight-lock")
+	hash := hashBunLock(lockContent)
+	depDir := filepath.Join(diskCachePath, "deps", hash)
+	if err := os.MkdirAll(filepath.Join(depDir, "node_modules", "zod"), 0755); err != nil {
+		t.Fatalf("seed dep dir: %v", err)
+	}
+	key := depsCacheS3Key(hash)
+	mockS3.files[key] = "cached"
+
+	inflight := newDepInstallResult()
+	depInstallMu.Lock()
+	depInstallInFlight[hash] = inflight
+	depInstallMu.Unlock()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := flushDepsHash(context.Background(), hash)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("flush returned before in-flight install completed: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	if _, err := os.Stat(depDir); err != nil {
+		t.Fatalf("dep dir should remain while in-flight install is active: %v", err)
+	}
+	if _, exists := mockS3.files[key]; !exists {
+		t.Fatalf("S3 deps tarball should remain while in-flight install is active")
+	}
+
+	close(inflight.done)
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("flush after in-flight install: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("flush did not finish after in-flight install completed")
+	}
+
+	if _, err := os.Stat(depDir); !os.IsNotExist(err) {
+		t.Fatalf("dep dir should be deleted after in-flight install completes")
+	}
+	if _, exists := mockS3.files[key]; exists {
+		t.Fatalf("S3 deps tarball should be deleted after in-flight install completes")
+	}
+}
+
+func TestFlushDepsHash_WaitsForInFlightUpload(t *testing.T) {
+	mockS3 := setupTestServerWithMockS3(t)
+	resetDepInstallInFlightForTest(t)
+
+	lockContent := []byte("targeted-flush-upload-lock")
+	hash := hashBunLock(lockContent)
+	depDir := filepath.Join(diskCachePath, "deps", hash)
+	if err := os.MkdirAll(filepath.Join(depDir, "node_modules", "zod"), 0755); err != nil {
+		t.Fatalf("seed dep dir: %v", err)
+	}
+	key := depsCacheS3Key(hash)
+	mockS3.files[key] = "cached"
+
+	inflight := newDepInstallResult()
+	inflight.path = depDir
+	close(inflight.ready)
+	depInstallMu.Lock()
+	depInstallInFlight[hash] = inflight
+	depInstallMu.Unlock()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := flushDepsHash(context.Background(), hash)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("flush returned before in-flight upload completed: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	if _, err := os.Stat(depDir); err != nil {
+		t.Fatalf("dep dir should remain while upload is active: %v", err)
+	}
+	if _, exists := mockS3.files[key]; !exists {
+		t.Fatalf("S3 deps tarball should remain while upload is active")
+	}
+
+	close(inflight.done)
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("flush after in-flight upload: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("flush did not finish after in-flight upload completed")
+	}
+
+	if _, err := os.Stat(depDir); !os.IsNotExist(err) {
+		t.Fatalf("dep dir should be deleted after in-flight upload completes")
+	}
+	if _, exists := mockS3.files[key]; exists {
+		t.Fatalf("S3 deps tarball should be deleted after in-flight upload completes")
+	}
+}
+
+func TestCloseDepInstallResult_RemovesEntryBeforeWakingWaiters(t *testing.T) {
+	resetDepInstallInFlightForTest(t)
+
+	hash := hashBunLock([]byte("close-before-wake"))
+	inflight := newDepInstallResult()
+	depInstallMu.Lock()
+	depInstallInFlight[hash] = inflight
+	depInstallMu.Unlock()
+
+	depInstallMu.Lock()
+	closed := make(chan struct{})
+	go func() {
+		closeDepInstallResult(hash, inflight)
+		close(closed)
+	}()
+
+	select {
+	case <-inflight.done:
+		t.Fatal("install result woke waiters before removing the in-flight entry")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	depInstallMu.Unlock()
+
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("closeDepInstallResult did not finish")
+	}
+
+	select {
+	case <-inflight.done:
+	case <-time.After(time.Second):
+		t.Fatal("install result did not wake waiters")
+	}
+
+	depInstallMu.Lock()
+	_, exists := depInstallInFlight[hash]
+	depInstallMu.Unlock()
+	if exists {
+		t.Fatal("in-flight entry should be removed after close")
+	}
+}
+
+func TestPrewarmDeps_ResolvesDependencyCache(t *testing.T) {
+	mockS3 := setupTestServerWithMockS3(t)
+
+	lockContent := []byte("prewarm-test-lockfile")
+	hash := hashBunLock(lockContent)
+	seedDepsTarball(t, mockS3, depsCacheS3Key(hash), "node_modules/zod/index.js", []byte("module.exports = {}"))
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("/bun.lock", string(lockContent)); err != nil {
+		t.Fatalf("write bun.lock field: %v", err)
+	}
+	if err := writer.WriteField("/package.json", `{"dependencies":{"zod":"3.23.0"}}`); err != nil {
+		t.Fatalf("write package.json field: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v3/prewarm-deps", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	prewarmDeps(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	var response map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response["status"] != "prewarmed" {
+		t.Fatalf("expected prewarmed status, got %#v", response["status"])
+	}
+	if response["lock_hash"] != hash {
+		t.Fatalf("expected lock_hash %s, got %#v", hash, response["lock_hash"])
+	}
+	if _, err := os.Stat(filepath.Join(diskCachePath, "deps", hash, "node_modules", "zod", "index.js")); err != nil {
+		t.Fatalf("disk cache should be populated after prewarm: %v", err)
+	}
+}
+
+func seedDepsTarball(t *testing.T, mockS3 *MockS3Client, key string, name string, content []byte) {
+	t.Helper()
+
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+	if err := tw.WriteHeader(&tar.Header{
+		Name: name,
+		Mode: 0644,
+		Size: int64(len(content)),
+	}); err != nil {
+		t.Fatalf("write tar header: %v", err)
+	}
+	if _, err := tw.Write(content); err != nil {
+		t.Fatalf("write tar content: %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("close tar writer: %v", err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatalf("close gzip writer: %v", err)
+	}
+	mockS3.files[key] = buf.String()
+}
+
+func resetDepInstallInFlightForTest(t *testing.T) {
+	t.Helper()
+	depInstallMu.Lock()
+	previous := depInstallInFlight
+	depInstallInFlight = make(map[string]*depInstallResult)
+	depInstallMu.Unlock()
+
+	t.Cleanup(func() {
+		depInstallMu.Lock()
+		depInstallInFlight = previous
+		depInstallMu.Unlock()
+	})
+}
