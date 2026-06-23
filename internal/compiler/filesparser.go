@@ -11,6 +11,7 @@ import (
 	"github.com/microsoft/typescript-go/internal/core"
 	"github.com/microsoft/typescript-go/internal/diagnostics"
 	"github.com/microsoft/typescript-go/internal/module"
+	"github.com/microsoft/typescript-go/internal/tracing"
 	"github.com/microsoft/typescript-go/internal/tsoptions"
 	"github.com/microsoft/typescript-go/internal/tspath"
 )
@@ -58,6 +59,9 @@ func (t *parseTask) load(loader *fileLoader) {
 	if t.isForAutomaticTypeDirective {
 		t.loadAutomaticTypeDirectives(loader)
 		return
+	}
+	if loader.opts.Tracing != nil {
+		defer loader.opts.Tracing.Push(tracing.PhaseProgram, "findSourceFile", map[string]any{"fileName": t.normalizedFilePath}, false)()
 	}
 	redirect := loader.projectReferenceFileMapper.getParseFileRedirect(t)
 	if redirect != "" {
@@ -165,9 +169,13 @@ func (t *parseTask) redirect(loader *fileLoader, fileName string) {
 }
 
 func (t *parseTask) loadAutomaticTypeDirectives(loader *fileLoader) {
-	toParseTypeRefs, typeResolutionsInFile, typeResolutionsTrace := loader.resolveAutomaticTypeDirectives(t.normalizedFilePath)
+	if loader.opts.Tracing != nil {
+		defer loader.opts.Tracing.Push(tracing.PhaseProgram, "processTypeReferences", nil, false)()
+	}
+	toParseTypeRefs, typeResolutionsInFile, typeResolutionsTrace, pDiagnostics := loader.resolveAutomaticTypeDirectives(t.normalizedFilePath)
 	t.typeResolutionsInFile = typeResolutionsInFile
 	t.typeResolutionsTrace = typeResolutionsTrace
+	t.processingDiagnostics = append(t.processingDiagnostics, pDiagnostics...)
 	for _, typeResolution := range toParseTypeRefs {
 		t.addSubTask(typeResolution, nil)
 	}
@@ -440,6 +448,9 @@ func (w *filesParser) getProcessedFiles(loader *fileLoader) processedFiles {
 
 			if task.isForAutomaticTypeDirective {
 				typeResolutionsInFile[task.path] = task.typeResolutionsInFile
+				if len(task.processingDiagnostics) > 0 {
+					includeProcessor.processingDiagnostics = append(includeProcessor.processingDiagnostics, task.processingDiagnostics...)
+				}
 				continue
 			}
 
