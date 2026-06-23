@@ -199,6 +199,10 @@ func (f *fakeBackend) WatchDirectory(dir string, fn fswatch.WatchCallback, opts 
 	}}, nil
 }
 
+func (f *fakeBackend) HasFastRecursiveBackend() bool {
+	return false
+}
+
 // watchedDirs returns the directories currently subscribed, for assertions.
 func (f *fakeBackend) watchedDirs() []string {
 	f.mu.Lock()

@@ -310,7 +310,7 @@ type extendedConfigCacheAdapter struct {
 	cache *collections.SyncMap[tspath.Path, *tsoptions.ExtendedConfigCacheEntry]
 }
 
-func (a *extendedConfigCacheAdapter) GetExtendedConfig(fileName string, path tspath.Path, resolutionStack []string, host tsoptions.ParseConfigHost) *tsoptions.ExtendedConfigCacheEntry {
+func (a *extendedConfigCacheAdapter) GetExtendedConfig(fileName string, path tspath.Path, resolutionStack []tspath.Path, host tsoptions.ParseConfigHost) *tsoptions.ExtendedConfigCacheEntry {
 	if entry, ok := a.cache.Load(path); ok {
 		return entry
 	}
@@ -363,6 +363,23 @@ func (c *callbackVFS) WriteFile(path string, data string) error {
 		return nil
 	}
 	return c.osvfs.WriteFile(path, data)
+}
+
+func (c *callbackVFS) AppendFile(path string, data string) error {
+	c.mu.RLock()
+	content, ok := c.writtenFiles[path]
+	c.mu.RUnlock()
+	if !ok {
+		content = c.resolver.ResolveFile(path)
+	}
+	content += data
+	if c.resolver.WriteFile(path, content) {
+		c.mu.Lock()
+		c.writtenFiles[path] = content
+		c.mu.Unlock()
+		return nil
+	}
+	return c.osvfs.AppendFile(path, data)
 }
 
 func (c *callbackVFS) Remove(path string) error {
@@ -641,13 +658,14 @@ func buildWithConfig(projectPath string, printErrors bool, configFile string, re
 
 	if len(allDiagnostics) == configFileParsingDiagnosticsLength {
 		_ = program.GetBindDiagnostics(ctx, nil)
-		allDiagnostics = append(allDiagnostics, program.GetOptionsDiagnostics(ctx)...)
+		allDiagnostics = append(allDiagnostics, program.GetProgramDiagnostics()...)
 
 		if options.ListFilesOnly.IsFalseOrUnknown() {
 			allDiagnostics = append(allDiagnostics, program.GetGlobalDiagnostics(ctx)...)
 
 			if len(allDiagnostics) == configFileParsingDiagnosticsLength {
 				allDiagnostics = append(allDiagnostics, program.GetSemanticDiagnostics(ctx, nil)...)
+				allDiagnostics = append(allDiagnostics, program.GetGlobalDiagnostics(ctx)...)
 			}
 		}
 

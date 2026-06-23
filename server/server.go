@@ -483,6 +483,13 @@ func (fs *diskFS) WriteFile(path string, data string) error {
 	return nil
 }
 
+func (fs *diskFS) AppendFile(path string, data string) error {
+	fs.mu.Lock()
+	fs.userFiles[path] += data
+	fs.mu.Unlock()
+	return nil
+}
+
 func (fs *diskFS) Remove(path string) error {
 	fs.mu.Lock()
 	delete(fs.userFiles, path)

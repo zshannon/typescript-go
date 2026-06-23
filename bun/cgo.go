@@ -103,6 +103,13 @@ func (fs *InMemoryFS) WriteFile(path string, data string) error {
 	return nil
 }
 
+func (fs *InMemoryFS) AppendFile(path string, data string) error {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	fs.files[path] += data
+	return nil
+}
+
 func (fs *InMemoryFS) Remove(path string) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
@@ -167,9 +174,9 @@ func (fs *InMemoryFS) GetAccessibleEntries(path string) vfs.Entries {
 	return vfs.Entries{Files: files, Directories: dirs}
 }
 
-func (fs *InMemoryFS) Stat(path string) vfs.FileInfo   { return nil }
-func (fs *InMemoryFS) WalkDir(root string, walkFn vfs.WalkDirFunc) error { return nil }
-func (fs *InMemoryFS) Realpath(path string) string     { return path }
+func (fs *InMemoryFS) Stat(path string) vfs.FileInfo                               { return nil }
+func (fs *InMemoryFS) WalkDir(root string, walkFn vfs.WalkDirFunc) error           { return nil }
+func (fs *InMemoryFS) Realpath(path string) string                                 { return path }
 func (fs *InMemoryFS) Chtimes(path string, aTime time.Time, mTime time.Time) error { return nil }
 
 // HybridFS combines in-memory files with real filesystem for node_modules
@@ -251,6 +258,10 @@ func (h *HybridFS) ReadFile(path string) (string, bool) {
 
 func (h *HybridFS) WriteFile(path string, data string) error {
 	return h.memFS.WriteFile(path, data)
+}
+
+func (h *HybridFS) AppendFile(path string, data string) error {
+	return h.memFS.AppendFile(path, data)
 }
 
 func (h *HybridFS) Remove(path string) error {
@@ -456,8 +467,8 @@ func typeCheckCode(code string, fileName string, options *core.CompilerOptions, 
 
 	// Create program
 	program := compiler.NewProgram(compiler.ProgramOptions{
-		Config:           config,
-		Host:             host,
+		Config: config,
+		Host:   host,
 	})
 
 	ctx := context.Background()
@@ -783,8 +794,8 @@ func tsgo_typecheck_multiple(filesJSON *C.char, optionsJSON *C.char, projectDir 
 
 	// Create program
 	program := compiler.NewProgram(compiler.ProgramOptions{
-		Config:           config,
-		Host:             host,
+		Config: config,
+		Host:   host,
 	})
 
 	ctx := context.Background()
