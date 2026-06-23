@@ -1190,6 +1190,16 @@ func flushDeps(w http.ResponseWriter, req *http.Request) {
 func flushAllDeps(ctx context.Context) (flushDepsResult, error) {
 	var result flushDepsResult
 
+	finishFlush, err := beginDepFlushAll(ctx)
+	if err != nil {
+		return result, fmt.Errorf("wait for dependency flush: %w", err)
+	}
+	defer finishFlush()
+
+	if err := waitForAllDepCacheUse(ctx); err != nil {
+		return result, fmt.Errorf("wait for active dependency cache readers: %w", err)
+	}
+
 	if err := waitForAllDepInstalls(ctx); err != nil {
 		return result, fmt.Errorf("wait for in-flight dependency installs: %w", err)
 	}
@@ -1249,6 +1259,10 @@ func flushDepsHash(ctx context.Context, hash string) (flushDepsResult, error) {
 		return result, fmt.Errorf("wait for dependency flush %s: %w", hash, err)
 	}
 	defer finishFlush()
+
+	if err := waitForDepCacheUse(ctx, hash); err != nil {
+		return result, fmt.Errorf("wait for active dependency cache readers %s: %w", hash, err)
+	}
 
 	if err := waitForDepInstall(ctx, hash); err != nil {
 		return result, fmt.Errorf("wait for in-flight dependency install %s: %w", hash, err)

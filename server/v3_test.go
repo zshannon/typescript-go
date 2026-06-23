@@ -2928,6 +2928,122 @@ func TestFlushDepsHash_WaitsForInFlightUpload(t *testing.T) {
 	}
 }
 
+func TestFlushDepsHash_WaitsForActiveCacheUse(t *testing.T) {
+	mockS3 := setupTestServerWithMockS3(t)
+	resetDepInstallInFlightForTest(t)
+
+	lockContent := []byte("targeted-flush-active-cache-use")
+	hash := hashBunLock(lockContent)
+	depDir := filepath.Join(diskCachePath, "deps", hash)
+	if err := os.MkdirAll(filepath.Join(depDir, "node_modules", "zod"), 0755); err != nil {
+		t.Fatalf("seed dep dir: %v", err)
+	}
+	key := depsCacheS3Key(hash)
+	mockS3.files[key] = "cached"
+
+	pkg := &v3PackageJSON{Dependencies: map[string]string{"zod": "3.23.0"}}
+	path, release, err := resolveDepsForUse(context.Background(), lockContent, pkg, []byte(`{"dependencies":{"zod":"3.23.0"}}`))
+	if err != nil {
+		t.Fatalf("resolve deps: %v", err)
+	}
+	if path != depDir {
+		t.Fatalf("expected dep path %s, got %s", depDir, path)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := flushDepsHash(context.Background(), hash)
+		done <- err
+	}()
+
+	waitForFlushInFlightForTest(t, hash)
+
+	select {
+	case err := <-done:
+		t.Fatalf("flush returned before cache use was released: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	if _, err := os.Stat(depDir); err != nil {
+		t.Fatalf("dep dir should remain while cache use is active: %v", err)
+	}
+	if _, exists := mockS3.files[key]; !exists {
+		t.Fatalf("S3 deps tarball should remain while cache use is active")
+	}
+
+	release()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("flush after cache use release: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("flush did not finish after cache use was released")
+	}
+
+	if _, err := os.Stat(depDir); !os.IsNotExist(err) {
+		t.Fatalf("dep dir should be deleted after cache use is released")
+	}
+	if _, exists := mockS3.files[key]; exists {
+		t.Fatalf("S3 deps tarball should be deleted after cache use is released")
+	}
+}
+
+func TestFlushAllDeps_WaitsForActiveCacheUse(t *testing.T) {
+	setupTestServerWithMockS3(t)
+	resetDepInstallInFlightForTest(t)
+
+	lockContent := []byte("global-flush-active-cache-use")
+	hash := hashBunLock(lockContent)
+	depDir := filepath.Join(diskCachePath, "deps", hash)
+	if err := os.MkdirAll(filepath.Join(depDir, "node_modules", "zod"), 0755); err != nil {
+		t.Fatalf("seed dep dir: %v", err)
+	}
+
+	pkg := &v3PackageJSON{Dependencies: map[string]string{"zod": "3.23.0"}}
+	path, release, err := resolveDepsForUse(context.Background(), lockContent, pkg, []byte(`{"dependencies":{"zod":"3.23.0"}}`))
+	if err != nil {
+		t.Fatalf("resolve deps: %v", err)
+	}
+	if path != depDir {
+		t.Fatalf("expected dep path %s, got %s", depDir, path)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := flushAllDeps(context.Background())
+		done <- err
+	}()
+
+	waitForFlushAllInFlightForTest(t)
+
+	select {
+	case err := <-done:
+		t.Fatalf("global flush returned before cache use was released: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	if _, err := os.Stat(depDir); err != nil {
+		t.Fatalf("dep dir should remain while cache use is active: %v", err)
+	}
+
+	release()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("global flush after cache use release: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("global flush did not finish after cache use was released")
+	}
+
+	if _, err := os.Stat(filepath.Join(diskCachePath, "deps")); !os.IsNotExist(err) {
+		t.Fatalf("deps dir should be deleted after cache use is released")
+	}
+}
+
 func TestResolveDeps_WaitsForTargetedFlush(t *testing.T) {
 	mockS3 := setupTestServerWithMockS3(t)
 	resetDepInstallInFlightForTest(t)
@@ -2989,6 +3105,50 @@ func TestResolveDeps_WaitsForTargetedFlush(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("flush did not finish after in-flight upload completed")
 	}
+}
+
+func TestResolveDeps_WaitsForInFlightBeforeDiskHit(t *testing.T) {
+	setupTestServerWithMockS3(t)
+	resetDepInstallInFlightForTest(t)
+
+	lockContent := []byte("resolve-waits-for-inflight-before-disk-hit")
+	hash := hashBunLock(lockContent)
+	depDir := filepath.Join(diskCachePath, "deps", hash)
+	if err := os.MkdirAll(filepath.Join(depDir, "node_modules", "zod"), 0755); err != nil {
+		t.Fatalf("seed partial dep dir: %v", err)
+	}
+
+	inflight := newDepInstallResult()
+	inflight.path = depDir
+	depInstallMu.Lock()
+	depInstallInFlight[hash] = inflight
+	depInstallMu.Unlock()
+
+	resolveDone := make(chan error, 1)
+	go func() {
+		pkg := &v3PackageJSON{Dependencies: map[string]string{"zod": "3.23.0"}}
+		_, err := resolveDeps(context.Background(), lockContent, pkg, []byte(`{"dependencies":{"zod":"3.23.0"}}`))
+		resolveDone <- err
+	}()
+
+	select {
+	case err := <-resolveDone:
+		t.Fatalf("resolveDeps returned before in-flight deps were ready: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	close(inflight.ready)
+
+	select {
+	case err := <-resolveDone:
+		if err != nil {
+			t.Fatalf("resolveDeps after in-flight ready: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("resolveDeps did not finish after in-flight deps became ready")
+	}
+
+	close(inflight.done)
 }
 
 func TestCloseDepInstallResult_RemovesEntryBeforeWakingWaiters(t *testing.T) {
@@ -3158,14 +3318,23 @@ func seedDepsTarball(t *testing.T, mockS3 *MockS3Client, key string, name string
 func resetDepInstallInFlightForTest(t *testing.T) {
 	t.Helper()
 	depInstallMu.Lock()
+	previousCacheUseDone := depCacheUseDone
+	previousCacheUseCounts := depCacheUseCounts
+	previousFlushAll := depFlushAllInFlight
 	previousInstalls := depInstallInFlight
 	previousFlushes := depFlushInFlight
+	depCacheUseDone = make(map[string]chan struct{})
+	depCacheUseCounts = make(map[string]int)
+	depFlushAllInFlight = nil
 	depInstallInFlight = make(map[string]*depInstallResult)
 	depFlushInFlight = make(map[string]chan struct{})
 	depInstallMu.Unlock()
 
 	t.Cleanup(func() {
 		depInstallMu.Lock()
+		depCacheUseDone = previousCacheUseDone
+		depCacheUseCounts = previousCacheUseCounts
+		depFlushAllInFlight = previousFlushAll
 		depInstallInFlight = previousInstalls
 		depFlushInFlight = previousFlushes
 		depInstallMu.Unlock()
@@ -3190,6 +3359,29 @@ func waitForFlushInFlightForTest(t *testing.T, hash string) {
 		select {
 		case <-deadline:
 			t.Fatal("flush did not mark hash as in-flight")
+		case <-ticker.C:
+		}
+	}
+}
+
+func waitForFlushAllInFlightForTest(t *testing.T) {
+	t.Helper()
+
+	deadline := time.After(time.Second)
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		depInstallMu.Lock()
+		exists := depFlushAllInFlight != nil
+		depInstallMu.Unlock()
+		if exists {
+			return
+		}
+
+		select {
+		case <-deadline:
+			t.Fatal("global flush did not mark deps as in-flight")
 		case <-ticker.C:
 		}
 	}

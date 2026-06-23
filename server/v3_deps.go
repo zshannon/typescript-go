@@ -37,9 +37,12 @@ type depInstallResult struct {
 }
 
 var (
-	depInstallMu       sync.Mutex
-	depInstallInFlight = make(map[string]*depInstallResult)
-	depFlushInFlight   = make(map[string]chan struct{})
+	depInstallMu        sync.Mutex
+	depCacheUseDone     = make(map[string]chan struct{})
+	depCacheUseCounts   = make(map[string]int)
+	depFlushAllInFlight chan struct{}
+	depInstallInFlight  = make(map[string]*depInstallResult)
+	depFlushInFlight    = make(map[string]chan struct{})
 )
 
 func newDepInstallResult() *depInstallResult {
@@ -74,6 +77,14 @@ func depsInstallTempRoot() string {
 //
 // Concurrent requests for the same hash are deduplicated.
 func resolveDeps(ctx context.Context, lockContent []byte, pkg *v3PackageJSON, rawPackageJSON []byte) (string, error) {
+	path, release, err := resolveDepsForUse(ctx, lockContent, pkg, rawPackageJSON)
+	if release != nil {
+		release()
+	}
+	return path, err
+}
+
+func resolveDepsForUse(ctx context.Context, lockContent []byte, pkg *v3PackageJSON, rawPackageJSON []byte) (string, func(), error) {
 	ctx, span := startSpan(ctx, "fly_tsgo.deps.resolve",
 		attribute.Int("fly_tsgo.deps.resolve_s3.count", len(pkg.ResolveS3)),
 	)
@@ -82,26 +93,19 @@ func resolveDeps(ctx context.Context, lockContent []byte, pkg *v3PackageJSON, ra
 	hash := hashBunLock(lockContent)
 	depDir := depsCacheDir(hash)
 
-	if err := waitForDepFlush(ctx, hash); err != nil {
+	release, err := beginDepCacheUse(ctx, hash)
+	if err != nil {
 		recordSpanError(span, "err-deps-flush-wait", err)
-		return "", err
+		return "", nil, err
 	}
+	keepCacheUse := false
+	defer func() {
+		if !keepCacheUse {
+			release()
+		}
+	}()
 
-	// Tier 1: local disk check
-	nmDir := filepath.Join(depDir, "node_modules")
-	if _, err := os.Stat(nmDir); err == nil {
-		depCacheLookups.WithLabelValues("disk_hit").Inc()
-		span.SetAttributes(attribute.String("fly_tsgo.deps.cache.result", "disk_hit"))
-		// Touch mtime for LRU eviction tracking
-		now := time.Now()
-		_ = os.Chtimes(depDir, now, now)
-		return depDir, nil
-	}
-
-	// Concurrency dedup: only one goroutine does the install/download per hash
-	depInstallMu.Lock()
-	if inflight, ok := depInstallInFlight[hash]; ok {
-		depInstallMu.Unlock()
+	waitForInflight := func(inflight *depInstallResult) (string, error) {
 		// Wait until the dependency directory is usable. The full lifecycle may
 		// continue while the cache tarball uploads in the background.
 		if err := waitForDepInstallReady(ctx, inflight); err != nil {
@@ -113,7 +117,49 @@ func resolveDeps(ctx context.Context, lockContent []byte, pkg *v3PackageJSON, ra
 			attribute.Bool("fly_tsgo.deps.wait_inflight.success", inflight.err == nil),
 		)
 		recordSpanError(span, "err-deps-inflight", inflight.err)
-		return inflight.path, inflight.err
+		if inflight.err != nil {
+			return "", inflight.err
+		}
+		return inflight.path, nil
+	}
+
+	// Check active publishers before trusting disk. S3 extraction and copy
+	// fallback publish incrementally, so a visible node_modules directory is
+	// not complete while an in-flight result exists for the same hash.
+	depInstallMu.Lock()
+	inflight := depInstallInFlight[hash]
+	depInstallMu.Unlock()
+	if inflight != nil {
+		path, err := waitForInflight(inflight)
+		if err != nil {
+			return "", nil, err
+		}
+		keepCacheUse = true
+		return path, release, nil
+	}
+
+	// Tier 1: local disk check
+	nmDir := filepath.Join(depDir, "node_modules")
+	if _, err := os.Stat(nmDir); err == nil {
+		depCacheLookups.WithLabelValues("disk_hit").Inc()
+		span.SetAttributes(attribute.String("fly_tsgo.deps.cache.result", "disk_hit"))
+		// Touch mtime for LRU eviction tracking
+		now := time.Now()
+		_ = os.Chtimes(depDir, now, now)
+		keepCacheUse = true
+		return depDir, release, nil
+	}
+
+	// Concurrency dedup: only one goroutine does the install/download per hash
+	depInstallMu.Lock()
+	if inflight, ok := depInstallInFlight[hash]; ok {
+		depInstallMu.Unlock()
+		path, err := waitForInflight(inflight)
+		if err != nil {
+			return "", nil, err
+		}
+		keepCacheUse = true
+		return path, release, nil
 	}
 	result := newDepInstallResult()
 	depInstallInFlight[hash] = result
@@ -146,7 +192,11 @@ func resolveDeps(ctx context.Context, lockContent []byte, pkg *v3PackageJSON, ra
 	close(result.ready)
 	finishDepInstallAsync(ctx, hash, result, uploadAfterReady)
 
-	return path, err
+	if err != nil {
+		return "", nil, err
+	}
+	keepCacheUse = true
+	return path, release, nil
 }
 
 func finishDepInstallAsync(ctx context.Context, hash string, result *depInstallResult, uploadAfterReady bool) {
@@ -200,9 +250,64 @@ func waitForDepInstall(ctx context.Context, hash string) error {
 	return waitForDepInstallResult(ctx, inflight)
 }
 
+func beginDepCacheUse(ctx context.Context, hash string) (func(), error) {
+	for {
+		depInstallMu.Lock()
+		if done := depFlushAllInFlight; done != nil {
+			depInstallMu.Unlock()
+			if err := waitForClosed(ctx, done); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if done := depFlushInFlight[hash]; done != nil {
+			depInstallMu.Unlock()
+			if err := waitForClosed(ctx, done); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		depCacheUseCounts[hash]++
+		released := false
+		depInstallMu.Unlock()
+
+		return func() {
+			depInstallMu.Lock()
+			if released {
+				depInstallMu.Unlock()
+				return
+			}
+			released = true
+
+			count := depCacheUseCounts[hash] - 1
+			var done chan struct{}
+			if count <= 0 {
+				delete(depCacheUseCounts, hash)
+				done = depCacheUseDone[hash]
+				delete(depCacheUseDone, hash)
+			} else {
+				depCacheUseCounts[hash] = count
+			}
+			depInstallMu.Unlock()
+
+			if done != nil {
+				close(done)
+			}
+		}, nil
+	}
+}
+
 func beginDepFlush(ctx context.Context, hash string) (func(), error) {
 	for {
 		depInstallMu.Lock()
+		if done := depFlushAllInFlight; done != nil {
+			depInstallMu.Unlock()
+			if err := waitForClosed(ctx, done); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		if done, ok := depFlushInFlight[hash]; ok {
 			depInstallMu.Unlock()
 			if err := waitForClosed(ctx, done); err != nil {
@@ -229,12 +334,82 @@ func beginDepFlush(ctx context.Context, hash string) (func(), error) {
 	}
 }
 
-func waitForDepFlush(ctx context.Context, hash string) error {
+func beginDepFlushAll(ctx context.Context) (func(), error) {
 	for {
 		depInstallMu.Lock()
-		done := depFlushInFlight[hash]
+		if done := depFlushAllInFlight; done != nil {
+			depInstallMu.Unlock()
+			if err := waitForClosed(ctx, done); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		var activeFlushDone chan struct{}
+		for _, done := range depFlushInFlight {
+			activeFlushDone = done
+			break
+		}
+		if activeFlushDone != nil {
+			depInstallMu.Unlock()
+			if err := waitForClosed(ctx, activeFlushDone); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		done := make(chan struct{})
+		depFlushAllInFlight = done
+		depInstallMu.Unlock()
+
+		return func() {
+			depInstallMu.Lock()
+			current := depFlushAllInFlight
+			if current == done {
+				depFlushAllInFlight = nil
+			}
+			depInstallMu.Unlock()
+			if current == done {
+				close(done)
+			}
+		}, nil
+	}
+}
+
+func waitForAllDepCacheUse(ctx context.Context) error {
+	for {
+		depInstallMu.Lock()
+		var done chan struct{}
+		for hash, count := range depCacheUseCounts {
+			if count > 0 {
+				done = depCacheUseDone[hash]
+				if done == nil {
+					done = make(chan struct{})
+					depCacheUseDone[hash] = done
+				}
+				break
+			}
+		}
 		depInstallMu.Unlock()
 		if done == nil {
+			return nil
+		}
+		if err := waitForClosed(ctx, done); err != nil {
+			return err
+		}
+	}
+}
+
+func waitForDepCacheUse(ctx context.Context, hash string) error {
+	for {
+		depInstallMu.Lock()
+		count := depCacheUseCounts[hash]
+		done := depCacheUseDone[hash]
+		if count > 0 && done == nil {
+			done = make(chan struct{})
+			depCacheUseDone[hash] = done
+		}
+		depInstallMu.Unlock()
+		if count == 0 {
 			return nil
 		}
 		if err := waitForClosed(ctx, done); err != nil {
