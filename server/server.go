@@ -1263,6 +1263,7 @@ func flushDepsHash(ctx context.Context, hash string) (flushDepsResult, error) {
 		}); err != nil {
 			result.s3DeleteErrors++
 			log.Printf("[FLUSH] Failed to delete S3 object %s: %v", key, err)
+			return result, fmt.Errorf("delete S3 deps tarball %s: %w", key, err)
 		} else {
 			result.s3Deleted++
 		}

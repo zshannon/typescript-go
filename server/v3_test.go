@@ -2968,6 +2968,56 @@ func TestPrewarmDeps_ResolvesDependencyCache(t *testing.T) {
 	}
 }
 
+func TestPrewarmDeps_FailsWhenTargetedFlushCannotDeleteS3(t *testing.T) {
+	mockS3 := setupTestServerWithMockS3(t)
+
+	lockContent := []byte("prewarm-flush-s3-delete-error-lockfile")
+	hash := hashBunLock(lockContent)
+	key := depsCacheS3Key(hash)
+	seedDepsTarball(t, mockS3, key, "node_modules/zod/index.js", []byte("module.exports = {}"))
+	mockS3.deleteObjectErrors[key] = fmt.Errorf("delete denied")
+
+	staleDiskFile := filepath.Join(diskCachePath, "deps", hash, "node_modules", "zod", "index.js")
+	if err := os.MkdirAll(filepath.Dir(staleDiskFile), 0755); err != nil {
+		t.Fatalf("seed disk cache dir: %v", err)
+	}
+	if err := os.WriteFile(staleDiskFile, []byte("module.exports = { stale: true }"), 0644); err != nil {
+		t.Fatalf("seed disk cache file: %v", err)
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("/bun.lock", string(lockContent)); err != nil {
+		t.Fatalf("write bun.lock field: %v", err)
+	}
+	if err := writer.WriteField("/package.json", `{"dependencies":{"zod":"3.23.0"}}`); err != nil {
+		t.Fatalf("write package.json field: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v3/prewarm-deps?flush=true", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	prewarmDeps(w, req)
+
+	resp := w.Result()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", resp.StatusCode, string(respBody))
+	}
+	if !strings.Contains(string(respBody), "failed to flush deps") {
+		t.Fatalf("expected flush failure response, got: %s", string(respBody))
+	}
+	if _, exists := mockS3.files[key]; !exists {
+		t.Fatalf("S3 deps tarball should remain when delete fails")
+	}
+	if _, err := os.Stat(staleDiskFile); !os.IsNotExist(err) {
+		t.Fatalf("disk cache should stay empty instead of rehydrating stale S3 deps")
+	}
+}
+
 func seedDepsTarball(t *testing.T, mockS3 *MockS3Client, key string, name string, content []byte) {
 	t.Helper()
 
