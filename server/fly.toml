@@ -1,0 +1,42 @@
+# Fly app configuration for flick-staging-tsgo.
+# The Docker image publish workflow deploys this app after pushing ghcr.io/zshannon/typescript-go/server:latest.
+
+app = 'flick-staging-tsgo'
+primary_region = 'sjc'
+
+[build]
+image = "ghcr.io/zshannon/typescript-go/server:latest"
+
+[env]
+AWS_ENDPOINT_URL_S3 = "https://t3.storage.dev"
+AWS_REGION = "auto"
+DISK_CACHE_PATH = "/data/cache"
+S3_BUCKET = "fly-tsgo-node-modules"
+
+[[mounts]]
+destination = "/data/cache"
+source = "cache_data"
+
+[http_service]
+internal_port = 8080
+force_https = true
+auto_stop_machines = 'suspend'
+auto_start_machines = true
+min_machines_running = 0
+processes = ['app']
+idle_timeout = '10m'
+
+[[http_service.checks]]
+interval = "1s"
+timeout = "1s"
+grace_period = "5s"
+method = "GET"
+path = "/health"
+
+[[vm]]
+size = 'performance-2x'
+memory = 4096
+
+[metrics]
+port = 9091
+path = "/metrics"
