@@ -47,6 +47,20 @@ Compiles and bundles the project using esbuild. Entry point is read from `packag
 **Query Parameters:**
 - `skip_typecheck=true` — skip the typecheck step, compile only
 
+#### `POST /v3/flush-deps`
+
+Flushes cached v3 dependency trees.
+
+**Query Parameters:**
+- `lock_hash=<sha256>` — flush only the dependency cache for this `bun.lock` hash. Without this parameter, all dependency caches are flushed.
+
+#### `POST /v3/prewarm-deps`
+
+Resolves and warms the dependency cache for an uploaded `package.json` and `bun.lock`. The request uses the same multipart file format as `/v3/typecheck` and `/v3/compile`, but source files are not required.
+
+**Query Parameters:**
+- `flush=true` — first flush the dependency cache for the uploaded `bun.lock` hash, then resolve it again.
+
 #### Request Format
 
 `Content-Type: multipart/form-data`

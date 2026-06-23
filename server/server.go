@@ -121,6 +121,12 @@ type HealthResponse struct {
 	Version       string `json:"version"`
 }
 
+type flushDepsResult struct {
+	s3DeleteErrors int
+	s3Deleted      int
+	s3ListPages    int
+}
+
 type diskFS struct {
 	basePath     string            // e.g., "/data/cache/5.7.0"
 	hasUserFiles bool              // true if user provided multiple files (v2 mode)
@@ -326,6 +332,8 @@ type versionInfo struct {
 	name    string
 }
 
+const staleDepInstallTempMinAge = time.Hour
+
 // getVersionsByModTime returns version directories sorted by modification time (oldest first)
 func getVersionsByModTime(cachePath string) ([]versionInfo, error) {
 	entries, err := os.ReadDir(cachePath)
@@ -336,6 +344,14 @@ func getVersionsByModTime(cachePath string) ([]versionInfo, error) {
 	var versions []versionInfo
 	for _, entry := range entries {
 		if !entry.IsDir() {
+			continue
+		}
+		if entry.Name() == filepath.Base(depsInstallTempRoot()) {
+			tempVersions, err := getStaleDepInstallTempDirs(cachePath)
+			if err != nil {
+				log.Printf("[CLEANUP] Failed to list dependency install temp dirs: %v", err)
+			}
+			versions = append(versions, tempVersions...)
 			continue
 		}
 
@@ -377,6 +393,47 @@ func getVersionsByModTime(cachePath string) ([]versionInfo, error) {
 	sort.Slice(versions, func(i, j int) bool {
 		return versions[i].modTime.Before(versions[j].modTime)
 	})
+
+	return versions, nil
+}
+
+func getStaleDepInstallTempDirs(cachePath string) ([]versionInfo, error) {
+	tempRootName := filepath.Base(depsInstallTempRoot())
+	tempRoot := filepath.Join(cachePath, tempRootName)
+	entries, err := os.ReadDir(tempRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	activeTempDirs := activeDepInstallTempDirs()
+	staleBefore := time.Now().Add(-staleDepInstallTempMinAge)
+	versions := make([]versionInfo, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		tempDir := filepath.Join(tempRoot, entry.Name())
+		if _, active := activeTempDirs[filepath.Clean(tempDir)]; active {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(staleBefore) {
+			continue
+		}
+
+		versions = append(versions, versionInfo{
+			modTime: info.ModTime(),
+			name:    filepath.Join(tempRootName, entry.Name()),
+		})
+	}
 
 	return versions, nil
 }
@@ -1093,53 +1150,93 @@ func flushDeps(w http.ResponseWriter, req *http.Request) {
 	ctx, span := startSpan(req.Context(), "fly_tsgo.deps.flush")
 	defer span.End()
 
-	// Clear in-flight map
-	depInstallMu.Lock()
-	clear(depInstallInFlight)
-	depInstallMu.Unlock()
+	lockHash := req.URL.Query().Get("lock_hash")
+	if lockHash == "" {
+		lockHash = req.URL.Query().Get("hash")
+	}
+	if lockHash != "" && !isSHA256Hex(lockHash) {
+		http.Error(w, "lock_hash must be a 64-character lowercase hex SHA-256 digest", http.StatusBadRequest)
+		return
+	}
 
-	// Clear disk cache
-	depsPath := filepath.Join(diskCachePath, "deps")
-	if err := os.RemoveAll(depsPath); err != nil {
-		recordSpanError(span, "err-flush-deps-remove-disk", err)
-		log.Printf("[FLUSH] Failed to remove %s: %v", depsPath, err)
+	var result flushDepsResult
+	var err error
+	if lockHash == "" {
+		result, err = flushAllDeps(ctx)
+	} else {
+		span.SetAttributes(attribute.String("fly_tsgo.deps.lock_hash", lockHash))
+		result, err = flushDepsHash(ctx, lockHash)
+	}
+	if err != nil {
+		recordSpanError(span, "err-flush-deps", err)
 		http.Error(w, fmt.Sprintf("failed to flush deps: %v", err), http.StatusInternalServerError)
 		return
 	}
+
+	span.SetAttributes(
+		attribute.Int("fly_tsgo.deps.flush.s3_deleted.count", result.s3Deleted),
+		attribute.Int("fly_tsgo.deps.flush.s3_delete_errors.count", result.s3DeleteErrors),
+		attribute.Int("fly_tsgo.deps.flush.s3_list_pages.count", result.s3ListPages),
+	)
+
+	w.Header().Set("Content-Type", "application/json")
+	response := map[string]string{"status": "flushed"}
+	if lockHash != "" {
+		response["lock_hash"] = lockHash
+	}
+	json.NewEncoder(w).Encode(response)
+}
+
+func flushAllDeps(ctx context.Context) (flushDepsResult, error) {
+	var result flushDepsResult
+
+	finishFlush, err := beginDepFlushAll(ctx)
+	if err != nil {
+		return result, fmt.Errorf("wait for dependency flush: %w", err)
+	}
+	defer finishFlush()
+
+	if err := waitForAllDepCacheUse(ctx); err != nil {
+		return result, fmt.Errorf("wait for active dependency cache readers: %w", err)
+	}
+
+	if err := waitForAllDepInstalls(ctx); err != nil {
+		return result, fmt.Errorf("wait for in-flight dependency installs: %w", err)
+	}
+
+	depsPath := filepath.Join(diskCachePath, "deps")
+	if err := os.RemoveAll(depsPath); err != nil {
+		log.Printf("[FLUSH] Failed to remove %s: %v", depsPath, err)
+		return result, fmt.Errorf("remove disk deps cache: %w", err)
+	}
 	log.Printf("[FLUSH] Cleared disk deps cache at %s", depsPath)
 
-	// Clear S3 deps tarballs
 	if s3Client != nil {
-		var deleted int
-		var deleteErrors int
-		var listPages int
 		var continuationToken *string
 		for {
 			input := &s3.ListObjectsV2Input{
 				Bucket: aws.String(s3Bucket),
-				Prefix: aws.String("deps/"),
+				Prefix: aws.String(depsS3Prefix),
 			}
 			if continuationToken != nil {
 				input.ContinuationToken = continuationToken
 			}
 			page, err := s3Client.ListObjectsV2(ctx, input)
 			if err != nil {
-				recordSpanError(span, "err-flush-deps-list-s3", err)
 				log.Printf("[FLUSH] Failed to list S3 deps: %v", err)
 				break
 			}
-			listPages++
+			result.s3ListPages++
 			for _, obj := range page.Contents {
 				if obj.Key != nil {
 					if _, err := s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
 						Bucket: aws.String(s3Bucket),
 						Key:    obj.Key,
 					}); err != nil {
-						deleteErrors++
-						recordSpanError(span, "err-flush-deps-delete-s3", err)
+						result.s3DeleteErrors++
 						log.Printf("[FLUSH] Failed to delete S3 object %s: %v", *obj.Key, err)
 					} else {
-						deleted++
+						result.s3Deleted++
 					}
 				}
 			}
@@ -1148,17 +1245,127 @@ func flushDeps(w http.ResponseWriter, req *http.Request) {
 			}
 			continuationToken = page.NextContinuationToken
 		}
-		log.Printf("[FLUSH] Deleted %d S3 deps tarballs", deleted)
+		log.Printf("[FLUSH] Deleted %d S3 deps tarballs", result.s3Deleted)
+	}
+
+	return result, nil
+}
+
+func flushDepsHash(ctx context.Context, hash string) (flushDepsResult, error) {
+	var result flushDepsResult
+
+	finishFlush, err := beginDepFlush(ctx, hash)
+	if err != nil {
+		return result, fmt.Errorf("wait for dependency flush %s: %w", hash, err)
+	}
+	defer finishFlush()
+
+	if err := waitForDepCacheUse(ctx, hash); err != nil {
+		return result, fmt.Errorf("wait for active dependency cache readers %s: %w", hash, err)
+	}
+
+	if err := waitForDepInstall(ctx, hash); err != nil {
+		return result, fmt.Errorf("wait for in-flight dependency install %s: %w", hash, err)
+	}
+
+	depDir := depsCacheDir(hash)
+	if err := os.RemoveAll(depDir); err != nil {
+		log.Printf("[FLUSH] Failed to remove %s: %v", depDir, err)
+		return result, fmt.Errorf("remove disk deps cache for %s: %w", hash, err)
+	}
+	log.Printf("[FLUSH] Cleared disk deps cache at %s", depDir)
+
+	if s3Client != nil {
+		key := depsCacheS3Key(hash)
+		if _, err := s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: aws.String(s3Bucket),
+			Key:    aws.String(key),
+		}); err != nil {
+			result.s3DeleteErrors++
+			log.Printf("[FLUSH] Failed to delete S3 object %s: %v", key, err)
+			return result, fmt.Errorf("delete S3 deps tarball %s: %w", key, err)
+		} else {
+			result.s3Deleted++
+		}
+	}
+
+	return result, nil
+}
+
+func isSHA256Hex(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, ch := range value {
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func prewarmDeps(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx, span := startSpan(req.Context(), "fly_tsgo.deps.prewarm")
+	defer span.End()
+
+	files, err := parseV3Multipart(req.Body, req.Header.Get("Content-Type"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	pkg, err := parsePackageJSON(files["/package.json"])
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	lockContent := files["/bun.lock"]
+	if len(lockContent) == 0 {
+		http.Error(w, "missing required file: /bun.lock", http.StatusBadRequest)
+		return
+	}
+
+	lockHash := hashBunLock(lockContent)
+	span.SetAttributes(attribute.String("fly_tsgo.deps.lock_hash", lockHash))
+
+	flushed := req.URL.Query().Get("flush") == "true"
+	if flushed {
+		result, err := flushDepsHash(ctx, lockHash)
+		if err != nil {
+			recordSpanError(span, "err-prewarm-flush-deps", err)
+			http.Error(w, fmt.Sprintf("failed to flush deps: %v", err), http.StatusInternalServerError)
+			return
+		}
 		span.SetAttributes(
-			attribute.Int("fly_tsgo.deps.flush.s3_deleted.count", deleted),
-			attribute.Int("fly_tsgo.deps.flush.s3_delete_errors.count", deleteErrors),
-			attribute.Int("fly_tsgo.deps.flush.s3_list_pages.count", listPages),
+			attribute.Int("fly_tsgo.deps.flush.s3_deleted.count", result.s3Deleted),
+			attribute.Int("fly_tsgo.deps.flush.s3_delete_errors.count", result.s3DeleteErrors),
 		)
 	}
 
+	path, err := resolveDeps(depResolveContext(ctx), lockContent, pkg, files["/package.json"])
+	if err != nil {
+		recordSpanError(span, "err-prewarm-resolve-deps", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":     "dependency installation failed: " + err.Error(),
+			"lock_hash": lockHash,
+		})
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"status": "flushed",
+	json.NewEncoder(w).Encode(map[string]any{
+		"flushed":   flushed,
+		"lock_hash": lockHash,
+		"path":      path,
+		"status":    "prewarmed",
 	})
 }
 
@@ -1723,6 +1930,7 @@ func main() {
 	registerRoute(mux, "/v2/typecheck", authMiddleware(typecheckV2))
 	registerRoute(mux, "/v3/compile", authMiddleware(compileV3Handler))
 	registerRoute(mux, "/v3/flush-deps", authMiddleware(flushDeps))
+	registerRoute(mux, "/v3/prewarm-deps", authMiddleware(prewarmDeps))
 	registerRoute(mux, "/v3/typecheck", authMiddleware(typecheckV3Handler))
 
 	// Start Prometheus metrics server on port 9091
@@ -1737,7 +1945,7 @@ func main() {
 	// Start server in goroutine
 	go func() {
 		log.Printf("Server ready! Listening on :8080...")
-		log.Printf("Endpoints: /, /build, /health, /sync, /typecheck, /v2/build, /v2/typecheck, /v3/compile, /v3/typecheck")
+		log.Printf("Endpoints: /, /build, /health, /sync, /typecheck, /v2/build, /v2/typecheck, /v3/compile, /v3/flush-deps, /v3/prewarm-deps, /v3/typecheck")
 		log.Printf("Metrics available at :9091/metrics")
 
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

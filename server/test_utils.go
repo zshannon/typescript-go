@@ -16,15 +16,17 @@ import (
 
 // MockS3Client implements a mock S3 client for testing with in-memory files
 type MockS3Client struct {
-	files            map[string]string
-	getObjectCalls   int
-	listObjectsCalls int
-	readFileCalls    []string // Track all file reads for testing
+	deleteObjectErrors map[string]error
+	files              map[string]string
+	getObjectCalls     int
+	listObjectsCalls   int
+	readFileCalls      []string // Track all file reads for testing
 }
 
 func NewMockS3Client() *MockS3Client {
 	m := &MockS3Client{
-		files: make(map[string]string),
+		deleteObjectErrors: make(map[string]error),
+		files:              make(map[string]string),
 	}
 	// Pre-populate with auto-generated package files so ListObjectsV2 returns them
 	m.prePopulatePackages("0.0.4")
@@ -277,6 +279,9 @@ func (m *MockS3Client) ListObjectsV2(ctx context.Context, params *s3.ListObjects
 
 func (m *MockS3Client) DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error) {
 	key := aws.ToString(params.Key)
+	if err := m.deleteObjectErrors[key]; err != nil {
+		return nil, err
+	}
 	delete(m.files, key)
 	return &s3.DeleteObjectOutput{}, nil
 }
@@ -361,6 +366,7 @@ func (m *FileBasedMockS3Client) ListObjectsV2(ctx context.Context, params *s3.Li
 
 		return nil
 	})
+
 	if err != nil {
 		return nil, err
 	}

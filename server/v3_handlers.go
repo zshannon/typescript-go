@@ -26,7 +26,7 @@ func typecheckV3Handler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	lockContent := files["/bun.lock"]
-	depPath, err := resolveDeps(depResolveContext(ctx), lockContent, pkg, files["/package.json"])
+	depPath, releaseDeps, err := resolveDepsForUse(depResolveContext(ctx), lockContent, pkg, files["/package.json"])
 	if err != nil {
 		log.Printf("[V3] Dep resolution failed: %v", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -36,6 +36,7 @@ func typecheckV3Handler(w http.ResponseWriter, req *http.Request) {
 		})
 		return
 	}
+	defer releaseDeps()
 	_ = depPath
 
 	var tsconfigRaw []byte
@@ -73,7 +74,7 @@ func compileV3Handler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	lockContent := files["/bun.lock"]
-	depPath, err := resolveDeps(depResolveContext(ctx), lockContent, pkg, files["/package.json"])
+	depPath, releaseDeps, err := resolveDepsForUse(depResolveContext(ctx), lockContent, pkg, files["/package.json"])
 	if err != nil {
 		log.Printf("[V3] Dep resolution failed: %v", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -83,6 +84,7 @@ func compileV3Handler(w http.ResponseWriter, req *http.Request) {
 		})
 		return
 	}
+	defer releaseDeps()
 	_ = depPath
 
 	var tsconfigRaw []byte
