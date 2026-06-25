@@ -104,7 +104,7 @@ jobs:
             --env "TSGO_AUTH_PUBLIC_KEY=$TSGO_AUTH_PUBLIC_KEY" \
             --tag tsgo \
             --tag exedev \
-            --comment "TSGo server ${GITHUB_SHA}" \
+            --comment="TSGo-${GITHUB_SHA}" \
             --json
 
           ssh -i ~/.ssh/exedev exe.dev share port "$VM_NAME" 8080
