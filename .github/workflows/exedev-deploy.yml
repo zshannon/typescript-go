@@ -77,6 +77,7 @@ jobs:
 
     steps:
       - name: Load TSGo deploy secrets
+        id: load_secrets
         uses: 1password/load-secrets-action@v4
         with:
           export-env: true
@@ -85,18 +86,21 @@ jobs:
           AWS_ENDPOINT_URL_S3: op://chci4awhcucoy66jgoombntpu4/FLY_TSGO_TIGRIS/AWS_ENDPOINT_URL_S3
           AWS_REGION: op://chci4awhcucoy66jgoombntpu4/FLY_TSGO_TIGRIS/AWS_REGION
           AWS_SECRET_ACCESS_KEY: op://chci4awhcucoy66jgoombntpu4/FLY_TSGO_TIGRIS/AWS_SECRET_ACCESS_KEY
-          EXE_DEV_SSH_PRIVATE_KEY: op://tsgo Production/EXE_DEV/private key
+          EXE_DEV_SSH_PRIVATE_KEY: op://tsgo Production/EXE_DEV/private key?ssh-format=openssh
           HONEYCOMB_API_KEY: op://chci4awhcucoy66jgoombntpu4/FLY_TSGO_HONEYCOMB/credential
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.ONEPASSWORD_SERVICE_ACCOUNT }}
           S3_BUCKET: op://chci4awhcucoy66jgoombntpu4/FLY_TSGO_TIGRIS/S3_BUCKET
           TSGO_AUTH_PUBLIC_KEY: op://chci4awhcucoy66jgoombntpu4/flick-staging-tsgo/public-key
 
-      - name: Configure SSH
+      - uses: webfactory/ssh-agent@v0.10.0
+        with:
+          log-public-key: false
+          ssh-private-key: ${{ steps.load_secrets.outputs.EXE_DEV_SSH_PRIVATE_KEY }}
+
+      - name: Configure SSH known hosts
         run: |
           set -euo pipefail
           install -d -m 700 ~/.ssh
-          printf '%s\n' "$EXE_DEV_SSH_PRIVATE_KEY" > ~/.ssh/exedev
-          chmod 600 ~/.ssh/exedev
           ssh-keyscan exe.dev >> ~/.ssh/known_hosts
 
       - name: Deploy VM
@@ -110,13 +114,13 @@ jobs:
           VM_NAME: ${{ inputs.vm_name }}
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/exedev exe.dev set-region "$EXEDEV_REGION"
+          ssh exe.dev set-region "$EXEDEV_REGION"
 
           if [[ "$REPLACE_EXISTING" == "true" ]]; then
-            ssh -i ~/.ssh/exedev exe.dev rm "$VM_NAME" || true
+            ssh exe.dev rm "$VM_NAME" || true
           fi
 
-          ssh -i ~/.ssh/exedev exe.dev new \
+          ssh exe.dev new \
             --name "$VM_NAME" \
             --image "$EXEDEV_IMAGE" \
             --registry-auth "$GHCR_REGISTRY_AUTH" \
@@ -137,5 +141,5 @@ jobs:
             --comment="TSGo-${GITHUB_SHA}" \
             --json
 
-          ssh -i ~/.ssh/exedev exe.dev share port "$VM_NAME" 8080
-          ssh -i ~/.ssh/exedev exe.dev share set-public "$VM_NAME"
+          ssh exe.dev share port "$VM_NAME" 8080
+          ssh exe.dev share set-public "$VM_NAME"
