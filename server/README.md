@@ -254,7 +254,7 @@ If `/tsconfig.json` is included in the upload, the server parses its `compilerOp
 |-------|--------|
 | `strict` | `true` / `false` |
 | `target` | `"es2020"`, `"es2021"`, `"es2022"`, `"es2023"`, `"es2024"`, `"es2025"`, `"esnext"` |
-| `module` | `"commonjs"`, `"esnext"`, `"nodenext"` |
+| `module` | `"commonjs"`, `"esnext"`, `"nodenext"`, `"preserve"` |
 | `moduleResolution` | `"bundler"`, `"nodenext"`, `"node"` |
 | `jsx` | `"react"`, `"react-jsx"`, `"react-jsxdev"`, `"preserve"` |
 | `jsxImportSource` | any string (e.g., `"@crayonnow/core"`, `"react"`) |
@@ -273,7 +273,7 @@ If absent, the server uses these defaults (matching the v2 hardcoded options):
     "isolatedModules": true,
     "jsx": "react-jsx",
     "lib": ["ES2022"],
-    "module": "commonjs",
+    "module": "preserve",
     "moduleResolution": "bundler",
     "noEmit": true,
     "resolveJsonModule": true,

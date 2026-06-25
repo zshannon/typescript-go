@@ -135,7 +135,7 @@ func buildV3BenchMultipart(files map[string]string, packageJSON string, tsconfig
 
 const benchPackageJSON = `{"main": "/index.tsx", "dependencies": {"@crayonnow/core": "1.0.0", "react": "18.0.0"}, "esbuild": {"bundle": true}}`
 
-var benchTsconfigRaw = []byte(`{"compilerOptions": {"lib": ["ES2022", "DOM"], "jsx": "react-jsx", "jsxImportSource": "@crayonnow/core", "module": "commonjs", "moduleResolution": "bundler", "skipLibCheck": true, "strict": true, "target": "es2022"}}`)
+var benchTsconfigRaw = []byte(`{"compilerOptions": {"lib": ["ES2022", "DOM"], "jsx": "react-jsx", "jsxImportSource": "@crayonnow/core", "module": "preserve", "moduleResolution": "bundler", "skipLibCheck": true, "strict": true, "target": "es2022"}}`)
 
 // Layer 1: Pure Compiler -- calls typecheckV3 directly
 func BenchmarkV3Typecheck(b *testing.B) {

@@ -17,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-// defaultCompilerOptions returns the default tsconfig options matching v2 hardcoded values.
+// defaultCompilerOptions returns the default tsconfig options for v3 typechecking.
 func defaultCompilerOptions() *core.CompilerOptions {
 	jsxImportSource := "@crayonnow/core"
 	return &core.CompilerOptions{
@@ -29,7 +29,7 @@ func defaultCompilerOptions() *core.CompilerOptions {
 		Jsx:                              core.JsxEmitReactJSX,
 		JsxImportSource:                  jsxImportSource,
 		Lib:                              []string{"ES2022"},
-		Module:                           core.ModuleKindCommonJS,
+		Module:                           core.ModuleKindPreserve,
 		ModuleResolution:                 core.ModuleResolutionKindBundler,
 		NoEmit:                           core.TSTrue,
 		ResolveJsonModule:                core.TSTrue,
@@ -113,6 +113,8 @@ func parseTSConfig(tsconfigRaw []byte) (*core.CompilerOptions, error) {
 		opts.Module = core.ModuleKindNodeNext
 	case "node16":
 		opts.Module = core.ModuleKindNode16
+	case "preserve":
+		opts.Module = core.ModuleKindPreserve
 	}
 
 	// ModuleResolution

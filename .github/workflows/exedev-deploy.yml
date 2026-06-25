@@ -1,0 +1,111 @@
+name: Deploy TSGo to exe.dev
+
+on:
+  workflow_dispatch:
+    inputs:
+      cpu:
+        default: '2'
+        description: exe.dev vCPU count
+        required: true
+      disk:
+        default: 10GB
+        description: exe.dev disk size
+        required: true
+      image:
+        default: ghcr.io/zshannon/typescript-go/server:latest
+        description: Container image to deploy
+        required: true
+      memory:
+        default: 2GB
+        description: exe.dev memory size
+        required: true
+      region:
+        default: lax
+        description: exe.dev region for new VMs
+        required: true
+      replace_existing:
+        default: false
+        description: Delete and recreate the named VM before deploying
+        required: true
+        type: boolean
+      vm_name:
+        default: tsgo-bench
+        description: exe.dev VM name
+        required: true
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      DISK_CACHE_PATH: /data/cache
+      GHCR_REGISTRY_AUTH: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
+      OTEL_SERVICE_NAME: fly-tsgo-exedev
+
+    steps:
+      - name: Load TSGo deploy secrets
+        uses: 1password/load-secrets-action@v4
+        with:
+          export-env: true
+        env:
+          AWS_ACCESS_KEY_ID: op://chci4awhcucoy66jgoombntpu4/FLY_TSGO_TIGRIS/AWS_ACCESS_KEY_ID
+          AWS_ENDPOINT_URL_S3: op://chci4awhcucoy66jgoombntpu4/FLY_TSGO_TIGRIS/AWS_ENDPOINT_URL_S3
+          AWS_REGION: op://chci4awhcucoy66jgoombntpu4/FLY_TSGO_TIGRIS/AWS_REGION
+          AWS_SECRET_ACCESS_KEY: op://chci4awhcucoy66jgoombntpu4/FLY_TSGO_TIGRIS/AWS_SECRET_ACCESS_KEY
+          EXE_DEV_SSH_PRIVATE_KEY: op://tsgo Production/EXE_DEV/private key
+          HONEYCOMB_API_KEY: op://chci4awhcucoy66jgoombntpu4/FLY_TSGO_HONEYCOMB/credential
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.ONEPASSWORD_SERVICE_ACCOUNT }}
+          S3_BUCKET: op://chci4awhcucoy66jgoombntpu4/FLY_TSGO_TIGRIS/S3_BUCKET
+          TSGO_AUTH_PUBLIC_KEY: op://chci4awhcucoy66jgoombntpu4/flick-staging-tsgo/public-key
+
+      - name: Configure SSH
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$EXE_DEV_SSH_PRIVATE_KEY" > ~/.ssh/exedev
+          chmod 600 ~/.ssh/exedev
+          ssh-keyscan exe.dev >> ~/.ssh/known_hosts
+
+      - name: Deploy VM
+        env:
+          EXEDEV_CPU: ${{ inputs.cpu }}
+          EXEDEV_DISK: ${{ inputs.disk }}
+          EXEDEV_IMAGE: ${{ inputs.image }}
+          EXEDEV_MEMORY: ${{ inputs.memory }}
+          EXEDEV_REGION: ${{ inputs.region }}
+          REPLACE_EXISTING: ${{ inputs.replace_existing }}
+          VM_NAME: ${{ inputs.vm_name }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/exedev exe.dev set-region "$EXEDEV_REGION"
+
+          if [[ "$REPLACE_EXISTING" == "true" ]]; then
+            ssh -i ~/.ssh/exedev exe.dev rm "$VM_NAME" || true
+          fi
+
+          ssh -i ~/.ssh/exedev exe.dev new \
+            --name "$VM_NAME" \
+            --image "$EXEDEV_IMAGE" \
+            --registry-auth "$GHCR_REGISTRY_AUTH" \
+            --cpu "$EXEDEV_CPU" \
+            --memory "$EXEDEV_MEMORY" \
+            --disk "$EXEDEV_DISK" \
+            --env "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" \
+            --env "AWS_ENDPOINT_URL_S3=$AWS_ENDPOINT_URL_S3" \
+            --env "AWS_REGION=$AWS_REGION" \
+            --env "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" \
+            --env "DISK_CACHE_PATH=$DISK_CACHE_PATH" \
+            --env "HONEYCOMB_API_KEY=$HONEYCOMB_API_KEY" \
+            --env "OTEL_SERVICE_NAME=$OTEL_SERVICE_NAME" \
+            --env "S3_BUCKET=$S3_BUCKET" \
+            --env "TSGO_AUTH_PUBLIC_KEY=$TSGO_AUTH_PUBLIC_KEY" \
+            --tag tsgo \
+            --tag exedev \
+            --comment="TSGo-${GITHUB_SHA}" \
+            --json
+
+          ssh -i ~/.ssh/exedev exe.dev share port "$VM_NAME" 8080
+          ssh -i ~/.ssh/exedev exe.dev share set-public "$VM_NAME"
