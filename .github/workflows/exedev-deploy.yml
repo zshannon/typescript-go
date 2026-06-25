@@ -80,7 +80,7 @@ jobs:
         id: load_secrets
         uses: 1password/load-secrets-action@v4
         with:
-          export-env: true
+          export-env: false
         env:
           AWS_ACCESS_KEY_ID: op://chci4awhcucoy66jgoombntpu4/FLY_TSGO_TIGRIS/AWS_ACCESS_KEY_ID
           AWS_ENDPOINT_URL_S3: op://chci4awhcucoy66jgoombntpu4/FLY_TSGO_TIGRIS/AWS_ENDPOINT_URL_S3
@@ -105,12 +105,19 @@ jobs:
 
       - name: Deploy VM
         env:
+          AWS_ACCESS_KEY_ID: ${{ steps.load_secrets.outputs.AWS_ACCESS_KEY_ID }}
+          AWS_ENDPOINT_URL_S3: ${{ steps.load_secrets.outputs.AWS_ENDPOINT_URL_S3 }}
+          AWS_REGION: ${{ steps.load_secrets.outputs.AWS_REGION }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.load_secrets.outputs.AWS_SECRET_ACCESS_KEY }}
           EXEDEV_CPU: ${{ inputs.cpu }}
           EXEDEV_DISK: ${{ inputs.disk }}
           EXEDEV_IMAGE: ${{ inputs.image }}
           EXEDEV_MEMORY: ${{ inputs.memory }}
           EXEDEV_REGION: ${{ inputs.region }}
+          HONEYCOMB_API_KEY: ${{ steps.load_secrets.outputs.HONEYCOMB_API_KEY }}
           REPLACE_EXISTING: ${{ inputs.replace_existing }}
+          S3_BUCKET: ${{ steps.load_secrets.outputs.S3_BUCKET }}
+          TSGO_AUTH_PUBLIC_KEY: ${{ steps.load_secrets.outputs.TSGO_AUTH_PUBLIC_KEY }}
           VM_NAME: ${{ inputs.vm_name }}
         run: |
           set -euo pipefail
