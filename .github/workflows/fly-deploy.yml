@@ -1,0 +1,61 @@
+name: Deploy TSGo to Fly
+
+on:
+  workflow_call:
+    inputs:
+      app:
+        default: flick-staging-tsgo
+        required: false
+        type: string
+      config:
+        default: server/fly.toml
+        required: false
+        type: string
+      image:
+        default: ghcr.io/zshannon/typescript-go/server:latest
+        required: false
+        type: string
+  workflow_dispatch:
+    inputs:
+      app:
+        default: flick-staging-tsgo
+        description: Fly app name
+        required: true
+      config:
+        default: server/fly.toml
+        description: Fly config path
+        required: true
+      image:
+        default: ghcr.io/zshannon/typescript-go/server:latest
+        description: Container image to deploy
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Load Fly deploy token
+        uses: 1password/load-secrets-action@v4
+        with:
+          export-env: true
+        env:
+          FLY_API_TOKEN: op://tsgo Production/FLY_API_KEY/credential
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.ONEPASSWORD_SERVICE_ACCOUNT }}
+
+      - name: Set up flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to Fly
+        run: |
+          flyctl deploy \
+            --app "${{ inputs.app }}" \
+            --config "${{ inputs.config }}" \
+            --image "${{ inputs.image }}" \
+            --yes

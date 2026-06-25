@@ -10,9 +10,10 @@ on:
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/docker.yml'
+      - '.github/workflows/exedev-deploy.yml'
+      - '.github/workflows/fly-deploy.yml'
 
 env:
-  FLY_APP: flick-staging-tsgo
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/server
 
@@ -138,31 +139,22 @@ jobs:
         run: |
           docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
 
-  deploy:
+  deploy-fly:
     needs: merge
-    runs-on: ubuntu-latest
+    uses: ./.github/workflows/fly-deploy.yml
     permissions:
       contents: read
+    secrets: inherit
+    with:
+      image: ghcr.io/zshannon/typescript-go/server:latest
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Load Fly deploy token
-        uses: 1password/load-secrets-action@v4
-        with:
-          export-env: true
-        env:
-          FLY_API_TOKEN: op://tsgo Production/FLY_API_KEY/credential
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.ONEPASSWORD_SERVICE_ACCOUNT }}
-
-      - name: Set up flyctl
-        uses: superfly/flyctl-actions/setup-flyctl@master
-
-      - name: Deploy to Fly
-        run: |
-          flyctl deploy \
-            --app "$FLY_APP" \
-            --config server/fly.toml \
-            --image "$REGISTRY/$IMAGE_NAME:latest" \
-            --yes
+  deploy-exedev:
+    needs: merge
+    uses: ./.github/workflows/exedev-deploy.yml
+    permissions:
+      contents: read
+      packages: read
+    secrets: inherit
+    with:
+      image: ghcr.io/zshannon/typescript-go/server:latest
+      replace_existing: true

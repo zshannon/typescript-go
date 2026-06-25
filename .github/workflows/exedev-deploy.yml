@@ -1,6 +1,36 @@
 name: Deploy TSGo to exe.dev
 
 on:
+  workflow_call:
+    inputs:
+      cpu:
+        default: '2'
+        required: false
+        type: string
+      disk:
+        default: 10GB
+        required: false
+        type: string
+      image:
+        default: ghcr.io/zshannon/typescript-go/server:latest
+        required: false
+        type: string
+      memory:
+        default: 2GB
+        required: false
+        type: string
+      region:
+        default: lax
+        required: false
+        type: string
+      replace_existing:
+        default: false
+        required: false
+        type: boolean
+      vm_name:
+        default: tsgo-bench
+        required: false
+        type: string
   workflow_dispatch:
     inputs:
       cpu:
@@ -42,7 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DISK_CACHE_PATH: /data/cache
-      GHCR_REGISTRY_AUTH: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
+      GHCR_REGISTRY_AUTH: ${{ github.actor }}:${{ github.token }}
       OTEL_SERVICE_NAME: fly-tsgo-exedev
 
     steps:
