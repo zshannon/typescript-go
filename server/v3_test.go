@@ -729,6 +729,111 @@ func TestTypecheckV3_TypeError(t *testing.T) {
 	}
 }
 
+func TestTypecheckV3PreserveBundlerKeepsPackageSelfReferenceIdentity(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "v3-typecheck-preserve-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+	oldDiskCachePath := diskCachePath
+	t.Cleanup(func() { diskCachePath = oldDiskCachePath })
+	diskCachePath = tmpDir
+
+	lockContent := []byte("preserve-self-reference-lock")
+	hash := hashBunLock(lockContent)
+	nmDir := filepath.Join(tmpDir, "deps", hash, "node_modules")
+	writeFile := func(path string, content string) {
+		t.Helper()
+		fullPath := filepath.Join(nmDir, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeFile("nominal/package.json", `{
+		"name": "nominal",
+		"version": "1.0.0",
+		"exports": {
+			".": {
+				"import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+				"require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+			}
+		}
+	}`)
+	writeFile("nominal/dist/index.d.ts", `export declare class FluidValue<T> { private readonly importBrand: T }
+export declare class SpringValue<T> extends FluidValue<T> {}`)
+	writeFile("nominal/dist/index.d.cts", `export declare class FluidValue<T> { private readonly requireBrand: T }
+export declare class SpringValue<T> extends FluidValue<T> {}`)
+	writeFile("nominal/dist/index.js", `export {}`)
+	writeFile("nominal/dist/index.cjs", `module.exports = {}`)
+
+	writeFile("pkg/package.json", `{
+		"name": "pkg",
+		"version": "1.0.0",
+		"exports": {
+			".": {
+				"import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+				"require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+			},
+			"./parrott": {
+				"import": { "types": "./dist/parrott/index.d.ts", "default": "./dist/parrott/index.js" },
+				"require": { "types": "./dist/parrott/index.d.cts", "default": "./dist/parrott/index.cjs" }
+			},
+			"./spring": {
+				"import": { "types": "./dist/spring.d.ts", "default": "./dist/spring.js" },
+				"require": { "types": "./dist/spring.d.cts", "default": "./dist/spring.cjs" }
+			}
+		}
+	}`)
+	writeFile("pkg/dist/index.d.ts", `import type { FluidValue } from 'nominal'
+export type Color = string | FluidValue<string>
+export interface TextProps { style?: { color?: Color } }`)
+	writeFile("pkg/dist/index.d.cts", `import type { FluidValue } from 'nominal'
+export type Color = string | FluidValue<string>
+export interface TextProps { style?: { color?: Color } }`)
+	writeFile("pkg/dist/spring.d.ts", `import type { SpringValue } from 'nominal'
+export declare function useSpring(): { color: SpringValue<string> }`)
+	writeFile("pkg/dist/spring.d.cts", `import type { SpringValue } from 'nominal'
+export declare function useSpring(): { color: SpringValue<string> }`)
+	writeFile("pkg/dist/parrott/index.d.ts", `export type { TitleProps } from './card'`)
+	writeFile("pkg/dist/parrott/index.d.cts", `export type { TitleProps } from './card'`)
+	writeFile("pkg/dist/parrott/card.d.ts", `import type * as Core from 'pkg'
+export type TitleProps = Core.TextProps`)
+	writeFile("pkg/dist/index.js", `export {}`)
+	writeFile("pkg/dist/index.cjs", `module.exports = {}`)
+	writeFile("pkg/dist/spring.js", `export function useSpring() { return {} }`)
+	writeFile("pkg/dist/spring.cjs", `exports.useSpring = function() { return {} }`)
+	writeFile("pkg/dist/parrott/index.js", `export {}`)
+	writeFile("pkg/dist/parrott/index.cjs", `module.exports = {}`)
+
+	files := map[string][]byte{
+		"/index.ts": []byte(`import type { TitleProps } from 'pkg/parrott'
+import { useSpring } from 'pkg/spring'
+
+const spring = useSpring()
+const props: TitleProps = { style: { color: spring.color } }
+
+export default props`),
+	}
+	tsconfigRaw := []byte(`{
+		"compilerOptions": {
+			"module": "preserve",
+			"moduleResolution": "bundler",
+			"skipLibCheck": true,
+			"strict": true,
+			"target": "ES2023"
+		}
+	}`)
+
+	response := typecheckV3(files, tsconfigRaw, lockContent)
+	if !response.Pass {
+		t.Fatalf("expected pass, got errors: %+v", response.Errors)
+	}
+}
+
 // Task 9: compileV3 and isExternal tests
 
 func TestCompileV3_SimpleBundle(t *testing.T) {
@@ -1810,6 +1915,7 @@ func TestParseTSConfig(t *testing.T) {
 			{"esnext", core.ModuleKindESNext},
 			{"node16", core.ModuleKindNode16},
 			{"nodenext", core.ModuleKindNodeNext},
+			{"preserve", core.ModuleKindPreserve},
 		}
 		for _, tc := range cases {
 			raw := []byte(fmt.Sprintf(`{"compilerOptions": {"module": "%s"}}`, tc.input))
