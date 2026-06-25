@@ -143,12 +143,18 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    env:
-      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+
+      - name: Load Fly deploy token
+        uses: 1password/load-secrets-action@v4
+        with:
+          export-env: true
+        env:
+          FLY_API_TOKEN: op://tsgo Production/FLY_API_KEY/credential
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.ONEPASSWORD_SERVICE_ACCOUNT }}
 
       - name: Set up flyctl
         uses: superfly/flyctl-actions/setup-flyctl@master
