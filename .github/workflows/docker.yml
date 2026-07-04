@@ -6,14 +6,10 @@ on:
       - main
     tags:
       - 'v*'
-    paths:
-      - 'server/**'
-      - 'internal/**'
-      - 'go.mod'
-      - 'go.sum'
-      - '.github/workflows/docker.yml'
-      - '.github/workflows/exedev-deploy.yml'
-      - '.github/workflows/fly-deploy.yml'
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
@@ -36,8 +32,62 @@ jobs:
         working-directory: server
         run: go test -v -count=1 ./...
 
-  build:
+  version:
     needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      create_tag: ${{ steps.version.outputs.create_tag }}
+      major_minor: ${{ steps.version.outputs.major_minor }}
+      version: ${{ steps.version.outputs.version }}
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Resolve server version
+        id: version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          set -euo pipefail
+
+          create_tag=false
+          if [[ "$REF_TYPE" == "tag" ]]; then
+            version="${REF_NAME#v}"
+            if [[ ! "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error::Tag $REF_NAME is not a Docker-compatible semver tag like v0.2.0 or v0.2.0-rc.1"
+              exit 1
+            fi
+            major="${BASH_REMATCH[1]}"
+            minor="${BASH_REMATCH[2]}"
+          else
+            latest_tag="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)"
+            if [[ -z "$latest_tag" ]]; then
+              latest_tag="v0.0.0"
+            fi
+            latest_version="${latest_tag#v}"
+            if [[ ! "$latest_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              echo "::error::Latest release tag $latest_tag is not a stable semver tag like v0.2.0"
+              exit 1
+            fi
+            major="${BASH_REMATCH[1]}"
+            minor="${BASH_REMATCH[2]}"
+            patch="${BASH_REMATCH[3]}"
+            version="$major.$minor.$((patch + 1))"
+            create_tag=true
+          fi
+
+          echo "create_tag=$create_tag" >> "$GITHUB_OUTPUT"
+          echo "major_minor=$major.$minor" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
     strategy:
       matrix:
         include:
@@ -68,24 +118,6 @@ jobs:
         id: platform
         run: echo "slug=$(echo '${{ matrix.platform }}' | tr '/' '-')" >> $GITHUB_OUTPUT
 
-      - name: Resolve server version
-        id: version
-        env:
-          REF_NAME: ${{ github.ref_name }}
-          REF_TYPE: ${{ github.ref_type }}
-        run: |
-          set -euo pipefail
-          if [[ "$REF_TYPE" == "tag" ]]; then
-            version="${REF_NAME#v}"
-            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-              echo "::error::Tag $REF_NAME is not a Docker-compatible semver tag like v0.2.0 or v0.2.0-rc.1"
-              exit 1
-            fi
-          else
-            version="0.0.0-dev+${GITHUB_SHA::12}"
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@v7
@@ -95,7 +127,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           build-args: |
             GIT_COMMIT=${{ github.sha }}
-            SERVER_VERSION=${{ steps.version.outputs.version }}
+            SERVER_VERSION=${{ needs.version.outputs.version }}
           cache-from: type=gha,scope=${{ steps.platform.outputs.slug }}
           cache-to: type=gha,mode=max,scope=${{ steps.platform.outputs.slug }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
@@ -115,7 +147,9 @@ jobs:
           retention-days: 1
 
   merge:
-    needs: build
+    needs:
+      - build
+      - version
     runs-on: ubuntu-latest
     outputs:
       image: ${{ steps.deploy-image.outputs.image }}
@@ -149,9 +183,9 @@ jobs:
           flavor: |
             latest=false
           tags: |
+            type=raw,value=${{ needs.version.outputs.version }}
+            type=raw,value=${{ needs.version.outputs.major_minor }}
             type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
@@ -164,21 +198,9 @@ jobs:
 
       - name: Resolve deploy image
         id: deploy-image
-        env:
-          REF_NAME: ${{ github.ref_name }}
-          REF_TYPE: ${{ github.ref_type }}
         run: |
           set -euo pipefail
-          if [[ "$REF_TYPE" == "tag" ]]; then
-            version="${REF_NAME#v}"
-            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-              echo "::error::Tag $REF_NAME is not a Docker-compatible semver tag like v0.2.0 or v0.2.0-rc.1"
-              exit 1
-            fi
-            image="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$version"
-          else
-            image="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-          fi
+          image="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version.outputs.version }}"
           echo "image=$image" >> "$GITHUB_OUTPUT"
 
       - name: Inspect image
@@ -204,3 +226,41 @@ jobs:
     with:
       image: ${{ needs.merge.outputs.image }}
       replace_existing: true
+
+  tag-release:
+    if: github.ref == 'refs/heads/main' && needs.version.outputs.create_tag == 'true'
+    needs:
+      - deploy-exedev
+      - deploy-fly
+      - version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Push version tag
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          tag="v$VERSION"
+          git fetch --tags origin
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            existing="$(git rev-list -n 1 "$tag")"
+            if [[ "$existing" == "$GITHUB_SHA" ]]; then
+              echo "$tag already points at $GITHUB_SHA"
+              exit 0
+            fi
+            echo "::error::Tag $tag already exists at $existing, expected $GITHUB_SHA"
+            exit 1
+          fi
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git tag "$tag" "$GITHUB_SHA"
+          git push origin "refs/tags/$tag"
