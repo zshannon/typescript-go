@@ -1,7 +1,8 @@
 FROM golang:1.26-bookworm AS build
 
-# Accept git commit as build argument
+# Accept provenance as build arguments
 ARG GIT_COMMIT=unknown
+ARG SERVER_VERSION=0.0.0-dev
 
 WORKDIR /workspace
 
@@ -32,7 +33,7 @@ RUN set -xe; \
     go build \
     -mod=readonly \
     -buildmode=pie \
-    -ldflags "-linkmode external -extldflags -static-pie -X main.gitCommit=${GIT_COMMIT}" \
+    -ldflags "-linkmode external -extldflags -static-pie -X main.gitCommit=${GIT_COMMIT} -X main.serverVersion=${SERVER_VERSION}" \
     -tags netgo \
     -o /server .
 
