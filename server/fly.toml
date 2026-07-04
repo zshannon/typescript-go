@@ -1,5 +1,5 @@
 # Fly app configuration for flick-staging-tsgo.
-# The Docker image publish workflow deploys this app after pushing ghcr.io/zshannon/typescript-go/server:latest.
+# The Docker image publish workflow deploys this app with the image selected for the current ref.
 
 app = 'flick-staging-tsgo'
 primary_region = 'sjc'

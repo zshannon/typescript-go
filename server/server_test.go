@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/microsoft/typescript-go/internal/core"
 )
 
 // setupTestServerWithMockS3 initializes the server with a mock S3 client
@@ -47,6 +49,87 @@ func setupTestServerWithFileS3(t *testing.T) {
 
 	serverVersion = "1.0.0"
 	startTime = time.Now()
+}
+
+func TestLoggingMiddlewareAddsProvenanceHeaders(t *testing.T) {
+	oldGitCommit := gitCommit
+	oldServerVersion := serverVersion
+	t.Cleanup(func() {
+		gitCommit = oldGitCommit
+		serverVersion = oldServerVersion
+	})
+
+	gitCommit = "test-sha"
+	serverVersion = "1.2.3"
+
+	handler := loggingMiddleware(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	req := httptest.NewRequest(http.MethodGet, "/probe", nil)
+	res := httptest.NewRecorder()
+
+	handler(res, req)
+
+	if got := res.Header().Get("X-Git-Commit"); got != gitCommit {
+		t.Fatalf("expected X-Git-Commit %q, got %q", gitCommit, got)
+	}
+	if got := res.Header().Get("X-Server-Version"); got != serverVersion {
+		t.Fatalf("expected X-Server-Version %q, got %q", serverVersion, got)
+	}
+	if got := res.Header().Get("X-TSGo-Compiler-Version"); got != core.Version() {
+		t.Fatalf("expected X-TSGo-Compiler-Version %q, got %q", core.Version(), got)
+	}
+}
+
+func TestHealthIncludesProvenance(t *testing.T) {
+	oldDiskCachePath := diskCachePath
+	oldGitCommit := gitCommit
+	oldServerVersion := serverVersion
+	oldStartTime := startTime
+	t.Cleanup(func() {
+		diskCachePath = oldDiskCachePath
+		gitCommit = oldGitCommit
+		serverVersion = oldServerVersion
+		startTime = oldStartTime
+	})
+
+	diskCachePath = "/tmp/tsgo-cache"
+	gitCommit = "test-sha"
+	serverVersion = "1.2.3"
+	startTime = time.Now().Add(-2 * time.Second)
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	res := httptest.NewRecorder()
+
+	health(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	}
+
+	var body HealthResponse
+	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+		t.Fatalf("failed to decode health response: %v", err)
+	}
+
+	if body.CompilerVersion != core.Version() {
+		t.Fatalf("expected compiler version %q, got %q", core.Version(), body.CompilerVersion)
+	}
+	if body.DiskCachePath != diskCachePath {
+		t.Fatalf("expected disk cache path %q, got %q", diskCachePath, body.DiskCachePath)
+	}
+	if body.GitCommit != gitCommit {
+		t.Fatalf("expected git commit %q, got %q", gitCommit, body.GitCommit)
+	}
+	if body.Status != "healthy" {
+		t.Fatalf("expected status %q, got %q", "healthy", body.Status)
+	}
+	if body.Uptime == "" {
+		t.Fatal("expected non-empty uptime")
+	}
+	if body.Version != serverVersion {
+		t.Fatalf("expected server version %q, got %q", serverVersion, body.Version)
+	}
 }
 
 // TestFortuneCookieWithMockS3 tests the fortune cookie example with mocked S3

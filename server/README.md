@@ -23,10 +23,12 @@ Returns server health and statistics.
 
 ```json
 {
+  "compiler_version": "7.0.0-dev",
+  "disk_cache_path": "/data/cache",
+  "git_commit": "ebf2132f0175dee1dfdd7afc2399197f4fd574cf",
   "status": "healthy",
-  "version": "1.0.0",
   "uptime": "26s",
-  "disk_cache_path": "/data/cache"
+  "version": "0.2.0"
 }
 ```
 
@@ -34,7 +36,7 @@ Returns server health and statistics.
 
 ### V3 API (Recommended)
 
-V3 is the self-contained API. The caller provides everything: source files, dependencies (`package.json` + `bun.lock`), TypeScript config (`tsconfig.json`), and esbuild options. The server has no hardcoded compiler options, no hardcoded packages, and no version concept.
+V3 is the self-contained API. The caller provides everything: source files, dependencies (`package.json` + `bun.lock`), TypeScript config (`tsconfig.json`), and esbuild options. The request has no hardcoded compiler options, no hardcoded packages, and no request-level version selector.
 
 #### `POST /v3/typecheck`
 

@@ -39,7 +39,7 @@ type S3ClientInterface interface {
 }
 
 var (
-	serverVersion = "1.0.0"
+	serverVersion = "0.0.0-dev" // Set at build time with -ldflags
 	startTime     = time.Now()
 	gitCommit     = "unknown" // Set at build time with -ldflags
 
@@ -115,10 +115,12 @@ const (
 )
 
 type HealthResponse struct {
-	DiskCachePath string `json:"disk_cache_path"`
-	Status        string `json:"status"`
-	Uptime        string `json:"uptime"`
-	Version       string `json:"version"`
+	CompilerVersion string `json:"compiler_version"`
+	DiskCachePath   string `json:"disk_cache_path"`
+	GitCommit       string `json:"git_commit"`
+	Status          string `json:"status"`
+	Uptime          string `json:"uptime"`
+	Version         string `json:"version"`
 }
 
 type flushDepsResult struct {
@@ -1019,6 +1021,7 @@ func loggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		// Add git commit header to all responses
 		w.Header().Set("X-Git-Commit", gitCommit)
 		w.Header().Set("X-Server-Version", serverVersion)
+		w.Header().Set("X-TSGo-Compiler-Version", core.Version())
 
 		// Create a custom response writer to capture status code
 		lrw := &loggingResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
@@ -1047,10 +1050,12 @@ func (lrw *loggingResponseWriter) WriteHeader(code int) {
 
 func health(w http.ResponseWriter, req *http.Request) {
 	response := HealthResponse{
-		DiskCachePath: diskCachePath,
-		Status:        "healthy",
-		Uptime:        fmt.Sprintf("%v", time.Since(startTime).Round(time.Second)),
-		Version:       serverVersion,
+		CompilerVersion: core.Version(),
+		DiskCachePath:   diskCachePath,
+		GitCommit:       gitCommit,
+		Status:          "healthy",
+		Uptime:          fmt.Sprintf("%v", time.Since(startTime).Round(time.Second)),
+		Version:         serverVersion,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
