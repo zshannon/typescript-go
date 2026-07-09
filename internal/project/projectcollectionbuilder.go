@@ -144,15 +144,16 @@ func (b *ProjectCollectionBuilder) forEachProject(fn func(entry dirty.Value[*Pro
 }
 
 func (b *ProjectCollectionBuilder) HandleAPIRequest(apiRequest *APISnapshotRequest, logger *logging.LogTree) error {
+	nextAPIState := b.apiState.clone()
 	var projectsToClose map[tspath.Path]struct{}
 	if apiRequest.CloseProjects != nil {
 		for projectPath := range apiRequest.CloseProjects.Keys() {
 			// Ref-counted close: only actually close the project once the last
 			// API client that opened it releases it.
-			if count := b.apiState.openProjects[projectPath]; count > 1 {
-				b.apiState.openProjects[projectPath] = count - 1
+			if count := nextAPIState.openProjects[projectPath]; count > 1 {
+				nextAPIState.openProjects[projectPath] = count - 1
 			} else if count == 1 {
-				delete(b.apiState.openProjects, projectPath)
+				delete(nextAPIState.openProjects, projectPath)
 				if projectsToClose == nil {
 					projectsToClose = make(map[tspath.Path]struct{})
 				}
@@ -165,10 +166,10 @@ func (b *ProjectCollectionBuilder) HandleAPIRequest(apiRequest *APISnapshotReque
 		for configFileName := range apiRequest.OpenProjects.Keys() {
 			configPath := b.toPath(configFileName)
 			if entry := b.findOrCreateProject(configFileName, configPath, projectLoadKindCreate, logger); entry != nil {
-				if b.apiState.openProjects == nil {
-					b.apiState.openProjects = make(map[tspath.Path]int)
+				if nextAPIState.openProjects == nil {
+					nextAPIState.openProjects = make(map[tspath.Path]int)
 				}
-				b.apiState.openProjects[configPath]++
+				nextAPIState.openProjects[configPath]++
 				// A project re-opened in the same request shouldn't be closed.
 				delete(projectsToClose, configPath)
 			} else {
@@ -180,12 +181,12 @@ func (b *ProjectCollectionBuilder) HandleAPIRequest(apiRequest *APISnapshotReque
 	if apiRequest.CloseFiles != nil {
 		for path := range apiRequest.CloseFiles.Keys() {
 			// Ref-counted close mirroring projects above.
-			if entry, ok := b.apiState.openFiles[path]; ok {
+			if entry, ok := nextAPIState.openFiles[path]; ok {
 				if entry.refCount > 1 {
 					entry.refCount--
-					b.apiState.openFiles[path] = entry
+					nextAPIState.openFiles[path] = entry
 				} else {
-					delete(b.apiState.openFiles, path)
+					delete(nextAPIState.openFiles, path)
 				}
 			}
 		}
@@ -195,23 +196,27 @@ func (b *ProjectCollectionBuilder) HandleAPIRequest(apiRequest *APISnapshotReque
 		for uri := range apiRequest.OpenFiles.Keys() {
 			fileName := uri.FileName()
 			path := b.toPath(fileName)
-			if b.apiState.openFiles == nil {
-				b.apiState.openFiles = make(map[tspath.Path]apiOpenedFile)
+			if nextAPIState.openFiles == nil {
+				nextAPIState.openFiles = make(map[tspath.Path]apiOpenedFile)
 			}
-			entry := b.apiState.openFiles[path]
+			entry := nextAPIState.openFiles[path]
 			entry.fileName = fileName
 			entry.refCount++
-			b.apiState.openFiles[path] = entry
+			nextAPIState.openFiles[path] = entry
 		}
 	}
 
-	for configPath := range b.apiState.openProjects {
+	for configPath := range nextAPIState.openProjects {
 		if entry, ok := b.configuredProjects.Load(configPath); ok {
 			b.updateProgram(entry, logger)
 		} else {
 			return fmt.Errorf("project not found for update: %s", configPath)
 		}
 	}
+
+	// Do not publish partially-applied API ref-count changes until every
+	// requested project open has been validated and all API-opened projects update.
+	b.apiState = nextAPIState
 
 	for _, overlay := range b.fs.overlays {
 		if entry := b.findDefaultConfiguredProject(overlay.FileName(), b.toPath(overlay.FileName())); entry != nil {
