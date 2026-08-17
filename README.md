@@ -42,6 +42,25 @@ typescript-go (this repo)
 - **For using the Swift package**: iOS 18.0+ / macOS 15.0+, Swift 6.1+, Xcode 16.0+
 - **For building from source**: Go 1.25+, CGO support, Xcode command line tools
 
+## TypeScript-Go Status
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Program creation | done | Same files and module resolution as TS 6.0. Not all resolution modes supported yet. |
+| Parsing/scanning | done | Exact same syntax errors as TS 6.0 |
+| Commandline and `tsconfig.json` parsing | done | Done, though `tsconfig` errors may not be as helpful. |
+| Type resolution | done | Same types as TS 6.0. |
+| Type checking | done | Same errors, locations, and messages as TS 6.0. Types printback in errors may display differently. |
+| JavaScript-specific inference and JSDoc | done | Complete, but intentionally lacking some features. Declaration emit differs greatly, intentionally, to be closer to TS declarations. |
+| JSX | done | - |
+| Declaration emit | done | - |
+| Emit (JS output) | done | - |
+| Watch mode | done | - |
+| Build mode / project references | done | - |
+| Incremental build | done | - |
+| Language service (LSP) | in progress | Nearly all features implemented. |
+| API | not ready | - |
+
 ## Development
 
 ### Building the XCFramework

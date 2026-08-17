@@ -52,6 +52,14 @@ func TestTscCommandline(t *testing.T) {
 			commandLineArgs: []string{"--verbose", "--build"},
 		},
 		{
+			subScenario: "malformed tsconfig property without value",
+			files: FileMap{
+				"/home/src/workspaces/project/tsconfig.json": `{"" }`,
+				"/home/src/workspaces/project/index.ts":      "",
+			},
+			commandLineArgs: nil,
+		},
+		{
 			subScenario:     "Initialized TSConfig with files options",
 			commandLineArgs: []string{"--init", "file0.st", "file1.ts", "file2.ts"},
 		},
@@ -119,9 +127,21 @@ func TestTscCommandline(t *testing.T) {
 			commandLineArgs: []string{"--lib", "es6 ", "first.ts"},
 		},
 		{
+			subScenario:     "noEmit with type error",
+			files:           FileMap{"/home/src/workspaces/project/index.ts": `x = 5;`},
+			commandLineArgs: []string{"--noEmit", "index.ts"},
+		},
+		{
 			subScenario:     "option diagnostics are suppressed when there are syntactic errors",
 			files:           FileMap{"/home/src/workspaces/project/a.ts": `const x: = 1;`},
 			commandLineArgs: []string{"--strictPropertyInitialization", "--strictNullChecks", "false", "a.ts"},
+		},
+		{
+			subScenario: "non-object config root",
+			files: FileMap{
+				"/home/src/workspaces/project/tsconfig.json": `[]`,
+			},
+			commandLineArgs: []string{},
 		},
 		{
 			subScenario: "Project is empty string",
@@ -186,6 +206,14 @@ func TestTscCommandline(t *testing.T) {
 				"/home/src/workspaces/project/tsconfig.json": ``,
 			},
 			commandLineArgs: []string{"-p", "."},
+		},
+		{
+			subScenario: "compiler option at top level of tsconfig",
+			files: FileMap{
+				"/home/src/workspaces/project/index.ts":      "",
+				"/home/src/workspaces/project/tsconfig.json": `{ "strict": true }`,
+			},
+			commandLineArgs: []string{"--pretty", "false"},
 		},
 		{
 			subScenario:     "Parse enum type options",
@@ -272,6 +300,25 @@ func TestTscMissingFiles(t *testing.T) {
 				),
 			},
 			commandLineArgs: []string{"-p", "./tsconfig.json"},
+		},
+		{
+			subScenario: "extensionless file in tsconfig exists",
+			files: FileMap{
+				"/home/src/workspaces/project/tsconfig.json": stringtestutil.Dedent(
+					`{
+					"files": ["./src/script"]
+					}`,
+				),
+				"/home/src/workspaces/project/src/script": `const n: number = "s";`,
+			},
+			commandLineArgs: []string{"-p", "./tsconfig.json"},
+		},
+		{
+			subScenario: "extensionless file on command line exists",
+			files: FileMap{
+				"/home/src/workspaces/project/script": `const n: number = "s";`,
+			},
+			commandLineArgs: []string{"script"},
 		},
 		{
 			subScenario: "extensionless file in extended tsconfig in different folder does not exist",
@@ -4127,6 +4174,44 @@ func TestTscProjectReferences(t *testing.T) {
 					"references": [
 						{ "path": "../utils" },
 					],
+				}`),
+			},
+			cwd:             "/home/src/workspaces/solution",
+			commandLineArgs: []string{"--p", "project"},
+		},
+		{
+			subScenario: "when project references have invalid fields",
+			files: FileMap{
+				"/home/src/workspaces/solution/project/index.ts": `export const x = 10;`,
+				"/home/src/workspaces/solution/project/tsconfig.json": stringtestutil.Dedent(`
+				{
+					"compilerOptions": {
+						"noEmit": true
+					},
+					"files": ["index.ts"],
+					"references": [
+						{ "path": true },
+						{ "circular": true },
+						{ "path": "../utils", "circular": "yes" },
+						{ "path": "" },
+						{ "path": "../valid", "circular": true }
+					]
+				}`),
+				"/home/src/workspaces/solution/utils/index.ts":   "export const y = 10;",
+				"/home/src/workspaces/solution/utils/index.d.ts": "export declare const y = 10;",
+				"/home/src/workspaces/solution/utils/tsconfig.json": stringtestutil.Dedent(`
+				{
+					"compilerOptions": {
+						"composite": true
+					}
+				}`),
+				"/home/src/workspaces/solution/valid/index.ts":   "export const z = 10;",
+				"/home/src/workspaces/solution/valid/index.d.ts": "export declare const z = 10;",
+				"/home/src/workspaces/solution/valid/tsconfig.json": stringtestutil.Dedent(`
+				{
+					"compilerOptions": {
+						"composite": true
+					}
 				}`),
 			},
 			cwd:             "/home/src/workspaces/solution",

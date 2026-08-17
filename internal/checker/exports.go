@@ -70,6 +70,10 @@ func (c *Checker) GetArgumentsSymbol() *ast.Symbol {
 	return c.argumentsSymbol
 }
 
+func (c *Checker) GetUnknownSignature() *Signature {
+	return c.unknownSignature
+}
+
 func (c *Checker) GetUnionType(types []*Type) *Type {
 	return c.getUnionType(types)
 }
@@ -288,6 +292,10 @@ func (c *Checker) GetApparentType(t *Type) *Type {
 
 func (c *Checker) GetBaseConstructorTypeOfClass(t *Type) *Type {
 	return c.getBaseConstructorTypeOfClass(t)
+}
+
+func (c *Checker) GetMemberOverrideModifierStatus(node *ast.Node, member *ast.Node, memberSymbol *ast.Symbol) MemberOverrideStatus {
+	return c.getMemberOverrideModifierStatus(node, member, memberSymbol)
 }
 
 func (c *Checker) GetRestTypeOfSignature(sig *Signature) *Type {
