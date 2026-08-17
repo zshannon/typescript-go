@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 )
 
@@ -85,5 +86,29 @@ func TestFlushDepsHashKeepsUnrelatedDependencyTreeHot(t *testing.T) {
 	stats := unrelatedFS.cacheSnapshot()
 	if stats.fileHits != 1 || stats.fileMisses != 1 {
 		t.Fatalf("unrelated cache stats after targeted flush = hits %d, misses %d; want 1 hit and 1 miss", stats.fileHits, stats.fileMisses)
+	}
+}
+
+func TestInvalidateDiskMemoryCacheBoundsGenerationMetadata(t *testing.T) {
+	const maxGenerationEntries = 16_384
+
+	clearDiskMemoryCache()
+	t.Cleanup(clearDiskMemoryCache)
+	startingGlobalGeneration := diskCacheGlobalGeneration.Load()
+
+	for index := 0; index <= maxGenerationEntries; index++ {
+		invalidateDiskMemoryCache(filepath.Join("/cache", strconv.Itoa(index)))
+	}
+
+	entryCount := 0
+	diskCacheGenerations.Range(func(_, _ any) bool {
+		entryCount++
+		return true
+	})
+	if entryCount != 1 {
+		t.Fatalf("generation metadata entries after rollover = %d, want 1", entryCount)
+	}
+	if got := diskCacheGlobalGeneration.Load(); got != startingGlobalGeneration+1 {
+		t.Fatalf("global generation after rollover = %d, want %d", got, startingGlobalGeneration+1)
 	}
 }

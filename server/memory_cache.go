@@ -16,7 +16,11 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-const diskMemoryCacheMaxCost = 256 << 20
+const (
+	// A rollover advances the global generation, making prior cache keys unreachable.
+	diskCacheGenerationMaxEntries = 16_384
+	diskMemoryCacheMaxCost        = 256 << 20
+)
 
 type cacheAccessSnapshot struct {
 	fileHits         int64
@@ -40,6 +44,8 @@ type cachedLookup struct {
 var (
 	diskCacheGlobalGeneration   atomic.Uint64
 	diskCacheGenerationSequence atomic.Uint64
+	diskCacheGenerationMu       sync.Mutex
+	diskCacheGenerationCount    int
 	diskCacheGenerations        sync.Map
 	diskFileLoads               singleflight.Group
 	diskMemoryCache             = newDiskMemoryCache()
@@ -114,24 +120,50 @@ func (fs *diskFS) readDiskFile(path string) (string, bool) {
 }
 
 func invalidateDiskMemoryCache(basePath string) {
+	diskCacheGenerationMu.Lock()
+	defer diskCacheGenerationMu.Unlock()
+
+	cleanBasePath := filepath.Clean(basePath)
 	generation := diskCacheGenerationSequence.Add(1)
-	diskCacheGenerations.Store(filepath.Clean(basePath), generation)
+	if _, exists := diskCacheGenerations.Load(cleanBasePath); exists {
+		diskCacheGenerations.Store(cleanBasePath, generation)
+		return
+	}
+	if diskCacheGenerationCount >= diskCacheGenerationMaxEntries {
+		// Leave stale values to the existing bounded Ristretto cache; clearing it here
+		// would disrupt concurrent readers for unrelated dependency trees.
+		diskCacheGlobalGeneration.Add(1)
+		diskCacheGenerations.Clear()
+		diskCacheGenerationCount = 0
+	}
+	diskCacheGenerations.Store(cleanBasePath, generation)
+	diskCacheGenerationCount++
 }
 
 func clearDiskMemoryCache() {
+	diskCacheGenerationMu.Lock()
+	defer diskCacheGenerationMu.Unlock()
+
 	diskCacheGlobalGeneration.Add(1)
 	diskMemoryCache.Clear()
 	diskCacheGenerations.Clear()
+	diskCacheGenerationCount = 0
 }
 
 func memoryCacheKey(kind string, basePath string, key string) string {
 	cleanBasePath := filepath.Clean(basePath)
-	var generation uint64
-	if value, ok := diskCacheGenerations.Load(cleanBasePath); ok {
-		generation = value.(uint64)
+	for {
+		globalGeneration := diskCacheGlobalGeneration.Load()
+		var generation uint64
+		if value, ok := diskCacheGenerations.Load(cleanBasePath); ok {
+			generation = value.(uint64)
+		}
+		if globalGeneration != diskCacheGlobalGeneration.Load() {
+			continue
+		}
+		return kind + ":" + strconv.FormatUint(globalGeneration, 10) + ":" +
+			strconv.FormatUint(generation, 10) + ":" + cleanBasePath + ":" + key
 	}
-	return kind + ":" + strconv.FormatUint(diskCacheGlobalGeneration.Load(), 10) + ":" +
-		strconv.FormatUint(generation, 10) + ":" + cleanBasePath + ":" + key
 }
 
 func waitForDiskMemoryCache() {
