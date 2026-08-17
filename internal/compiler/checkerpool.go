@@ -23,7 +23,7 @@ type CheckerPool interface {
 
 type checkerPool struct {
 	program *Program
-	tracing *tracing.Tracing
+	tracing tracing.PerformanceTracer
 
 	createCheckersOnce sync.Once
 	checkers           []*checker.Checker
@@ -37,7 +37,7 @@ func newCheckerPool(program *Program) *checkerPool {
 	return newCheckerPoolWithTracing(program, nil)
 }
 
-func newCheckerPoolWithTracing(program *Program, tr *tracing.Tracing) *checkerPool {
+func newCheckerPoolWithTracing(program *Program, tr tracing.PerformanceTracer) *checkerPool {
 	checkerCount := 4
 	if program.SingleThreaded() {
 		checkerCount = 1

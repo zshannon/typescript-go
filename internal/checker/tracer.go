@@ -11,18 +11,21 @@ import (
 // is a valid no-op, so call sites can use `if tr := c.tracer; tr != nil` to
 // gate work that only matters under --generateTrace.
 type Tracer struct {
-	tracing      *tracing.Tracing
+	tracing      tracing.PerformanceTracer
 	recorder     tracing.Tracer
 	checkerIndex int
 }
 
 // NewTracer creates a Tracer for the given checker index that records both
 // type-creation events and trace events through the provided tracing session.
-func NewTracer(tr *tracing.Tracing, checkerIndex int) *Tracer {
+func NewTracer(tr tracing.PerformanceTracer, checkerIndex int) *Tracer {
 	return &Tracer{tracing: tr, recorder: tr.NewTypeTracer(checkerIndex), checkerIndex: checkerIndex}
 }
 
 func (t *Tracer) RecordType(typ *Type) {
+	if t.recorder == nil {
+		return
+	}
 	t.recorder.RecordType(wrapType(typ))
 }
 

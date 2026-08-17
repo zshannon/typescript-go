@@ -27,6 +27,7 @@ import (
 	"github.com/microsoft/typescript-go/internal/locale"
 	"github.com/microsoft/typescript-go/internal/tsoptions"
 	"github.com/microsoft/typescript-go/internal/vfs"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/aws/aws-sdk-go-v2/otelaws"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -130,7 +131,8 @@ type flushDepsResult struct {
 }
 
 type diskFS struct {
-	basePath     string            // e.g., "/data/cache/5.7.0"
+	basePath     string // e.g., "/data/cache/5.7.0"
+	cacheStats   cacheAccessStats
 	hasUserFiles bool              // true if user provided multiple files (v2 mode)
 	mu           sync.RWMutex      // protects userFiles map
 	userFiles    map[string]string // user-provided files (v2 mode)
@@ -215,6 +217,7 @@ func ensureVersionSynced(ctx context.Context, version string) error {
 	if _, err := os.Stat(versionPath); err == nil {
 		return nil
 	}
+	invalidateDiskMemoryCache()
 
 	ctx, span := startSpan(ctx, "fly_tsgo.version.sync",
 		attribute.String("fly_tsgo.version", version),
@@ -461,6 +464,7 @@ func deleteOldestVersion(keepVersion string) bool {
 			log.Printf("[CLEANUP] Failed to remove %s: %v", v.name, err)
 			continue
 		}
+		invalidateDiskMemoryCache()
 		return true
 	}
 	return false
@@ -511,10 +515,8 @@ func (fs *diskFS) FileExists(path string) bool {
 		return true
 	}
 
-	// Check disk
-	fullPath := filepath.Join(fs.basePath, path)
-	info, err := os.Stat(fullPath)
-	return err == nil && !info.IsDir()
+	_, exists := fs.readDiskFile(path)
+	return exists
 }
 
 func (fs *diskFS) ReadFile(path string) (string, bool) {
@@ -526,13 +528,7 @@ func (fs *diskFS) ReadFile(path string) (string, bool) {
 	}
 	fs.mu.RUnlock()
 
-	// Read from disk
-	fullPath := filepath.Join(fs.basePath, path)
-	data, err := os.ReadFile(fullPath)
-	if err != nil {
-		return "", false
-	}
-	return string(data), true
+	return fs.readDiskFile(path)
 }
 
 func (fs *diskFS) WriteFile(path string, data string) error {
@@ -1214,6 +1210,7 @@ func flushAllDeps(ctx context.Context) (flushDepsResult, error) {
 		log.Printf("[FLUSH] Failed to remove %s: %v", depsPath, err)
 		return result, fmt.Errorf("remove disk deps cache: %w", err)
 	}
+	invalidateDiskMemoryCache()
 	log.Printf("[FLUSH] Cleared disk deps cache at %s", depsPath)
 
 	if s3Client != nil {
@@ -1278,6 +1275,7 @@ func flushDepsHash(ctx context.Context, hash string) (flushDepsResult, error) {
 		log.Printf("[FLUSH] Failed to remove %s: %v", depDir, err)
 		return result, fmt.Errorf("remove disk deps cache for %s: %w", hash, err)
 	}
+	invalidateDiskMemoryCache()
 	log.Printf("[FLUSH] Cleared disk deps cache at %s", depDir)
 
 	if s3Client != nil {
@@ -1391,6 +1389,7 @@ func syncVersion(w http.ResponseWriter, req *http.Request) {
 	if err := os.RemoveAll(versionPath); err != nil {
 		log.Printf("[SYNC] Warning: failed to remove %s: %v", versionPath, err)
 	}
+	invalidateDiskMemoryCache()
 
 	if err := ensureVersionSynced(req.Context(), version); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1899,12 +1898,14 @@ func main() {
 
 	ctx := context.Background()
 	shutdownTelemetry := initTelemetry(ctx)
+	warmLatestDiskMemoryCache(ctx)
 
 	// Initialize AWS SDK
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		log.Fatalf("Failed to load AWS config: %v", err)
 	}
+	otelaws.AppendMiddlewares(&cfg.APIOptions)
 
 	// Override endpoint if specified
 	if endpoint := os.Getenv("AWS_ENDPOINT_URL_S3"); endpoint != "" {

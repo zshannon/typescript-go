@@ -28,6 +28,16 @@ type Tracer interface {
 	DumpTypes() error
 }
 
+// PerformanceTracer records compiler phase timings without prescribing an output format.
+// Tracing implements this for --generateTrace; servers can provide another backend.
+type PerformanceTracer interface {
+	Instant(phase Phase, name string, args map[string]any)
+	NewTypeTracer(checkerIndex int) Tracer
+	Push(phase Phase, name string, args map[string]any, separateBeginAndEnd bool) func()
+}
+
+var _ PerformanceTracer = (*Tracing)(nil)
+
 // TracedType is an interface that represents a type that can be traced.
 // This allows the tracing package to work with types from the checker package
 // without creating a circular dependency.

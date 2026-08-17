@@ -526,9 +526,6 @@ func (p *fileLoader) resolveTypeReferenceDirectives(t *parseTask) {
 const externalHelpersModuleNameText = "tslib" // TODO(jakebailey): dedupe
 
 func (p *fileLoader) resolveImportsAndModuleAugmentations(t *parseTask) {
-	if p.opts.Tracing != nil {
-		defer p.opts.Tracing.Push(tracing.PhaseProgram, "resolveModuleNamesWorker", map[string]any{"containingFileName": t.file.FileName()}, false)()
-	}
 	file := t.file
 	meta := t.metadata
 
@@ -570,6 +567,12 @@ func (p *fileLoader) resolveImportsAndModuleAugmentations(t *parseTask) {
 	}
 
 	if len(moduleNames) != 0 {
+		if p.opts.Tracing != nil {
+			defer p.opts.Tracing.Push(tracing.PhaseProgram, "resolveModuleNamesWorker", map[string]any{
+				"containingFileName": file.FileName(),
+				"count":              len(moduleNames),
+			}, false)()
+		}
 		resolutionsInFile := make(module.ModeAwareCache[*module.ResolvedModule], len(moduleNames))
 		var resolutionsTrace []module.DiagAndArgs
 
@@ -580,7 +583,17 @@ func (p *fileLoader) resolveImportsAndModuleAugmentations(t *parseTask) {
 			}
 
 			mode := getModeForUsageLocation(file.FileName(), meta, entry, optionsForFile)
+			var resolveDone func()
+			if p.opts.Tracing != nil {
+				resolveDone = p.opts.Tracing.Push(tracing.PhaseProgram, "resolveModuleName", map[string]any{
+					"containingFileName": file.FileName(),
+					"moduleName":         moduleName,
+				}, false)
+			}
 			resolvedModule, trace := p.resolver.ResolveModuleName(moduleName, fileName, mode, redirect)
+			if resolveDone != nil {
+				resolveDone()
+			}
 			resolutionsInFile[module.ModeAwareCacheKey{Name: moduleName, Mode: mode}] = resolvedModule
 			resolutionsTrace = append(resolutionsTrace, trace...)
 

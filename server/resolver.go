@@ -159,6 +159,18 @@ func resolveBarePackageImporter(fs FileSystem, packageName string) string {
 
 // resolveModule is the main module resolution function
 func resolveModule(fs FileSystem, importPath string, importer string) string {
+	if disk, ok := fs.(*diskFS); ok {
+		if resolvedPath, cached := disk.cachedResolution(importPath, importer); cached {
+			return resolvedPath
+		}
+		resolvedPath := resolveModuleUncached(fs, importPath, importer)
+		disk.cacheResolution(importPath, importer, resolvedPath)
+		return resolvedPath
+	}
+	return resolveModuleUncached(fs, importPath, importer)
+}
+
+func resolveModuleUncached(fs FileSystem, importPath string, importer string) string {
 	// Security: validate paths (skip for relative imports - they're validated after resolution)
 	if !strings.HasPrefix(importPath, "./") && !strings.HasPrefix(importPath, "../") {
 		if err := validatePath(importPath); err != nil {
