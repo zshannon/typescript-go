@@ -319,6 +319,7 @@ func ensureVersionSynced(ctx context.Context, version string) error {
 	}
 	close(keysChan)
 	wg.Wait()
+	invalidateDiskMemoryCache()
 
 	duration := time.Since(start)
 	span.SetAttributes(

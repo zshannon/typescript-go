@@ -120,19 +120,23 @@ func warmLatestDiskMemoryCache(ctx context.Context) {
 	startedAt := time.Now()
 	result := "empty"
 	var byteCount int64
+	var costCount int64
 	var errorCount int
 	var fileCount int
+	var truncated bool
 	defer func() {
 		duration := time.Since(startedAt)
 		span.SetAttributes(
 			attribute.Int64("fly_tsgo.cache.warm.bytes", byteCount),
+			attribute.Int64("fly_tsgo.cache.warm.cost.bytes", costCount),
 			attribute.Float64("fly_tsgo.cache.warm.duration_ms", spanDurationMS(duration)),
 			attribute.Int("fly_tsgo.cache.warm.errors.count", errorCount),
 			attribute.Int("fly_tsgo.cache.warm.files.count", fileCount),
 			attribute.String("fly_tsgo.cache.warm.result", result),
+			attribute.Bool("fly_tsgo.cache.warm.truncated", truncated),
 		)
 		span.End()
-		log.Printf("[CACHE] Startup warm: %s (%d files, %d bytes, %d errors, %v)", result, fileCount, byteCount, errorCount, duration)
+		log.Printf("[CACHE] Startup warm: %s (%d files, %d bytes, %d cost bytes, %d errors, %v)", result, fileCount, byteCount, costCount, errorCount, duration)
 	}()
 
 	versions, err := getVersionsByModTime(diskCachePath)
@@ -183,7 +187,24 @@ func warmLatestDiskMemoryCache(ctx context.Context) {
 			}
 			return nil
 		}
-		content, exists := fs.readDiskFile("/" + filepath.ToSlash(relativePath))
+		cachePath := "/" + filepath.ToSlash(relativePath)
+		info, err := os.Stat(path)
+		if err != nil {
+			errorCount++
+			if firstErr == nil {
+				firstErr = err
+			}
+			return nil
+		}
+		key := memoryCacheKey("file", fs.basePath, cachePath)
+		estimatedCost := int64(len(key)) + info.Size() + 1
+		if costCount+estimatedCost > diskMemoryCacheMaxCost {
+			result = "bounded"
+			truncated = true
+			return filepath.SkipAll
+		}
+
+		content, exists := fs.readDiskFile(cachePath)
 		if !exists {
 			errorCount++
 			if firstErr == nil {
@@ -192,6 +213,7 @@ func warmLatestDiskMemoryCache(ctx context.Context) {
 			return nil
 		}
 		byteCount += int64(len(content))
+		costCount += int64(len(key) + len(content) + 1)
 		fileCount++
 		return nil
 	})

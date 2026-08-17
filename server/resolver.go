@@ -160,6 +160,9 @@ func resolveBarePackageImporter(fs FileSystem, packageName string) string {
 // resolveModule is the main module resolution function
 func resolveModule(fs FileSystem, importPath string, importer string) string {
 	if disk, ok := fs.(*diskFS); ok {
+		if resolvedPath, exists := disk.resolveUserFile(importPath, importer); exists {
+			return resolvedPath
+		}
 		if resolvedPath, cached := disk.cachedResolution(importPath, importer); cached {
 			return resolvedPath
 		}
@@ -168,6 +171,28 @@ func resolveModule(fs FileSystem, importPath string, importer string) string {
 		return resolvedPath
 	}
 	return resolveModuleUncached(fs, importPath, importer)
+}
+
+func (fs *diskFS) resolveUserFile(importPath string, importer string) (string, bool) {
+	if (!strings.HasPrefix(importPath, "./") && !strings.HasPrefix(importPath, "../")) ||
+		!strings.HasPrefix(importer, "/") || strings.HasPrefix(importer, "/node_modules/") {
+		return "", false
+	}
+
+	resolvedPath, err := normalizeAndValidatePath(filepath.Join(filepath.Dir(importer), importPath))
+	if err != nil {
+		return "", false
+	}
+
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	for _, suffix := range []string{"", ".js", ".jsx", ".mjs", ".json", ".ts", ".tsx"} {
+		candidate := resolvedPath + suffix
+		if _, exists := fs.userFiles[candidate]; exists {
+			return candidate, true
+		}
+	}
+	return "", false
 }
 
 func resolveModuleUncached(fs FileSystem, importPath string, importer string) string {
