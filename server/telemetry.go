@@ -2,12 +2,16 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"maps"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/microsoft/typescript-go/internal/tracing"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -22,9 +26,13 @@ import (
 const (
 	defaultHoneycombEndpoint = "https://api.honeycomb.io/v1/traces"
 	defaultServiceName       = "fly-tsgo"
+	minimumCompilerSpanTime  = 10 * time.Millisecond
 )
 
-var tsgoTracer = otel.Tracer("fly-tsgo/server")
+var (
+	compilerTracer = otel.Tracer("fly-tsgo/compiler")
+	tsgoTracer     = otel.Tracer("fly-tsgo/server")
+)
 
 func initTelemetry(ctx context.Context) func(context.Context) error {
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
@@ -80,6 +88,7 @@ func initTelemetry(ctx context.Context) func(context.Context) error {
 		sdktrace.WithResource(resource),
 	)
 	otel.SetTracerProvider(provider)
+	compilerTracer = provider.Tracer("fly-tsgo/compiler")
 	tsgoTracer = provider.Tracer("fly-tsgo/server")
 	log.Printf("OpenTelemetry export enabled for service %q", serviceName)
 
@@ -142,4 +151,117 @@ func startSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (c
 
 func spanDurationMS(duration time.Duration) float64 {
 	return float64(duration) / float64(time.Millisecond)
+}
+
+type compilerTraceEvent struct {
+	args  map[string]any
+	end   time.Time
+	name  string
+	phase tracing.Phase
+	start time.Time
+}
+
+type otelCompilerTracer struct {
+	ctx    context.Context
+	events []compilerTraceEvent
+	mu     sync.Mutex
+}
+
+var _ tracing.PerformanceTracer = (*otelCompilerTracer)(nil)
+
+func newOTelCompilerTracer(ctx context.Context) *otelCompilerTracer {
+	if !oteltrace.SpanFromContext(ctx).IsRecording() {
+		return nil
+	}
+	return &otelCompilerTracer{ctx: ctx}
+}
+
+func (tracer *otelCompilerTracer) flush(ctx context.Context) {
+	if tracer == nil {
+		return
+	}
+	tracer.mu.Lock()
+	events := tracer.events
+	tracer.events = nil
+	tracer.mu.Unlock()
+
+	for _, event := range events {
+		_, span := compilerTracer.Start(
+			ctx,
+			"typescript."+string(event.phase)+"."+event.name,
+			oteltrace.WithAttributes(compilerTraceAttributes(event.args)...),
+			oteltrace.WithTimestamp(event.start),
+		)
+		span.End(oteltrace.WithTimestamp(event.end))
+	}
+}
+
+func (tracer *otelCompilerTracer) Instant(_ tracing.Phase, name string, args map[string]any) {
+	tracer.mu.Lock()
+	ctx := tracer.ctx
+	tracer.mu.Unlock()
+	oteltrace.SpanFromContext(ctx).AddEvent(name, oteltrace.WithAttributes(compilerTraceAttributes(args)...))
+}
+
+func (tracer *otelCompilerTracer) NewTypeTracer(_ int) tracing.Tracer {
+	return nil
+}
+
+func (tracer *otelCompilerTracer) Push(phase tracing.Phase, name string, args map[string]any, _ bool) func() {
+	startedAt := time.Now()
+	args = maps.Clone(args)
+
+	return func() {
+		endedAt := time.Now()
+		if name == "createProgram" || endedAt.Sub(startedAt) < minimumCompilerSpanTime {
+			return
+		}
+
+		tracer.mu.Lock()
+		tracer.events = append(tracer.events, compilerTraceEvent{
+			args:  args,
+			end:   endedAt,
+			name:  name,
+			phase: phase,
+			start: startedAt,
+		})
+		tracer.mu.Unlock()
+	}
+}
+
+func (tracer *otelCompilerTracer) setContext(ctx context.Context) {
+	if tracer == nil {
+		return
+	}
+	tracer.mu.Lock()
+	tracer.ctx = ctx
+	tracer.mu.Unlock()
+}
+
+func asCompilerPerformanceTracer(tracer *otelCompilerTracer) tracing.PerformanceTracer {
+	if tracer == nil {
+		return nil
+	}
+	return tracer
+}
+
+func compilerTraceAttributes(args map[string]any) []attribute.KeyValue {
+	attributes := make([]attribute.KeyValue, 0, len(args))
+	for key, value := range args {
+		switch value := value.(type) {
+		case bool:
+			attributes = append(attributes, attribute.Bool(key, value))
+		case float64:
+			attributes = append(attributes, attribute.Float64(key, value))
+		case int:
+			attributes = append(attributes, attribute.Int(key, value))
+		case int64:
+			attributes = append(attributes, attribute.Int64(key, value))
+		case string:
+			attributes = append(attributes, attribute.String(key, value))
+		default:
+			attributes = append(attributes, attribute.String(key, fmt.Sprint(value)))
+		}
+	}
+	return attributes
 }

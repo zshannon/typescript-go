@@ -190,11 +190,22 @@ func typecheckV3WithContext(ctx context.Context, files map[string][]byte, tsconf
 	ctx, span := startSpan(ctx, "fly_tsgo.v3.typecheck",
 		attribute.Int("fly_tsgo.files.count", len(files)),
 	)
+	var fs *diskFS
 	typecheckStart := time.Now()
 	defer func() {
 		duration := time.Since(typecheckStart)
 		typecheckDuration.Observe(duration.Seconds())
 		log.Printf("[PERF] typecheckV3 total: %v (%d files)", duration, len(files))
+		if fs != nil {
+			waitForDiskMemoryCache()
+			cacheStats := fs.cacheSnapshot()
+			span.SetAttributes(
+				attribute.Int64("fly_tsgo.memory_cache.file.hit.count", cacheStats.fileHits),
+				attribute.Int64("fly_tsgo.memory_cache.file.miss.count", cacheStats.fileMisses),
+				attribute.Int64("fly_tsgo.memory_cache.resolution.hit.count", cacheStats.resolutionHits),
+				attribute.Int64("fly_tsgo.memory_cache.resolution.miss.count", cacheStats.resolutionMisses),
+			)
+		}
 		span.SetAttributes(
 			attribute.Float64("fly_tsgo.typecheck.duration_ms", spanDurationMS(duration)),
 			attribute.Int("fly_tsgo.typecheck.errors.count", len(response.Errors)),
@@ -203,11 +214,12 @@ func typecheckV3WithContext(ctx context.Context, files map[string][]byte, tsconf
 		span.End()
 	}()
 
+	_, prepareSpan := startSpan(ctx, "typescript.typecheck.prepare")
 	// Resolve deps
 	hash := hashBunLock(lockContent)
 	depDir := filepath.Join(diskCachePath, "deps", hash)
 
-	fs := newDiskFSFromDeps(depDir)
+	fs = newDiskFSFromDeps(depDir)
 	fs.hasUserFiles = true
 
 	// Populate with user files, skipping config files
@@ -220,6 +232,7 @@ func typecheckV3WithContext(ctx context.Context, files map[string][]byte, tsconf
 
 		normalized, err := normalizeAndValidatePath(path)
 		if err != nil {
+			prepareSpan.End()
 			return TypecheckV2Response{
 				Errors: []DiagnosticErrorV2{{
 					File:    path,
@@ -239,15 +252,21 @@ func typecheckV3WithContext(ctx context.Context, files map[string][]byte, tsconf
 	}
 
 	if len(fileNames) == 0 {
+		prepareSpan.End()
 		return TypecheckV2Response{
 			Errors: []DiagnosticErrorV2{{
 				Message: "No TypeScript files found to check",
 			}},
 		}
 	}
+	prepareSpan.SetAttributes(attribute.Int("typescript.source_files.count", len(fileNames)))
+	prepareSpan.End()
 
 	// Parse compiler options from tsconfig
+	_, configSpan := startSpan(ctx, "typescript.config.parse")
 	compilerOptions, err := parseTSConfig(tsconfigRaw)
+	recordSpanError(configSpan, "err-typescript-config-parse", err)
+	configSpan.End()
 	if err != nil {
 		recordSpanError(span, "err-v3-typecheck-parse-tsconfig", err)
 		return TypecheckV2Response{
@@ -257,6 +276,7 @@ func typecheckV3WithContext(ctx context.Context, files map[string][]byte, tsconf
 		}
 	}
 
+	_, hostSpan := startSpan(ctx, "typescript.compiler_host.create")
 	wrappedFS := bundled.WrapFS(fs)
 
 	parsedOptions := &core.ParsedOptions{
@@ -270,21 +290,39 @@ func typecheckV3WithContext(ctx context.Context, files map[string][]byte, tsconf
 
 	extendedConfigCache := &tsc.ExtendedConfigCache{}
 	host := compiler.NewCachedFSCompilerHost("/", wrappedFS, bundled.LibPath(), extendedConfigCache, nil)
+	hostSpan.End()
 
+	compilerTrace := newOTelCompilerTracer(ctx)
+	programCtx, programSpan := startSpan(ctx, "typescript.program.create")
+	compilerTrace.setContext(programCtx)
 	program := compiler.NewProgram(compiler.ProgramOptions{
-		Config: config,
-		Host:   host,
+		Config:  config,
+		Host:    host,
+		Tracing: asCompilerPerformanceTracer(compilerTrace),
 	})
+	compilerTrace.flush(programCtx)
+	programSpan.End()
 	span.SetAttributes(attribute.Int("fly_tsgo.typecheck.entrypoints.count", len(fileNames)))
 
 	// Get diagnostics
-	diagnostics := program.GetSyntacticDiagnostics(ctx, nil)
+	syntacticCtx, syntacticSpan := startSpan(ctx, "typescript.diagnostics.syntactic")
+	compilerTrace.setContext(syntacticCtx)
+	diagnostics := program.GetSyntacticDiagnostics(syntacticCtx, nil)
+	compilerTrace.flush(syntacticCtx)
+	syntacticSpan.SetAttributes(attribute.Int("typescript.diagnostics.count", len(diagnostics)))
+	syntacticSpan.End()
 	if len(diagnostics) == 0 {
-		diagnostics = append(diagnostics, program.GetSemanticDiagnostics(ctx, nil)...)
+		semanticCtx, semanticSpan := startSpan(ctx, "typescript.diagnostics.semantic")
+		compilerTrace.setContext(semanticCtx)
+		diagnostics = append(diagnostics, program.GetSemanticDiagnostics(semanticCtx, nil)...)
+		compilerTrace.flush(semanticCtx)
+		semanticSpan.SetAttributes(attribute.Int("typescript.diagnostics.count", len(diagnostics)))
+		semanticSpan.End()
 	}
 	span.SetAttributes(attribute.Int("fly_tsgo.typecheck.diagnostics.count", len(diagnostics)))
 
 	if len(diagnostics) > 0 {
+		_, formatSpan := startSpan(ctx, "typescript.diagnostics.format")
 		errors := make([]DiagnosticErrorV2, 0, len(diagnostics))
 		for _, diag := range diagnostics {
 			diagErr := DiagnosticErrorV2{
@@ -300,6 +338,7 @@ func typecheckV3WithContext(ctx context.Context, files map[string][]byte, tsconf
 			}
 			errors = append(errors, diagErr)
 		}
+		formatSpan.End()
 		typecheckResults.WithLabelValues("error").Inc()
 		return TypecheckV2Response{Errors: errors}
 	}

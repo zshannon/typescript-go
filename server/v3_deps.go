@@ -93,7 +93,10 @@ func resolveDepsForUse(ctx context.Context, lockContent []byte, pkg *v3PackageJS
 	hash := hashBunLock(lockContent)
 	depDir := depsCacheDir(hash)
 
-	release, err := beginDepCacheUse(ctx, hash)
+	cacheCtx, cacheSpan := startSpan(ctx, "fly_tsgo.deps.cache.acquire")
+	release, err := beginDepCacheUse(cacheCtx, hash)
+	recordSpanError(cacheSpan, "err-deps-cache-acquire", err)
+	cacheSpan.End()
 	if err != nil {
 		recordSpanError(span, "err-deps-flush-wait", err)
 		return "", nil, err
@@ -106,9 +109,12 @@ func resolveDepsForUse(ctx context.Context, lockContent []byte, pkg *v3PackageJS
 	}()
 
 	waitForInflight := func(inflight *depInstallResult) (string, error) {
+		waitCtx, waitSpan := startSpan(ctx, "fly_tsgo.deps.install.wait")
+		defer waitSpan.End()
 		// Wait until the dependency directory is usable. The full lifecycle may
 		// continue while the cache tarball uploads in the background.
-		if err := waitForDepInstallReady(ctx, inflight); err != nil {
+		if err := waitForDepInstallReady(waitCtx, inflight); err != nil {
+			recordSpanError(waitSpan, "err-deps-inflight-wait", err)
 			recordSpanError(span, "err-deps-inflight-wait", err)
 			return "", err
 		}
@@ -117,6 +123,7 @@ func resolveDepsForUse(ctx context.Context, lockContent []byte, pkg *v3PackageJS
 			attribute.Bool("fly_tsgo.deps.wait_inflight.success", inflight.err == nil),
 		)
 		recordSpanError(span, "err-deps-inflight", inflight.err)
+		recordSpanError(waitSpan, "err-deps-inflight", inflight.err)
 		if inflight.err != nil {
 			return "", inflight.err
 		}
@@ -140,15 +147,20 @@ func resolveDepsForUse(ctx context.Context, lockContent []byte, pkg *v3PackageJS
 
 	// Tier 1: local disk check
 	nmDir := filepath.Join(depDir, "node_modules")
-	if _, err := os.Stat(nmDir); err == nil {
+	_, diskSpan := startSpan(ctx, "fly_tsgo.deps.disk.lookup")
+	_, diskErr := os.Stat(nmDir)
+	diskSpan.SetAttributes(attribute.Bool("fly_tsgo.deps.disk.hit", diskErr == nil))
+	if diskErr == nil {
 		depCacheLookups.WithLabelValues("disk_hit").Inc()
 		span.SetAttributes(attribute.String("fly_tsgo.deps.cache.result", "disk_hit"))
 		// Touch mtime for LRU eviction tracking
 		now := time.Now()
 		_ = os.Chtimes(depDir, now, now)
+		diskSpan.End()
 		keepCacheUse = true
 		return depDir, release, nil
 	}
+	diskSpan.End()
 
 	// Concurrency dedup: only one goroutine does the install/download per hash
 	depInstallMu.Lock()
@@ -468,7 +480,12 @@ func setDepInstallTempDir(result *depInstallResult, tmpDir string) {
 }
 
 // resolveDepsFromS3 downloads and extracts a deps tarball from S3.
-func resolveDepsFromS3(ctx context.Context, hash string, depDir string) (string, error) {
+func resolveDepsFromS3(ctx context.Context, hash string, depDir string) (path string, err error) {
+	ctx, span := startSpan(ctx, "fly_tsgo.deps.s3_download")
+	defer func() {
+		recordSpanError(span, "err-deps-s3-download", err)
+		span.End()
+	}()
 	key := depsCacheS3Key(hash)
 	out, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s3Bucket),
@@ -483,9 +500,14 @@ func resolveDepsFromS3(ctx context.Context, hash string, depDir string) (string,
 		return "", fmt.Errorf("mkdir %s: %w", depDir, err)
 	}
 
-	if err := extractTarGz(out.Body, depDir); err != nil {
-		return "", fmt.Errorf("extract tar.gz: %w", err)
+	_, extractSpan := startSpan(ctx, "archive.tar_gzip.extract")
+	extractErr := extractTarGz(out.Body, depDir)
+	recordSpanError(extractSpan, "err-deps-archive-extract", extractErr)
+	extractSpan.End()
+	if extractErr != nil {
+		return "", fmt.Errorf("extract tar.gz: %w", extractErr)
 	}
+	invalidateDiskMemoryCache(depDir)
 
 	return depDir, nil
 }
@@ -498,13 +520,18 @@ func installDeps(ctx context.Context, hash string, depDir string, lockContent []
 	defer span.End()
 	start := time.Now()
 
+	workspaceCtx, workspaceSpan := startSpan(ctx, "fly_tsgo.deps.install.workspace")
 	tmpRoot := depsInstallTempRoot()
 	if err := os.MkdirAll(tmpRoot, 0755); err != nil {
+		recordSpanError(workspaceSpan, "err-deps-workspace-root-create", err)
+		workspaceSpan.End()
 		return "", fmt.Errorf("mkdir temp root: %w", err)
 	}
 
 	tmpDir, err := os.MkdirTemp(tmpRoot, "bun-install-*")
 	if err != nil {
+		recordSpanError(workspaceSpan, "err-deps-workspace-create", err)
+		workspaceSpan.End()
 		return "", fmt.Errorf("mkdirtemp: %w", err)
 	}
 	setDepInstallTempDir(result, tmpDir)
@@ -512,9 +539,13 @@ func installDeps(ctx context.Context, hash string, depDir string, lockContent []
 	defer os.RemoveAll(tmpDir)
 
 	if err := os.WriteFile(filepath.Join(tmpDir, "package.json"), rawPackageJSON, 0o644); err != nil {
+		recordSpanError(workspaceSpan, "err-deps-package-json-write", err)
+		workspaceSpan.End()
 		return "", fmt.Errorf("write package.json: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(tmpDir, "bun.lock"), lockContent, 0o644); err != nil {
+		recordSpanError(workspaceSpan, "err-deps-bun-lock-write", err)
+		workspaceSpan.End()
 		return "", fmt.Errorf("write bun.lock: %w", err)
 	}
 
@@ -522,31 +553,46 @@ func installDeps(ctx context.Context, hash string, depDir string, lockContent []
 	if len(pkg.ResolveS3) > 0 {
 		nmDir := filepath.Join(tmpDir, "node_modules")
 		if err := os.MkdirAll(nmDir, 0o755); err != nil {
+			recordSpanError(workspaceSpan, "err-deps-mkdir-node-modules", err)
+			workspaceSpan.End()
 			recordSpanError(span, "err-deps-mkdir-node-modules", err)
 			return "", fmt.Errorf("mkdir node_modules: %w", err)
 		}
-		if err := preseedS3Packages(ctx, pkg, nmDir); err != nil {
+		if err := preseedS3Packages(workspaceCtx, pkg, nmDir); err != nil {
+			recordSpanError(workspaceSpan, "err-deps-preseed-s3-packages", err)
+			workspaceSpan.End()
 			recordSpanError(span, "err-deps-preseed-s3-packages", err)
 			return "", fmt.Errorf("preseed s3 packages: %w", err)
 		}
 	}
+	workspaceSpan.End()
 
 	bunStart := time.Now()
-	cmd := exec.CommandContext(ctx, "bun", "install", "--frozen-lockfile", "--ignore-scripts")
+	bunCtx, bunSpan := startSpan(ctx, "process.exec",
+		attribute.StringSlice("process.command_args", []string{"bun", "install", "--frozen-lockfile", "--ignore-scripts"}),
+		attribute.String("process.executable.name", "bun"),
+	)
+	cmd := exec.CommandContext(bunCtx, "bun", "install", "--frozen-lockfile", "--ignore-scripts")
 	cmd.Dir = tmpDir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	bunErr := cmd.Run()
+	recordSpanError(bunSpan, "err-bun-install", bunErr)
+	bunSpan.End()
+	if bunErr != nil {
 		span.SetAttributes(attribute.Float64("fly_tsgo.deps.bun_install.duration_ms", spanDurationMS(time.Since(bunStart))))
-		recordSpanError(span, "err-bun-install", err)
-		return "", fmt.Errorf("bun install failed: %w\nstderr: %s", err, stderr.String())
+		recordSpanError(span, "err-bun-install", bunErr)
+		return "", fmt.Errorf("bun install failed: %w\nstderr: %s", bunErr, stderr.String())
 	}
 	span.SetAttributes(attribute.Float64("fly_tsgo.deps.bun_install.duration_ms", spanDurationMS(time.Since(bunStart))))
 
 	depInstallDuration.Observe(time.Since(start).Seconds())
 
 	// Move node_modules to cache location
+	_, publishSpan := startSpan(ctx, "fly_tsgo.deps.cache.publish")
 	if err := os.MkdirAll(filepath.Dir(depDir), 0o755); err != nil {
+		recordSpanError(publishSpan, "err-deps-cache-parent-create", err)
+		publishSpan.End()
 		return "", fmt.Errorf("mkdir cache parent: %w", err)
 	}
 
@@ -554,11 +600,14 @@ func installDeps(ctx context.Context, hash string, depDir string, lockContent []
 	destNM := filepath.Join(depDir, "node_modules")
 
 	if err := os.RemoveAll(depDir); err != nil {
+		recordSpanError(publishSpan, "err-deps-remove-stale-cache-dir", err)
+		publishSpan.End()
 		recordSpanError(span, "err-deps-remove-stale-cache-dir", err)
 		return "", fmt.Errorf("remove stale depDir: %w", err)
 	}
-
 	if err := os.MkdirAll(depDir, 0o755); err != nil {
+		recordSpanError(publishSpan, "err-deps-mkdir-cache-dir", err)
+		publishSpan.End()
 		recordSpanError(span, "err-deps-mkdir-cache-dir", err)
 		return "", fmt.Errorf("mkdir depDir: %w", err)
 	}
@@ -566,6 +615,8 @@ func installDeps(ctx context.Context, hash string, depDir string, lockContent []
 	// Attempt rename first (fast if same filesystem), fall back to copy.
 	if err := os.Rename(tmpNM, destNM); err != nil {
 		if err2 := copyDir(tmpNM, destNM); err2 != nil {
+			recordSpanError(publishSpan, "err-deps-copy-node-modules", err2)
+			publishSpan.End()
 			recordSpanError(span, "err-deps-copy-node-modules", err2)
 			return "", fmt.Errorf("copy node_modules: %w", err2)
 		}
@@ -573,6 +624,8 @@ func installDeps(ctx context.Context, hash string, depDir string, lockContent []
 	} else {
 		span.SetAttributes(attribute.Bool("fly_tsgo.deps.cache.copied", false))
 	}
+	invalidateDiskMemoryCache(depDir)
+	publishSpan.End()
 
 	return depDir, nil
 }
@@ -592,7 +645,11 @@ func uploadDepsToS3(ctx context.Context, hash string, depDir string) {
 	pr, pw := io.Pipe()
 	writeResult := make(chan tarGzWriteResult, 1)
 	go func() {
+		_, archiveSpan := startSpan(ctx, "archive.tar_gzip.create")
 		result := writeDepsTarGz(pw, depDir)
+		recordSpanError(archiveSpan, "err-deps-archive-create", result.err)
+		archiveSpan.SetAttributes(attribute.Int64("archive.compressed.bytes", result.bytes))
+		archiveSpan.End()
 		if result.err != nil {
 			_ = pw.CloseWithError(result.err)
 		} else {
@@ -883,7 +940,12 @@ func preseedS3Packages(ctx context.Context, pkg *v3PackageJSON, nodeModulesDir s
 	return g.Wait()
 }
 
-func preseedS3Package(ctx context.Context, pkg *v3PackageJSON, nodeModulesDir string, name string) error {
+func preseedS3Package(ctx context.Context, pkg *v3PackageJSON, nodeModulesDir string, name string) (err error) {
+	ctx, span := startSpan(ctx, "fly_tsgo.deps.preseed_package", attribute.String("package.name", name))
+	defer func() {
+		recordSpanError(span, "err-deps-preseed-package", err)
+		span.End()
+	}()
 	version, err := lookupS3PackageVersion(pkg, name)
 	if err != nil {
 		return err
@@ -904,8 +966,12 @@ func preseedS3Package(ctx context.Context, pkg *v3PackageJSON, nodeModulesDir st
 		return fmt.Errorf("mkdir %s: %w", pkgDir, err)
 	}
 
-	if err := extractNpmTarball(out.Body, pkgDir); err != nil {
-		return fmt.Errorf("extract %s: %w", name, err)
+	_, extractSpan := startSpan(ctx, "archive.npm.extract")
+	extractErr := extractNpmTarball(out.Body, pkgDir)
+	recordSpanError(extractSpan, "err-npm-archive-extract", extractErr)
+	extractSpan.End()
+	if extractErr != nil {
+		return fmt.Errorf("extract %s: %w", name, extractErr)
 	}
 
 	return nil

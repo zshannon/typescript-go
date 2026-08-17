@@ -159,6 +159,30 @@ func resolveBarePackageImporter(fs FileSystem, packageName string) string {
 
 // resolveModule is the main module resolution function
 func resolveModule(fs FileSystem, importPath string, importer string) string {
+	if disk, ok := fs.(*diskFS); ok {
+		if isRequestScopedResolution(disk, importPath, importer) {
+			return resolveModuleUncached(fs, importPath, importer)
+		}
+		if resolvedPath, cached := disk.cachedResolution(importPath, importer); cached {
+			return resolvedPath
+		}
+		resolvedPath := resolveModuleUncached(fs, importPath, importer)
+		if resolvedPath != "" {
+			disk.cacheResolution(importPath, importer, resolvedPath)
+		}
+		return resolvedPath
+	}
+	return resolveModuleUncached(fs, importPath, importer)
+}
+
+func isRequestScopedResolution(fs *diskFS, importPath string, importer string) bool {
+	return fs.hasUserFiles &&
+		(strings.HasPrefix(importPath, "./") || strings.HasPrefix(importPath, "../")) &&
+		strings.HasPrefix(importer, "/") &&
+		!strings.HasPrefix(importer, "/node_modules/")
+}
+
+func resolveModuleUncached(fs FileSystem, importPath string, importer string) string {
 	// Security: validate paths (skip for relative imports - they're validated after resolution)
 	if !strings.HasPrefix(importPath, "./") && !strings.HasPrefix(importPath, "../") {
 		if err := validatePath(importPath); err != nil {
@@ -206,13 +230,21 @@ func resolveModule(fs FileSystem, importPath string, importer string) string {
 		resolvedPath := filepath.Join(importerDir, importPath)
 		resolvedPath = strings.ReplaceAll(resolvedPath, "\\", "/")
 
-		// Security: validate the resolved path
-		if err := validatePath(resolvedPath); err != nil {
-			return ""
+		if disk, ok := fs.(*diskFS); ok && isRequestScopedResolution(disk, importPath, importerPath) {
+			var err error
+			resolvedPath, err = normalizeAndValidatePath(resolvedPath)
+			if err != nil {
+				return ""
+			}
+		} else {
+			// Dependency-relative paths must remain inside node_modules.
+			if err := validatePath(resolvedPath); err != nil {
+				return ""
+			}
 		}
 
 		// Try with common extensions
-		for _, ext := range []string{"", ".js", ".jsx", ".mjs", ".cjs", "/index.js"} {
+		for _, ext := range []string{"", ".js", ".jsx", ".mjs", ".json", ".ts", ".tsx", ".cjs", "/index.js"} {
 			testPath := resolvedPath + ext
 			if _, exists := fs.ReadFile(testPath); exists {
 				return testPath

@@ -39,7 +39,7 @@ type emitter struct {
 	sourceFile         *ast.SourceFile
 	emitResult         EmitResult
 	writeFile          func(fileName string, text string, data *WriteFileData) error
-	tr                 *tracing.Tracing
+	tr                 tracing.PerformanceTracer
 }
 
 func (e *emitter) emit() {

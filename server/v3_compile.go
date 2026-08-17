@@ -6,6 +6,7 @@ import (
 	"log"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/evanw/esbuild/pkg/api"
@@ -78,6 +79,7 @@ func compileV3WithContext(ctx context.Context, files map[string][]byte, pkg *v3P
 		span.End()
 	}()
 
+	_, prepareSpan := startSpan(ctx, "esbuild.compile.prepare")
 	// Resolve deps
 	hash := hashBunLock(lockContent)
 	depDir := filepath.Join(diskCachePath, "deps", hash)
@@ -93,6 +95,7 @@ func compileV3WithContext(ctx context.Context, files map[string][]byte, pkg *v3P
 
 		normalized, err := normalizeAndValidatePath(path)
 		if err != nil {
+			prepareSpan.End()
 			return BuildV2Response{
 				Errors: []DiagnosticErrorV2{{
 					File:    path,
@@ -119,6 +122,7 @@ func compileV3WithContext(ctx context.Context, files map[string][]byte, pkg *v3P
 	_, entryExists := fs.userFiles[entryPoint]
 	fs.mu.RUnlock()
 	if !entryExists {
+		prepareSpan.End()
 		return BuildV2Response{
 			Errors: []DiagnosticErrorV2{{
 				File:    pkg.Main,
@@ -133,11 +137,14 @@ func compileV3WithContext(ctx context.Context, files map[string][]byte, pkg *v3P
 	// Get externals and globals for plugin-based handling
 	externals := pkg.Esbuild.External
 	globals := pkg.Esbuild.Globals
+	prepareSpan.End()
 
-	// Create virtual file resolver for esbuild
-	resolverCalls := 0
+	// Create virtual file resolver for esbuild.
+	loadTimings := durationAccumulator{}
+	resolveTimings := durationAccumulator{}
 	resolver := func(path string) (api.OnLoadResult, error) {
-		resolverCalls++
+		startedAt := time.Now()
+		defer func() { loadTimings.observe(time.Since(startedAt)) }()
 		trackPackageResolution(path)
 
 		if strings.HasPrefix(path, "/") || strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../") {
@@ -186,6 +193,12 @@ func compileV3WithContext(ctx context.Context, files map[string][]byte, pkg *v3P
 	}
 
 	// Build with esbuild using options from package.json
+	esbuildCtx, esbuildSpan := startSpan(ctx, "esbuild.build",
+		attribute.Bool("esbuild.bundle", opts.Bundle),
+		attribute.String("esbuild.format", esbuildFormatName(opts.Format)),
+	)
+	_, loadSpan := startSpan(esbuildCtx, "esbuild.load")
+	_, resolveSpan := startSpan(esbuildCtx, "esbuild.resolve")
 	esbuildStart := time.Now()
 	result := api.Build(api.BuildOptions{
 		Bundle:            opts.Bundle,
@@ -202,6 +215,8 @@ func compileV3WithContext(ctx context.Context, files map[string][]byte, pkg *v3P
 			Name: "virtual-fs-v3",
 			Setup: func(pb api.PluginBuild) {
 				pb.OnResolve(api.OnResolveOptions{Filter: ".*"}, func(args api.OnResolveArgs) (api.OnResolveResult, error) {
+					startedAt := time.Now()
+					defer func() { resolveTimings.observe(time.Since(startedAt)) }()
 					trackPackageResolution(args.Path)
 
 					// Handle absolute imports
@@ -274,6 +289,8 @@ func compileV3WithContext(ctx context.Context, files map[string][]byte, pkg *v3P
 				})
 
 				pb.OnLoad(api.OnLoadOptions{Filter: ".*", Namespace: "globals"}, func(args api.OnLoadArgs) (api.OnLoadResult, error) {
+					startedAt := time.Now()
+					defer func() { loadTimings.observe(time.Since(startedAt)) }()
 					globalVar := globals[args.Path]
 					contents := "module.exports = " + globalVar
 					return api.OnLoadResult{Contents: &contents, Loader: api.LoaderJS}, nil
@@ -286,17 +303,37 @@ func compileV3WithContext(ctx context.Context, files map[string][]byte, pkg *v3P
 		}},
 	})
 	esbuildDuration := time.Since(esbuildStart)
-	span.SetAttributes(
+	waitForDiskMemoryCache()
+	cacheStats := fs.cacheSnapshot()
+	loadSpan.SetAttributes(
+		attribute.Int64("esbuild.load.calls.count", loadTimings.count()),
+		attribute.Float64("esbuild.load.duration_ms.max", spanDurationMS(loadTimings.max())),
+		attribute.Float64("esbuild.load.duration_ms.sum", spanDurationMS(loadTimings.total())),
+		attribute.Int64("fly_tsgo.memory_cache.file.hit.count", cacheStats.fileHits),
+		attribute.Int64("fly_tsgo.memory_cache.file.miss.count", cacheStats.fileMisses),
+	)
+	loadSpan.End()
+	resolveSpan.SetAttributes(
+		attribute.Int64("esbuild.resolve.calls.count", resolveTimings.count()),
+		attribute.Float64("esbuild.resolve.duration_ms.max", spanDurationMS(resolveTimings.max())),
+		attribute.Float64("esbuild.resolve.duration_ms.sum", spanDurationMS(resolveTimings.total())),
+		attribute.Int64("fly_tsgo.memory_cache.resolution.hit.count", cacheStats.resolutionHits),
+		attribute.Int64("fly_tsgo.memory_cache.resolution.miss.count", cacheStats.resolutionMisses),
+	)
+	resolveSpan.End()
+	esbuildSpan.SetAttributes(
 		attribute.Bool("fly_tsgo.esbuild.bundle", opts.Bundle),
 		attribute.Float64("fly_tsgo.esbuild.duration_ms", spanDurationMS(esbuildDuration)),
 		attribute.Int("fly_tsgo.esbuild.errors.count", len(result.Errors)),
 		attribute.String("fly_tsgo.esbuild.format", esbuildFormatName(opts.Format)),
 		attribute.Int("fly_tsgo.esbuild.output_files.count", len(result.OutputFiles)),
-		attribute.Int("fly_tsgo.esbuild.resolver_calls.count", resolverCalls),
-		attribute.String("fly_tsgo.compile.entry_point", entryPoint),
+		attribute.Int64("fly_tsgo.esbuild.resolver_calls.count", loadTimings.count()),
 	)
-	log.Printf("[PERF] esbuild.Build V3: %v (resolver called %d times)", esbuildDuration, resolverCalls)
+	esbuildSpan.End()
+	span.SetAttributes(attribute.String("fly_tsgo.compile.entry_point", entryPoint))
+	log.Printf("[PERF] esbuild.Build V3: %v (resolver called %d times)", esbuildDuration, loadTimings.count())
 
+	_, resultSpan := startSpan(ctx, "esbuild.result.process")
 	if len(result.Errors) > 0 {
 		errors := make([]DiagnosticErrorV2, 0, len(result.Errors))
 		for _, err := range result.Errors {
@@ -310,18 +347,51 @@ func compileV3WithContext(ctx context.Context, files map[string][]byte, pkg *v3P
 			}
 			errors = append(errors, diagErr)
 		}
+		resultSpan.End()
 		compileResults.WithLabelValues("error").Inc()
 		return BuildV2Response{Errors: errors}
 	}
 
 	if len(result.OutputFiles) == 0 {
+		resultSpan.End()
 		compileResults.WithLabelValues("error").Inc()
 		return BuildV2Response{Errors: []DiagnosticErrorV2{{Message: "No output generated"}}}
 	}
 
 	outputCode := string(result.OutputFiles[0].Contents)
+	resultSpan.End()
 	compileResults.WithLabelValues("success").Inc()
 	return BuildV2Response{Code: outputCode}
+}
+
+type durationAccumulator struct {
+	calls      atomic.Int64
+	maxNanos   atomic.Int64
+	totalNanos atomic.Int64
+}
+
+func (accumulator *durationAccumulator) count() int64 {
+	return accumulator.calls.Load()
+}
+
+func (accumulator *durationAccumulator) max() time.Duration {
+	return time.Duration(accumulator.maxNanos.Load())
+}
+
+func (accumulator *durationAccumulator) observe(duration time.Duration) {
+	nanoseconds := duration.Nanoseconds()
+	accumulator.calls.Add(1)
+	accumulator.totalNanos.Add(nanoseconds)
+
+	for maximum := accumulator.maxNanos.Load(); nanoseconds > maximum; maximum = accumulator.maxNanos.Load() {
+		if accumulator.maxNanos.CompareAndSwap(maximum, nanoseconds) {
+			break
+		}
+	}
+}
+
+func (accumulator *durationAccumulator) total() time.Duration {
+	return time.Duration(accumulator.totalNanos.Load())
 }
 
 func esbuildFormatName(format api.Format) string {

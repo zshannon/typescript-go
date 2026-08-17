@@ -49,6 +49,13 @@ func stopTracing(sys tsc.System, tr *tracing.Tracing) {
 	}
 }
 
+func asPerformanceTracer(tr *tracing.Tracing) tracing.PerformanceTracer {
+	if tr == nil {
+		return nil
+	}
+	return tr
+}
+
 func CommandLine(ctx context.Context, sys tsc.System, commandLineArgs []string, testing tsc.CommandLineTesting) tsc.CommandLineResult {
 	if len(commandLineArgs) > 0 {
 		switch strings.ToLower(commandLineArgs[0]) {
@@ -301,7 +308,7 @@ func performIncrementalCompilation(
 	program := compiler.NewProgram(compiler.ProgramOptions{
 		Config:  config,
 		Host:    host,
-		Tracing: tr,
+		Tracing: asPerformanceTracer(tr),
 	})
 	compileTimes.ParseTime = sys.Now().Sub(parseStart)
 	changesComputeStart := sys.Now()
@@ -347,7 +354,7 @@ func performCompilation(
 	program := compiler.NewProgram(compiler.ProgramOptions{
 		Config:  config,
 		Host:    host,
-		Tracing: tr,
+		Tracing: asPerformanceTracer(tr),
 	})
 	compileTimes.ParseTime = sys.Now().Sub(parseStart)
 	result, _ := tsc.EmitAndReportStatistics(tsc.EmitInput{

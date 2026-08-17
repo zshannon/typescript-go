@@ -40,7 +40,7 @@ type ProgramOptions struct {
 	CreateCheckerPool           func(*Program) CheckerPool
 	TypingsLocation             string
 	ProjectName                 string
-	Tracing                     *tracing.Tracing
+	Tracing                     tracing.PerformanceTracer
 }
 
 func (p *ProgramOptions) canUseProjectReferenceSource() bool {
@@ -404,7 +404,7 @@ func (p *Program) DuplicateSourceFiles() []*DuplicateSourceFile { return p.dupli
 func (p *Program) Options() *core.CompilerOptions               { return p.opts.Config.CompilerOptions() }
 func (p *Program) CommandLine() *tsoptions.ParsedCommandLine    { return p.opts.Config }
 func (p *Program) Host() CompilerHost                           { return p.opts.Host }
-func (p *Program) Tracing() *tracing.Tracing                    { return p.opts.Tracing }
+func (p *Program) Tracing() tracing.PerformanceTracer           { return p.opts.Tracing }
 func (p *Program) GetConfigFileParsingDiagnostics() []*ast.Diagnostic {
 	return slices.Clip(p.opts.Config.GetConfigFileParsingDiagnostics())
 }

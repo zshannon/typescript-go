@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -80,8 +81,11 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
+		_, span := startSpan(r.Context(), "http.request.authenticate")
 		msg := httpsig.MessageFromRequest(r)
 		if err := authVerifier.Verify(msg); err != nil {
+			recordSpanError(span, "err-http-signature-verify", err)
+			span.End()
 			log.Printf("auth: signature verification failed: %v", err)
 			http.Error(w, "signature verification failed", http.StatusUnauthorized)
 			return
@@ -89,12 +93,15 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		if r.ContentLength > 0 || len(r.TransferEncoding) > 0 {
 			if !signatureCoversContentDigest(r) {
+				recordSpanError(span, "err-content-digest-not-signed", errors.New("request body content-digest is not signed"))
+				span.End()
 				log.Printf("auth: request has body but signature does not cover content-digest")
 				http.Error(w, "signature verification failed", http.StatusUnauthorized)
 				return
 			}
 		}
 
+		span.End()
 		next(w, r)
 	}
 }
