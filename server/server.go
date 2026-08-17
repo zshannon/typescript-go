@@ -217,7 +217,7 @@ func ensureVersionSynced(ctx context.Context, version string) error {
 	if _, err := os.Stat(versionPath); err == nil {
 		return nil
 	}
-	invalidateDiskMemoryCache()
+	invalidateDiskMemoryCache(versionPath)
 
 	ctx, span := startSpan(ctx, "fly_tsgo.version.sync",
 		attribute.String("fly_tsgo.version", version),
@@ -319,7 +319,7 @@ func ensureVersionSynced(ctx context.Context, version string) error {
 	}
 	close(keysChan)
 	wg.Wait()
-	invalidateDiskMemoryCache()
+	invalidateDiskMemoryCache(versionPath)
 
 	duration := time.Since(start)
 	span.SetAttributes(
@@ -465,7 +465,7 @@ func deleteOldestVersion(keepVersion string) bool {
 			log.Printf("[CLEANUP] Failed to remove %s: %v", v.name, err)
 			continue
 		}
-		invalidateDiskMemoryCache()
+		invalidateDiskMemoryCache(versionPath)
 		return true
 	}
 	return false
@@ -1211,7 +1211,7 @@ func flushAllDeps(ctx context.Context) (flushDepsResult, error) {
 		log.Printf("[FLUSH] Failed to remove %s: %v", depsPath, err)
 		return result, fmt.Errorf("remove disk deps cache: %w", err)
 	}
-	invalidateDiskMemoryCache()
+	clearDiskMemoryCache()
 	log.Printf("[FLUSH] Cleared disk deps cache at %s", depsPath)
 
 	if s3Client != nil {
@@ -1276,7 +1276,7 @@ func flushDepsHash(ctx context.Context, hash string) (flushDepsResult, error) {
 		log.Printf("[FLUSH] Failed to remove %s: %v", depDir, err)
 		return result, fmt.Errorf("remove disk deps cache for %s: %w", hash, err)
 	}
-	invalidateDiskMemoryCache()
+	invalidateDiskMemoryCache(depDir)
 	log.Printf("[FLUSH] Cleared disk deps cache at %s", depDir)
 
 	if s3Client != nil {
@@ -1390,7 +1390,7 @@ func syncVersion(w http.ResponseWriter, req *http.Request) {
 	if err := os.RemoveAll(versionPath); err != nil {
 		log.Printf("[SYNC] Warning: failed to remove %s: %v", versionPath, err)
 	}
-	invalidateDiskMemoryCache()
+	invalidateDiskMemoryCache(versionPath)
 
 	if err := ensureVersionSynced(req.Context(), version); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -37,9 +38,11 @@ type cachedLookup struct {
 }
 
 var (
-	diskCacheGeneration atomic.Uint64
-	diskFileLoads       singleflight.Group
-	diskMemoryCache     = newDiskMemoryCache()
+	diskCacheGlobalGeneration   atomic.Uint64
+	diskCacheGenerationSequence atomic.Uint64
+	diskCacheGenerations        sync.Map
+	diskFileLoads               singleflight.Group
+	diskMemoryCache             = newDiskMemoryCache()
 )
 
 func newDiskMemoryCache() *ristretto.Cache[string, cachedLookup] {
@@ -88,25 +91,47 @@ func (fs *diskFS) readDiskFile(path string) (string, bool) {
 	}
 	fs.cacheStats.fileMisses.Add(1)
 
-	loaded, _, _ := diskFileLoads.Do(key, func() (any, error) {
+	loaded, loadErr, _ := diskFileLoads.Do(key, func() (any, error) {
 		if value, ok := diskMemoryCache.Get(key); ok {
 			return value, nil
 		}
 		data, err := os.ReadFile(fullPath)
-		value := cachedLookup{found: err == nil, value: string(data)}
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		value := cachedLookup{found: err == nil}
+		if err == nil {
+			value.value = string(data)
+		}
 		diskMemoryCache.Set(key, value, int64(len(key)+len(data)+1))
 		return value, nil
 	})
+	if loadErr != nil {
+		return "", false
+	}
 	value := loaded.(cachedLookup)
 	return value.value, value.found
 }
 
-func invalidateDiskMemoryCache() {
-	diskCacheGeneration.Add(1)
+func invalidateDiskMemoryCache(basePath string) {
+	generation := diskCacheGenerationSequence.Add(1)
+	diskCacheGenerations.Store(filepath.Clean(basePath), generation)
+}
+
+func clearDiskMemoryCache() {
+	diskCacheGlobalGeneration.Add(1)
+	diskMemoryCache.Clear()
+	diskCacheGenerations.Clear()
 }
 
 func memoryCacheKey(kind string, basePath string, key string) string {
-	return kind + ":" + strconv.FormatUint(diskCacheGeneration.Load(), 10) + ":" + basePath + ":" + key
+	cleanBasePath := filepath.Clean(basePath)
+	var generation uint64
+	if value, ok := diskCacheGenerations.Load(cleanBasePath); ok {
+		generation = value.(uint64)
+	}
+	return kind + ":" + strconv.FormatUint(diskCacheGlobalGeneration.Load(), 10) + ":" +
+		strconv.FormatUint(generation, 10) + ":" + cleanBasePath + ":" + key
 }
 
 func waitForDiskMemoryCache() {

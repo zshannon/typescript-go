@@ -206,6 +206,26 @@ func TestModuleResolution(t *testing.T) {
 	}
 }
 
+func TestResolveModuleKeepsUserFileResolutionsRequestScoped(t *testing.T) {
+	depDir := t.TempDir()
+
+	firstRequest := newDiskFSFromDeps(depDir)
+	firstRequest.hasUserFiles = true
+	firstRequest.userFiles["/src/index.ts"] = `import "./foo"`
+	firstRequest.userFiles["/src/foo.cjs"] = `module.exports = "first"`
+	if got := resolveModule(firstRequest, "./foo", "/src/index.ts"); got != "/src/foo.cjs" {
+		t.Fatalf("first request resolved ./foo to %q, want /src/foo.cjs", got)
+	}
+
+	secondRequest := newDiskFSFromDeps(depDir)
+	secondRequest.hasUserFiles = true
+	secondRequest.userFiles["/src/index.ts"] = `import "./foo"`
+	secondRequest.userFiles["/src/foo/index.js"] = `export default "second"`
+	if got := resolveModule(secondRequest, "./foo", "/src/index.ts"); got != "/src/foo/index.js" {
+		t.Fatalf("second request resolved ./foo to %q, want /src/foo/index.js", got)
+	}
+}
+
 // TestPathSecurity tests path traversal protection
 func TestPathSecurity(t *testing.T) {
 	tests := []struct {

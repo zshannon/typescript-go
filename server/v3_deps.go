@@ -507,7 +507,7 @@ func resolveDepsFromS3(ctx context.Context, hash string, depDir string) (path st
 	if extractErr != nil {
 		return "", fmt.Errorf("extract tar.gz: %w", extractErr)
 	}
-	invalidateDiskMemoryCache()
+	invalidateDiskMemoryCache(depDir)
 
 	return depDir, nil
 }
@@ -624,7 +624,7 @@ func installDeps(ctx context.Context, hash string, depDir string, lockContent []
 	} else {
 		span.SetAttributes(attribute.Bool("fly_tsgo.deps.cache.copied", false))
 	}
-	invalidateDiskMemoryCache()
+	invalidateDiskMemoryCache(depDir)
 	publishSpan.End()
 
 	return depDir, nil
