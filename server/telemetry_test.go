@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/microsoft/typescript-go/internal/tracing"
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -158,5 +160,51 @@ func TestTelemetryExportConfigured(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestOTelCompilerTracerDisabledForNonRecordingSpan(t *testing.T) {
+	tracer := newOTelCompilerTracer(context.Background())
+	if tracer != nil {
+		t.Fatal("expected compiler tracing to be disabled without a recording span")
+	}
+	if performanceTracer := asCompilerPerformanceTracer(tracer); performanceTracer != nil {
+		t.Fatal("expected nil compiler tracer to remain nil when passed through the performance tracer interface")
+	}
+}
+
+func TestOTelCompilerTracerParentsOverlappingEventsToPhaseSpan(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	previousCompilerTracer := compilerTracer
+	compilerTracer = provider.Tracer("fly-tsgo/compiler")
+	t.Cleanup(func() {
+		compilerTracer = previousCompilerTracer
+		_ = provider.Shutdown(context.Background())
+	})
+
+	phaseCtx, phaseSpan := provider.Tracer("test").Start(context.Background(), "typescript.program.create")
+	phaseSpanID := phaseSpan.SpanContext().SpanID()
+	base := time.Now()
+	tracer := &otelCompilerTracer{events: []compilerTraceEvent{
+		{name: "findSourceFile", phase: tracing.PhaseProgram, start: base, end: base.Add(50 * time.Millisecond)},
+		{name: "createSourceFile", phase: tracing.PhaseParse, start: base.Add(10 * time.Millisecond), end: base.Add(40 * time.Millisecond)},
+	}}
+
+	tracer.flush(phaseCtx)
+	phaseSpan.End()
+
+	compilerSpans := 0
+	for _, span := range exporter.GetSpans() {
+		if span.Name != "typescript.program.findSourceFile" && span.Name != "typescript.parse.createSourceFile" {
+			continue
+		}
+		compilerSpans++
+		if got := span.Parent.SpanID(); got != phaseSpanID {
+			t.Fatalf("compiler span %q parent = %s, want phase span %s", span.Name, got, phaseSpanID)
+		}
+	}
+	if compilerSpans != 2 {
+		t.Fatalf("compiler spans = %d, want 2", compilerSpans)
 	}
 }

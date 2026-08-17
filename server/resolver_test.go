@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -223,6 +225,34 @@ func TestResolveModuleKeepsUserFileResolutionsRequestScoped(t *testing.T) {
 	secondRequest.userFiles["/src/foo/index.js"] = `export default "second"`
 	if got := resolveModule(secondRequest, "./foo", "/src/index.ts"); got != "/src/foo/index.js" {
 		t.Fatalf("second request resolved ./foo to %q, want /src/foo/index.js", got)
+	}
+}
+
+func TestResolveModuleRetriesAfterTransientDiskReadFailure(t *testing.T) {
+	clearDiskMemoryCache()
+	t.Cleanup(clearDiskMemoryCache)
+
+	depDir := t.TempDir()
+	target := filepath.Join(depDir, "node_modules", "pkg", "index.js")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatalf("create directory at module path: %v", err)
+	}
+
+	fs := newDiskFSFromDeps(depDir)
+	const importPath = "/node_modules/pkg/index.js"
+	if got := resolveModule(fs, importPath, ""); got != "" {
+		t.Fatalf("resolution during transient read failure = %q, want empty", got)
+	}
+
+	if err := os.Remove(target); err != nil {
+		t.Fatalf("remove directory at module path: %v", err)
+	}
+	if err := os.WriteFile(target, []byte(`export default "available"`), 0o644); err != nil {
+		t.Fatalf("publish module after transient read failure: %v", err)
+	}
+
+	if got := resolveModule(fs, importPath, ""); got != importPath {
+		t.Fatalf("resolution after transient read failure = %q, want %q", got, importPath)
 	}
 }
 

@@ -167,7 +167,9 @@ func resolveModule(fs FileSystem, importPath string, importer string) string {
 			return resolvedPath
 		}
 		resolvedPath := resolveModuleUncached(fs, importPath, importer)
-		disk.cacheResolution(importPath, importer, resolvedPath)
+		if resolvedPath != "" {
+			disk.cacheResolution(importPath, importer, resolvedPath)
+		}
 		return resolvedPath
 	}
 	return resolveModuleUncached(fs, importPath, importer)

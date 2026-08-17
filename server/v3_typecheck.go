@@ -298,7 +298,7 @@ func typecheckV3WithContext(ctx context.Context, files map[string][]byte, tsconf
 	program := compiler.NewProgram(compiler.ProgramOptions{
 		Config:  config,
 		Host:    host,
-		Tracing: compilerTrace,
+		Tracing: asCompilerPerformanceTracer(compilerTrace),
 	})
 	compilerTrace.flush(programCtx)
 	programSpan.End()

@@ -7,7 +7,6 @@ import (
 	"maps"
 	"net/http"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -168,49 +167,32 @@ type otelCompilerTracer struct {
 	mu     sync.Mutex
 }
 
-type activeCompilerSpan struct {
-	ctx context.Context
-	end time.Time
-}
-
 var _ tracing.PerformanceTracer = (*otelCompilerTracer)(nil)
 
 func newOTelCompilerTracer(ctx context.Context) *otelCompilerTracer {
+	if !oteltrace.SpanFromContext(ctx).IsRecording() {
+		return nil
+	}
 	return &otelCompilerTracer{ctx: ctx}
 }
 
 func (tracer *otelCompilerTracer) flush(ctx context.Context) {
+	if tracer == nil {
+		return
+	}
 	tracer.mu.Lock()
 	events := tracer.events
 	tracer.events = nil
 	tracer.mu.Unlock()
 
-	sort.SliceStable(events, func(left int, right int) bool {
-		if events[left].start.Equal(events[right].start) {
-			return events[left].end.After(events[right].end)
-		}
-		return events[left].start.Before(events[right].start)
-	})
-
-	active := make([]activeCompilerSpan, 0, len(events))
 	for _, event := range events {
-		for len(active) > 0 && (!event.start.Before(active[len(active)-1].end) || event.end.After(active[len(active)-1].end)) {
-			active = active[:len(active)-1]
-		}
-
-		parent := ctx
-		if len(active) > 0 {
-			parent = active[len(active)-1].ctx
-		}
-
-		spanCtx, span := compilerTracer.Start(
-			parent,
+		_, span := compilerTracer.Start(
+			ctx,
 			"typescript."+string(event.phase)+"."+event.name,
 			oteltrace.WithAttributes(compilerTraceAttributes(event.args)...),
 			oteltrace.WithTimestamp(event.start),
 		)
 		span.End(oteltrace.WithTimestamp(event.end))
-		active = append(active, activeCompilerSpan{ctx: spanCtx, end: event.end})
 	}
 }
 
@@ -248,9 +230,19 @@ func (tracer *otelCompilerTracer) Push(phase tracing.Phase, name string, args ma
 }
 
 func (tracer *otelCompilerTracer) setContext(ctx context.Context) {
+	if tracer == nil {
+		return
+	}
 	tracer.mu.Lock()
 	tracer.ctx = ctx
 	tracer.mu.Unlock()
+}
+
+func asCompilerPerformanceTracer(tracer *otelCompilerTracer) tracing.PerformanceTracer {
+	if tracer == nil {
+		return nil
+	}
+	return tracer
 }
 
 func compilerTraceAttributes(args map[string]any) []attribute.KeyValue {
