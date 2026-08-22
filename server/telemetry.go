@@ -213,7 +213,7 @@ func (tracer *otelCompilerTracer) Push(phase tracing.Phase, name string, args ma
 
 	return func() {
 		endedAt := time.Now()
-		if name == "createProgram" || endedAt.Sub(startedAt) < minimumCompilerSpanTime {
+		if !shouldRecordCompilerSpan(name, endedAt.Sub(startedAt)) {
 			return
 		}
 
@@ -227,6 +227,10 @@ func (tracer *otelCompilerTracer) Push(phase tracing.Phase, name string, args ma
 		})
 		tracer.mu.Unlock()
 	}
+}
+
+func shouldRecordCompilerSpan(name string, duration time.Duration) bool {
+	return name != "createProgram" && duration >= minimumCompilerSpanTime
 }
 
 func (tracer *otelCompilerTracer) setContext(ctx context.Context) {

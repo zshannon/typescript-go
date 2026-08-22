@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,6 +14,9 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+	collectortracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestDepResolveContextIgnoresCancellationAndPreservesTraceContext(t *testing.T) {
@@ -158,6 +163,143 @@ func TestTelemetryExportConfigured(t *testing.T) {
 					got,
 					tt.want,
 				)
+			}
+		})
+	}
+}
+
+func TestTelemetryExportsW3CChildToConfiguredEndpoint(t *testing.T) {
+	type capturedExport struct {
+		apiKey  string
+		err     error
+		path    string
+		request collectortracepb.ExportTraceServiceRequest
+	}
+
+	exports := make(chan capturedExport, 1)
+	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		captured := capturedExport{
+			apiKey: r.Header.Get("X-Honeycomb-Team"),
+			err:    err,
+			path:   r.URL.Path,
+		}
+		if err == nil {
+			captured.err = proto.Unmarshal(body, &captured.request)
+		}
+		exports <- captured
+
+		response, err := proto.Marshal(&collectortracepb.ExportTraceServiceResponse{})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		_, _ = w.Write(response)
+	}))
+	t.Cleanup(receiver.Close)
+
+	t.Setenv("HONEYCOMB_API_KEY", "test-api-key")
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "")
+	t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", receiver.URL+"/v1/traces")
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "")
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", "http/protobuf")
+	t.Setenv("OTEL_SERVICE_NAME", "fly-tsgo-test")
+
+	previousCompilerTracer := compilerTracer
+	previousPropagator := otel.GetTextMapPropagator()
+	previousProvider := otel.GetTracerProvider()
+	previousTSGoTracer := tsgoTracer
+	t.Cleanup(func() {
+		compilerTracer = previousCompilerTracer
+		otel.SetTextMapPropagator(previousPropagator)
+		otel.SetTracerProvider(previousProvider)
+		tsgoTracer = previousTSGoTracer
+	})
+
+	shutdown := initTelemetry(context.Background())
+
+	const traceIDHex = "0102030405060708090a0b0c0d0e0f10"
+	const parentSpanIDHex = "0102030405060708"
+	mux := http.NewServeMux()
+	registerRoute(mux, "/v3/compile", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v3/compile", http.NoBody)
+	req.Header.Set("traceparent", "00-"+traceIDHex+"-"+parentSpanIDHex+"-01")
+	res := httptest.NewRecorder()
+	mux.ServeHTTP(res, req)
+	if res.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, res.Code)
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := shutdown(shutdownCtx); err != nil {
+		t.Fatalf("shutdown telemetry: %v", err)
+	}
+
+	var captured capturedExport
+	select {
+	case captured = <-exports:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for OTLP trace export")
+	}
+	if captured.err != nil {
+		t.Fatalf("decode OTLP trace export: %v", captured.err)
+	}
+	if captured.path != "/v1/traces" {
+		t.Fatalf("OTLP export path = %q, want %q", captured.path, "/v1/traces")
+	}
+	if captured.apiKey != "test-api-key" {
+		t.Fatalf("OTLP x-honeycomb-team header = %q, want %q", captured.apiKey, "test-api-key")
+	}
+
+	traceID, err := trace.TraceIDFromHex(traceIDHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentSpanID, err := trace.SpanIDFromHex(parentSpanIDHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, resourceSpans := range captured.request.ResourceSpans {
+		for _, scopeSpans := range resourceSpans.ScopeSpans {
+			for _, span := range scopeSpans.Spans {
+				if span.Kind != tracepb.Span_SPAN_KIND_SERVER || span.Name != "POST /v3/compile" {
+					continue
+				}
+				if !bytes.Equal(span.TraceId, traceID[:]) {
+					t.Fatalf("server span trace ID = %x, want %s", span.TraceId, traceIDHex)
+				}
+				if !bytes.Equal(span.ParentSpanId, parentSpanID[:]) {
+					t.Fatalf("server span parent ID = %x, want %s", span.ParentSpanId, parentSpanIDHex)
+				}
+				return
+			}
+		}
+	}
+
+	t.Fatalf("expected exported server span %q", "POST /v3/compile")
+}
+
+func TestCompilerSpanRecordingThreshold(t *testing.T) {
+	tests := []struct {
+		duration time.Duration
+		name     string
+		want     bool
+	}{
+		{duration: 9 * time.Millisecond, name: "findSourceFile", want: false},
+		{duration: 10 * time.Millisecond, name: "findSourceFile", want: true},
+		{duration: 50 * time.Millisecond, name: "createProgram", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name+"/"+tt.duration.String(), func(t *testing.T) {
+			if got := shouldRecordCompilerSpan(tt.name, tt.duration); got != tt.want {
+				t.Fatalf("shouldRecordCompilerSpan(%q, %s) = %t, want %t", tt.name, tt.duration, got, tt.want)
 			}
 		})
 	}
