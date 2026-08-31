@@ -723,7 +723,7 @@ func typecheckTypeScript(code string, version string) TypecheckResponse {
 	}
 
 	// Create parsed options
-	parsedOptions := &core.ParsedOptions{
+	parsedOptions := &tsoptions.ParsedOptions{
 		CompilerOptions: compilerOptions,
 		FileNames:       []string{fileName},
 	}
@@ -737,7 +737,7 @@ func typecheckTypeScript(code string, version string) TypecheckResponse {
 	extendedConfigCache := &tsc.ExtendedConfigCache{}
 
 	// Create host
-	host := compiler.NewCachedFSCompilerHost("/", wrappedFS, bundled.LibPath(), extendedConfigCache, nil)
+	host := compiler.NewCachedFSCompilerHost("/", wrappedFS, bundled.LibPath(), extendedConfigCache, nil, nil)
 
 	// Create program
 	program := compiler.NewProgram(compiler.ProgramOptions{
@@ -1525,7 +1525,7 @@ func typecheckTypeScriptV2(files map[string]string, entryPoints []string, versio
 		Lib:                              []string{"ES2022"},
 	}
 
-	parsedOptions := &core.ParsedOptions{
+	parsedOptions := &tsoptions.ParsedOptions{
 		CompilerOptions: compilerOptions,
 		FileNames:       fileNames,
 	}
@@ -1535,7 +1535,7 @@ func typecheckTypeScriptV2(files map[string]string, entryPoints []string, versio
 	}
 
 	extendedConfigCache := &tsc.ExtendedConfigCache{}
-	host := compiler.NewCachedFSCompilerHost("/", wrappedFS, bundled.LibPath(), extendedConfigCache, nil)
+	host := compiler.NewCachedFSCompilerHost("/", wrappedFS, bundled.LibPath(), extendedConfigCache, nil, nil)
 
 	program := compiler.NewProgram(compiler.ProgramOptions{
 		Config: config,

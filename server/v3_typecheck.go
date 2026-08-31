@@ -287,7 +287,7 @@ func typecheckV3WithHost(ctx context.Context, files map[string][]byte, tsconfigR
 	_, hostSpan := startSpan(ctx, "typescript.compiler_host.create")
 	wrappedFS := bundled.WrapFS(fs)
 
-	parsedOptions := &core.ParsedOptions{
+	parsedOptions := &tsoptions.ParsedOptions{
 		CompilerOptions: compilerOptions,
 		FileNames:       fileNames,
 	}
@@ -297,7 +297,7 @@ func typecheckV3WithHost(ctx context.Context, files map[string][]byte, tsconfigR
 	}
 
 	extendedConfigCache := &tsc.ExtendedConfigCache{}
-	host := compiler.NewCachedFSCompilerHost("/", wrappedFS, bundled.LibPath(), extendedConfigCache, nil)
+	host := compiler.NewCachedFSCompilerHost("/", wrappedFS, bundled.LibPath(), extendedConfigCache, nil, nil)
 	hostSpan.End()
 
 	compilerTrace := newOTelCompilerTracer(ctx)
