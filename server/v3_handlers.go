@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+
+	"github.com/microsoft/typescript-go/internal/compiler"
 )
 
 func typecheckV3Handler(w http.ResponseWriter, req *http.Request) {
@@ -20,6 +22,16 @@ func typecheckV3Handler(w http.ResponseWriter, req *http.Request) {
 	decodeSpan.End()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	hostContext, err := parseHostCompilationContext(files)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if hostContext.overrideScope != "" {
+		http.Error(w, "activation overrides are only supported for compilation", http.StatusBadRequest)
 		return
 	}
 
@@ -51,7 +63,7 @@ func typecheckV3Handler(w http.ResponseWriter, req *http.Request) {
 		tsconfigRaw = tc
 	}
 
-	response := typecheckV3WithContext(ctx, files, tsconfigRaw, lockContent)
+	response := typecheckV3WithHost(ctx, files, tsconfigRaw, lockContent, hostContext.contract, nil)
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSONResponse(ctx, w, response)
@@ -68,6 +80,12 @@ func compileV3Handler(w http.ResponseWriter, req *http.Request) {
 	files, err := parseV3Multipart(req.Body, req.Header.Get("Content-Type"))
 	recordSpanError(decodeSpan, "err-multipart-decode", err)
 	decodeSpan.End()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	hostContext, err := parseHostCompilationContext(files)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -106,8 +124,9 @@ func compileV3Handler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	skipTypecheck := req.URL.Query().Get("skip_typecheck") == "true"
-	if !skipTypecheck {
-		typecheckResponse := typecheckV3WithContext(ctx, files, tsconfigRaw, lockContent)
+	var program *compiler.Program
+	if !skipTypecheck || hostContext.contract != nil {
+		typecheckResponse := typecheckV3WithHost(ctx, files, tsconfigRaw, lockContent, hostContext.contract, &program)
 		if len(typecheckResponse.Errors) > 0 {
 			w.Header().Set("Content-Type", "application/json")
 			writeJSONResponse(ctx, w, BuildV2Response{Errors: typecheckResponse.Errors})
@@ -115,7 +134,21 @@ func compileV3Handler(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	response := compileV3WithContext(ctx, files, pkg, tsconfigRaw, lockContent)
+	var activation *ActivationResult
+	if hostContext.contract != nil {
+		derived, activationErrors := deriveActivation(ctx, program, pkg.Main, hostContext)
+		if len(activationErrors) > 0 {
+			w.Header().Set("Content-Type", "application/json")
+			writeJSONResponse(ctx, w, BuildV2Response{Errors: activationErrors})
+			return
+		}
+		activation = &derived
+	}
+
+	response := compileV3WithHost(ctx, files, pkg, tsconfigRaw, lockContent, hostContext.contract)
+	if len(response.Errors) == 0 {
+		response.Activation = activation
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	writeJSONResponse(ctx, w, response)

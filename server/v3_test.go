@@ -2124,7 +2124,7 @@ func TestLoaderForPath(t *testing.T) {
 		{api.LoaderJSX, "/src/component.jsx"},
 		{api.LoaderJSON, "/data/config.json"},
 		{api.LoaderJS, "/lib/utils.mjs"},
-		{api.LoaderDefault, "/lib/main.js"},
+		{api.LoaderJS, "/lib/main.js"},
 		{api.LoaderDefault, "/styles.css"},
 	}
 	for _, tt := range tests {

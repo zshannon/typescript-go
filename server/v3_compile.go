@@ -47,7 +47,7 @@ func loaderForPath(path string) api.Loader {
 		return api.LoaderJSX
 	case strings.HasSuffix(path, ".json"):
 		return api.LoaderJSON
-	case strings.HasSuffix(path, ".mjs"):
+	case strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".mjs"):
 		return api.LoaderJS
 	default:
 		return api.LoaderDefault
@@ -59,7 +59,11 @@ func compileV3(files map[string][]byte, pkg *v3PackageJSON, tsconfigRaw []byte, 
 }
 
 // compileV3WithContext bundles TypeScript files using esbuild for v3 requests.
-func compileV3WithContext(ctx context.Context, files map[string][]byte, pkg *v3PackageJSON, tsconfigRaw []byte, lockContent []byte) (response BuildV2Response) {
+func compileV3WithContext(ctx context.Context, files map[string][]byte, pkg *v3PackageJSON, tsconfigRaw []byte, lockContent []byte) BuildV2Response {
+	return compileV3WithHost(ctx, files, pkg, tsconfigRaw, lockContent, nil)
+}
+
+func compileV3WithHost(ctx context.Context, files map[string][]byte, pkg *v3PackageJSON, tsconfigRaw []byte, lockContent []byte, contract *hostContract) (response BuildV2Response) {
 	ctx, span := startSpan(ctx, "fly_tsgo.v3.compile",
 		attribute.Int("fly_tsgo.files.count", len(files)),
 	)
@@ -89,7 +93,7 @@ func compileV3WithContext(ctx context.Context, files map[string][]byte, pkg *v3P
 
 	// Populate with user files, skipping config files
 	for path, content := range files {
-		if path == "/package.json" || path == "/bun.lock" || path == "/tsconfig.json" {
+		if path == "/package.json" || path == "/bun.lock" || path == "/tsconfig.json" || isFlickCompilationFile(path) {
 			continue
 		}
 
@@ -107,6 +111,10 @@ func compileV3WithContext(ctx context.Context, files map[string][]byte, pkg *v3P
 		fs.mu.Lock()
 		fs.userFiles[normalized] = string(content)
 		fs.mu.Unlock()
+	}
+
+	if contract != nil {
+		contract.install(fs)
 	}
 
 	// Normalize entry point: "./src/index.ts" -> "/src/index.ts"

@@ -104,8 +104,9 @@ type TypecheckV2Response struct {
 }
 
 type BuildV2Response struct {
-	Code   string              `json:"code,omitempty"`
-	Errors []DiagnosticErrorV2 `json:"errors,omitempty"`
+	Activation *ActivationResult   `json:"activation,omitempty"`
+	Code       string              `json:"code,omitempty"`
+	Errors     []DiagnosticErrorV2 `json:"errors,omitempty"`
 }
 
 // V2 API limits
