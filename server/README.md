@@ -125,7 +125,7 @@ Compilation may also include `/.flick/activation.json` with `{"scope":"<exported
 
 #### Limits
 
-- Max 100 source files per request (plus `package.json`, `bun.lock`, `tsconfig.json`)
+- Max 100 source files per request (plus `package.json`, `bun.lock`, `tsconfig.json`, and the reserved host/activation inputs above)
 - Max 1 MB per file
 - Max 10 MB total payload
 

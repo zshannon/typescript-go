@@ -219,12 +219,46 @@ export default function App() {
 	}
 }
 
+func TestDeriveActivationFollowsDefaultedCallableParameters(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.ts": `
+import { useContextState } from "@flickfyi/core"
+import { Application } from "fyi.flick.test-host"
+function Conversation() {
+	useContextState(Application.conversation.states.messages)
+}
+function invoke(callback: () => void = Conversation) {
+	callback()
+}
+export default function App() {
+	invoke()
+	return null
+}
+`,
+	})
+	program, hostContext, response := typecheckActivationRequest(t, files)
+	if len(response.Errors) > 0 {
+		t.Fatalf("typecheck failed: %v", response.Errors)
+	}
+
+	result, errors := deriveActivation(context.Background(), program, "./index.ts", hostContext)
+	if len(errors) > 0 {
+		t.Fatalf("activation failed: %v", errors)
+	}
+	if got, want := len(result.Explanation.References), 1; got != want {
+		t.Fatalf("default callback references = %d, want %d: %#v", got, want, result.Explanation.References)
+	}
+	if got, want := result.Explanation.References[0].Context, "application/conversation#states/messages"; got != want {
+		t.Fatalf("default callback context = %q, want %q", got, want)
+	}
+}
+
 func TestDeriveActivationPropagatesHookArgumentsIntoInvokedParameters(t *testing.T) {
 	files := activationRequestFiles(map[string]string{
 		"/index.ts": `
 import { useContextObservation, useContextState } from "@flickfyi/core"
 import { Application } from "fyi.flick.test-host"
-function invoke<Address>(hook: (address: Address, options: { optional: true }) => unknown, address: Address, options: { optional: true }) {
+function invoke<Address>(this: void, hook: (address: Address, options: { optional: true }) => unknown, address: Address, options: { optional: true }) {
 	hook(address, options)
 }
 export default function App() {
@@ -263,6 +297,277 @@ export default function App() {
 	}
 	if result.Explanation.References[1].Required {
 		t.Fatal("indirect observation reference is required, want optional")
+	}
+}
+
+func TestDeriveActivationScopesReturnedCallablesToEachBindingFrame(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.ts": `
+import { useContextObservation, useContextState } from "@flickfyi/core"
+import { Application } from "fyi.flick.test-host"
+function make<Address>(hook: (address: Address) => unknown, address: Address) {
+	const run = () => hook(address)
+	return run
+}
+export default function App() {
+	make(useContextState, Application.conversation.states.messages)()
+	make(useContextObservation, Application.conversation.streams.events)()
+	return null
+}
+`,
+	})
+	program, hostContext, response := typecheckActivationRequest(t, files)
+	if len(response.Errors) > 0 {
+		t.Fatalf("typecheck failed: %v", response.Errors)
+	}
+
+	result, errors := deriveActivation(context.Background(), program, "./index.ts", hostContext)
+	if len(errors) > 0 {
+		t.Fatalf("activation failed: %v", errors)
+	}
+	if got, want := len(result.Explanation.References), 2; got != want {
+		t.Fatalf("factory references = %d, want %d: %#v", got, want, result.Explanation.References)
+	}
+	if got, want := result.Explanation.References[0].Context, "application/conversation#states/messages"; got != want {
+		t.Fatalf("factory state context = %q, want %q", got, want)
+	}
+	if got, want := result.Explanation.References[1].Context, "application/conversation#streams/events"; got != want {
+		t.Fatalf("factory observation context = %q, want %q", got, want)
+	}
+}
+
+func TestDeriveActivationExpandsStaticallyKnownTupleSpreads(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/args.ts": `
+import { useContextState } from "@flickfyi/core"
+import { Application } from "fyi.flick.test-host"
+export const stateArgs = [useContextState, Application.conversation.states.messages] as const
+`,
+		"/index.ts": `
+import { useContextObservation, useContextState } from "@flickfyi/core"
+import { Application } from "fyi.flick.test-host"
+import { stateArgs } from "./args"
+function invoke<Address>(hook: (address: Address) => unknown, address: Address) {
+	hook(address)
+}
+function relay<Address>(args: readonly [(address: Address) => unknown, Address]) {
+	invoke(...(args))
+}
+const observationBase = [useContextObservation, Application.conversation.streams.events] as const
+const observationArgs = [...observationBase] as const
+export default function App() {
+	invoke(...(stateArgs))
+	relay(observationArgs)
+	return null
+}
+`,
+	})
+	program, hostContext, response := typecheckActivationRequest(t, files)
+	if len(response.Errors) > 0 {
+		t.Fatalf("typecheck failed: %v", response.Errors)
+	}
+
+	result, errors := deriveActivation(context.Background(), program, "./index.ts", hostContext)
+	if len(errors) > 0 {
+		t.Fatalf("activation failed: %v", errors)
+	}
+	if got, want := len(result.Explanation.References), 2; got != want {
+		t.Fatalf("spread references = %d, want %d: %#v", got, want, result.Explanation.References)
+	}
+	if got, want := result.Explanation.References[0].Context, "application/conversation#states/messages"; got != want {
+		t.Fatalf("spread state context = %q, want %q", got, want)
+	}
+	if got, want := result.Explanation.References[1].Context, "application/conversation#streams/events"; got != want {
+		t.Fatalf("spread observation context = %q, want %q", got, want)
+	}
+}
+
+func TestDeriveActivationExpandsDirectHookTupleSpread(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.ts": `
+import { useContextState } from "@flickfyi/core"
+import { Application } from "fyi.flick.test-host"
+const args = [Application.states.currentMember, { optional: true }] as const
+export default function App() {
+	useContextState(...args)
+	return null
+}
+`,
+	})
+	program, hostContext, response := typecheckActivationRequest(t, files)
+	if len(response.Errors) > 0 {
+		t.Fatalf("typecheck failed: %v", response.Errors)
+	}
+
+	result, errors := deriveActivation(context.Background(), program, "./index.ts", hostContext)
+	if len(errors) > 0 {
+		t.Fatalf("activation failed: %v", errors)
+	}
+	if got, want := len(result.Explanation.References), 1; got != want {
+		t.Fatalf("direct spread references = %d, want %d: %#v", got, want, result.Explanation.References)
+	}
+	if got, want := result.Explanation.References[0].Context, "application#states/currentMember"; got != want {
+		t.Fatalf("direct spread context = %q, want %q", got, want)
+	}
+	if result.Explanation.References[0].Required {
+		t.Fatal("direct spread reference is required, want optional")
+	}
+}
+
+func TestDeriveActivationPropagatesRestParameters(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.ts": `
+import { useContextObservation, useContextState } from "@flickfyi/core"
+import { Application } from "fyi.flick.test-host"
+function invoke<Address>(hook: (address: Address) => unknown, ...args: [Address]) {
+	hook(...args)
+}
+export default function App() {
+	invoke(useContextState, Application.conversation.states.messages)
+	invoke(useContextObservation, Application.conversation.streams.events)
+	return null
+}
+`,
+	})
+	program, hostContext, response := typecheckActivationRequest(t, files)
+	if len(response.Errors) > 0 {
+		t.Fatalf("typecheck failed: %v", response.Errors)
+	}
+
+	result, errors := deriveActivation(context.Background(), program, "./index.ts", hostContext)
+	if len(errors) > 0 {
+		t.Fatalf("activation failed: %v", errors)
+	}
+	if got, want := len(result.Explanation.References), 2; got != want {
+		t.Fatalf("rest references = %d, want %d: %#v", got, want, result.Explanation.References)
+	}
+	if got, want := result.Explanation.References[0].Context, "application/conversation#states/messages"; got != want {
+		t.Fatalf("rest state context = %q, want %q", got, want)
+	}
+	if got, want := result.Explanation.References[1].Context, "application/conversation#streams/events"; got != want {
+		t.Fatalf("rest observation context = %q, want %q", got, want)
+	}
+}
+
+func TestDeriveActivationPropagatesDestructuredParameters(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.ts": `
+import { useContextObservation, useContextState } from "@flickfyi/core"
+import { Application } from "fyi.flick.test-host"
+function invokeTuple<Address>([hook, address]: readonly [(address: Address) => unknown, Address]) {
+	hook(address)
+}
+function invokeObject<Address>({ hook: selectedHook, address: selectedAddress }: { hook: (address: Address) => unknown, address: Address }) {
+	selectedHook(selectedAddress)
+}
+const observationArgs = { hook: useContextObservation, address: Application.conversation.streams.events } as const
+export default function App() {
+	invokeTuple([useContextState, Application.conversation.states.messages])
+	invokeObject({ ...observationArgs })
+	return null
+}
+`,
+	})
+	program, hostContext, response := typecheckActivationRequest(t, files)
+	if len(response.Errors) > 0 {
+		t.Fatalf("typecheck failed: %v", response.Errors)
+	}
+
+	result, errors := deriveActivation(context.Background(), program, "./index.ts", hostContext)
+	if len(errors) > 0 {
+		t.Fatalf("activation failed: %v", errors)
+	}
+	if got, want := len(result.Explanation.References), 2; got != want {
+		t.Fatalf("destructured references = %d, want %d: %#v", got, want, result.Explanation.References)
+	}
+	if got, want := result.Explanation.References[0].Context, "application/conversation#states/messages"; got != want {
+		t.Fatalf("destructured state context = %q, want %q", got, want)
+	}
+	if got, want := result.Explanation.References[1].Context, "application/conversation#streams/events"; got != want {
+		t.Fatalf("destructured observation context = %q, want %q", got, want)
+	}
+}
+
+func TestDeriveActivationAllowsReentrantCallablesWithDifferentBindings(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.ts": `
+import { useContextObservation, useContextState } from "@flickfyi/core"
+import { Application } from "fyi.flick.test-host"
+function invoke<Address>(hook: (address: Address) => unknown, address: Address, next?: () => void) {
+	const run = () => {
+		hook(address)
+		next?.()
+	}
+	run()
+}
+export default function App() {
+	invoke(
+		useContextState,
+		Application.conversation.states.messages,
+		() => invoke(useContextObservation, Application.conversation.streams.events),
+	)
+	return null
+}
+`,
+	})
+	program, hostContext, response := typecheckActivationRequest(t, files)
+	if len(response.Errors) > 0 {
+		t.Fatalf("typecheck failed: %v", response.Errors)
+	}
+
+	result, errors := deriveActivation(context.Background(), program, "./index.ts", hostContext)
+	if len(errors) > 0 {
+		t.Fatalf("activation failed: %v", errors)
+	}
+	if got, want := len(result.Explanation.References), 2; got != want {
+		t.Fatalf("reentrant references = %d, want %d: %#v", got, want, result.Explanation.References)
+	}
+	if got, want := result.Explanation.References[0].Context, "application/conversation#states/messages"; got != want {
+		t.Fatalf("reentrant state context = %q, want %q", got, want)
+	}
+	if got, want := result.Explanation.References[1].Context, "application/conversation#streams/events"; got != want {
+		t.Fatalf("reentrant observation context = %q, want %q", got, want)
+	}
+}
+
+func TestDeriveActivationAllowsRecursiveCallablesWithDifferentBindings(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.ts": `
+import { useContextState } from "@flickfyi/core"
+import { Application } from "fyi.flick.test-host"
+declare const shouldRecurse: boolean
+function invoke(hook: (address: any) => unknown, address: any) {
+	hook(address)
+	if (shouldRecurse) {
+		invoke(hook, Application.states.currentMember)
+	}
+}
+export default function App() {
+	invoke(useContextState, Application.conversation.states.messages)
+	return null
+}
+`,
+	})
+	program, hostContext, response := typecheckActivationRequest(t, files)
+	if len(response.Errors) > 0 {
+		t.Fatalf("typecheck failed: %v", response.Errors)
+	}
+
+	result, errors := deriveActivation(context.Background(), program, "./index.ts", hostContext)
+	if len(errors) > 0 {
+		t.Fatalf("activation failed: %v", errors)
+	}
+	if got, want := len(result.Explanation.References), 2; got != want {
+		t.Fatalf("recursive references = %d, want %d: %#v", got, want, result.Explanation.References)
+	}
+	contexts := make(map[string]struct{}, len(result.Explanation.References))
+	for _, reference := range result.Explanation.References {
+		contexts[reference.Context] = struct{}{}
+	}
+	for _, want := range []string{"application#states/currentMember", "application/conversation#states/messages"} {
+		if _, ok := contexts[want]; !ok {
+			t.Fatalf("recursive references omit %q: %#v", want, result.Explanation.References)
+		}
 	}
 }
 
