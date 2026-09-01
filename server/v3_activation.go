@@ -60,14 +60,34 @@ type ActivationSpan struct {
 }
 
 type activationAnalyzer struct {
-	checker           *checker.Checker
-	context           context.Context
-	contract          *hostContract
-	errors            []DiagnosticErrorV2
-	references        []ActivationReference
-	visitedCallables  map[*ast.Node]struct{}
-	visitedCalls      map[*ast.Node]struct{}
-	visitedReferences map[*ast.Symbol]struct{}
+	activeCallables    map[*ast.Node]struct{}
+	bindings           *activationBindingFrame
+	checker            *checker.Checker
+	context            context.Context
+	contract           *hostContract
+	errors             []DiagnosticErrorV2
+	recordedReferences map[activationReferenceVisit]struct{}
+	references         []ActivationReference
+	visitedCallables   map[*ast.Node]struct{}
+	visitedCalls       map[activationCallVisit]struct{}
+	visitedReferences  map[*ast.Symbol]struct{}
+}
+
+type activationBindingFrame struct {
+	parent *activationBindingFrame
+	values map[*ast.Symbol]*ast.Node
+}
+
+type activationCallVisit struct {
+	call  *ast.Node
+	frame *activationBindingFrame
+}
+
+type activationReferenceVisit struct {
+	call     *ast.Node
+	context  string
+	hook     string
+	required bool
 }
 
 func deriveActivation(ctx context.Context, program *compiler.Program, entryPoint string, hostContext *hostCompilationContext) (result ActivationResult, diagnostics []DiagnosticErrorV2) {
@@ -130,13 +150,15 @@ func deriveActivation(ctx context.Context, program *compiler.Program, entryPoint
 	defer done()
 
 	analyzer := &activationAnalyzer{
-		checker:           typeChecker,
-		context:           ctx,
-		contract:          hostContext.contract,
-		references:        make([]ActivationReference, 0),
-		visitedCallables:  make(map[*ast.Node]struct{}),
-		visitedCalls:      make(map[*ast.Node]struct{}),
-		visitedReferences: make(map[*ast.Symbol]struct{}),
+		activeCallables:    make(map[*ast.Node]struct{}),
+		checker:            typeChecker,
+		context:            ctx,
+		contract:           hostContext.contract,
+		recordedReferences: make(map[activationReferenceVisit]struct{}),
+		references:         make([]ActivationReference, 0),
+		visitedCallables:   make(map[*ast.Node]struct{}),
+		visitedCalls:       make(map[activationCallVisit]struct{}),
+		visitedReferences:  make(map[*ast.Symbol]struct{}),
 	}
 	analyzer.visitEntryPoint(sourceFile)
 	referenceCount = len(analyzer.references)
@@ -276,10 +298,11 @@ func (analyzer *activationAnalyzer) visitNode(node *ast.Node) {
 }
 
 func (analyzer *activationAnalyzer) visitCall(call *ast.Node) {
-	if _, ok := analyzer.visitedCalls[call]; ok {
+	visit := activationCallVisit{call: call, frame: analyzer.bindings}
+	if _, ok := analyzer.visitedCalls[visit]; ok {
 		return
 	}
-	analyzer.visitedCalls[call] = struct{}{}
+	analyzer.visitedCalls[visit] = struct{}{}
 
 	signature := analyzer.checker.GetResolvedSignature(call)
 	if hookName := analyzer.hookName(signature, call.Expression()); hookName != "" {
@@ -287,13 +310,69 @@ func (analyzer *activationAnalyzer) visitCall(call *ast.Node) {
 		return
 	}
 
+	followedDeclaration := false
 	if signature != nil {
-		analyzer.followDeclaration(signature.Declaration())
+		followedDeclaration = analyzer.visitInvokedDeclaration(signature.Declaration(), call.Arguments())
+		if !followedDeclaration {
+			analyzer.followDeclaration(signature.Declaration())
+		}
 	}
-	analyzer.followExpression(call.Expression())
+	if !followedDeclaration {
+		analyzer.followExpression(call.Expression())
+	}
 	for _, argument := range call.Arguments() {
 		analyzer.visitCallableValue(argument)
 	}
+}
+
+func (analyzer *activationAnalyzer) visitInvokedDeclaration(declaration *ast.Node, arguments []*ast.Node) bool {
+	declaration = analyzer.callableImplementation(declaration)
+	if declaration == nil || !ast.IsFunctionLike(declaration) || !isUserDeclaration(declaration) {
+		return false
+	}
+	if _, ok := analyzer.activeCallables[declaration]; ok {
+		return true
+	}
+
+	values := make(map[*ast.Symbol]*ast.Node)
+	for index, parameter := range declaration.Parameters() {
+		value := parameter.Initializer()
+		if index < len(arguments) {
+			value = arguments[index]
+		}
+		if value == nil || parameter.Name() == nil {
+			continue
+		}
+		symbol := analyzer.resolveAlias(analyzer.checker.GetSymbolAtLocation(parameter.Name()))
+		if symbol != nil {
+			values[symbol] = value
+		}
+	}
+
+	frame := &activationBindingFrame{parent: analyzer.bindings, values: values}
+	previousBindings := analyzer.bindings
+	analyzer.bindings = frame
+	analyzer.activeCallables[declaration] = struct{}{}
+	analyzer.visitNode(declaration.Body())
+	delete(analyzer.activeCallables, declaration)
+	analyzer.bindings = previousBindings
+	return true
+}
+
+func (analyzer *activationAnalyzer) callableImplementation(declaration *ast.Node) *ast.Node {
+	if declaration == nil || declaration.Body() != nil || declaration.Name() == nil {
+		return declaration
+	}
+	symbol := analyzer.resolveAlias(analyzer.checker.GetSymbolAtLocation(declaration.Name()))
+	if symbol == nil {
+		return declaration
+	}
+	for _, sibling := range symbol.Declarations {
+		if ast.IsFunctionLike(sibling) && sibling.Body() != nil {
+			return sibling
+		}
+	}
+	return declaration
 }
 
 func (analyzer *activationAnalyzer) hookName(signature *checker.Signature, expression *ast.Node) string {
@@ -329,6 +408,11 @@ func (analyzer *activationAnalyzer) hookNameFromSymbol(symbol *ast.Symbol, visit
 		return ""
 	}
 	visited[symbol] = struct{}{}
+	if expression := analyzer.boundExpression(symbol); expression != nil {
+		if name := analyzer.hookNameFromSymbol(analyzer.checker.GetSymbolAtLocation(expression), visited); name != "" {
+			return name
+		}
+	}
 
 	for _, declaration := range symbol.Declarations {
 		if name := analyzer.hookNameFromDeclaration(declaration); name != "" {
@@ -351,36 +435,38 @@ func (analyzer *activationAnalyzer) recordHook(call *ast.Node, hookName string) 
 		return
 	}
 
-	addressType := analyzer.checker.GetTypeAtLocation(arguments[0])
+	address := analyzer.resolveBoundExpression(arguments[0])
+	addressType := analyzer.checker.GetTypeAtLocation(address)
 	uriType := analyzer.checker.GetTypeOfPropertyOfType(addressType, "uri")
 	uri, ok := literalString(uriType)
 	if !ok {
-		analyzer.addError(arguments[0], hookName+" address must resolve to one literal host context URI")
+		analyzer.addError(address, hookName+" address must resolve to one literal host context URI")
 		return
 	}
 
 	contextPath, ok := analyzer.contract.contextPath(uri)
 	if !ok {
-		analyzer.addError(arguments[0], fmt.Sprintf("%s references context outside host %s: %s", hookName, analyzer.contract.manifest.Name, uri))
+		analyzer.addError(address, fmt.Sprintf("%s references context outside host %s: %s", hookName, analyzer.contract.manifest.Name, uri))
 		return
 	}
 	if _, ok := analyzer.contract.manifest.Exports[contextPath]; !ok || !strings.Contains(contextPath, "#") {
-		analyzer.addError(arguments[0], fmt.Sprintf("%s references an unexported host capability: %s", hookName, uri))
+		analyzer.addError(address, fmt.Sprintf("%s references an unexported host capability: %s", hookName, uri))
 		return
 	}
 	if !hookSupportsContext(hookName, contextPath) {
-		analyzer.addError(arguments[0], fmt.Sprintf("%s cannot consume host capability %s", hookName, uri))
+		analyzer.addError(address, fmt.Sprintf("%s cannot consume host capability %s", hookName, uri))
 		return
 	}
 
 	required := true
 	if len(arguments) > 1 {
-		optionsType := analyzer.checker.GetTypeAtLocation(arguments[1])
+		options := analyzer.resolveBoundExpression(arguments[1])
+		optionsType := analyzer.checker.GetTypeAtLocation(options)
 		optionalType := analyzer.checker.GetTypeOfPropertyOfType(optionsType, "optional")
 		if optionalType != nil {
 			optional, literal := literalBoolean(optionalType)
 			if !literal {
-				analyzer.addError(arguments[1], hookName+" optional flag must resolve to the literal true or false")
+				analyzer.addError(options, hookName+" optional flag must resolve to the literal true or false")
 				return
 			}
 			required = !optional
@@ -391,6 +477,16 @@ func (analyzer *activationAnalyzer) recordHook(call *ast.Node, hookName string) 
 	if !required {
 		message = "Optionally uses " + uri
 	}
+	visit := activationReferenceVisit{
+		call:     call,
+		context:  contextPath,
+		hook:     hookName,
+		required: required,
+	}
+	if _, ok := analyzer.recordedReferences[visit]; ok {
+		return
+	}
+	analyzer.recordedReferences[visit] = struct{}{}
 	analyzer.references = append(analyzer.references, ActivationReference{
 		Context:  contextPath,
 		Hook:     hookName,
@@ -436,6 +532,10 @@ func (analyzer *activationAnalyzer) followExpression(expression *ast.Node) {
 	if expression == nil {
 		return
 	}
+	if bound := analyzer.resolveBoundExpression(expression); bound != expression {
+		analyzer.visitCallableValue(bound)
+		return
+	}
 	symbol := analyzer.resolveAlias(analyzer.checker.GetSymbolAtLocation(expression))
 	if symbol == nil {
 		return
@@ -447,6 +547,39 @@ func (analyzer *activationAnalyzer) followExpression(expression *ast.Node) {
 	for _, declaration := range symbol.Declarations {
 		analyzer.followDeclaration(declaration)
 	}
+}
+
+func (analyzer *activationAnalyzer) boundExpression(symbol *ast.Symbol) *ast.Node {
+	symbol = analyzer.resolveAlias(symbol)
+	if symbol == nil {
+		return nil
+	}
+	for frame := analyzer.bindings; frame != nil; frame = frame.parent {
+		if expression, ok := frame.values[symbol]; ok {
+			return expression
+		}
+	}
+	return nil
+}
+
+func (analyzer *activationAnalyzer) resolveBoundExpression(expression *ast.Node) *ast.Node {
+	visited := make(map[*ast.Symbol]struct{})
+	for expression != nil {
+		symbol := analyzer.resolveAlias(analyzer.checker.GetSymbolAtLocation(expression))
+		if symbol == nil {
+			return expression
+		}
+		if _, ok := visited[symbol]; ok {
+			return expression
+		}
+		visited[symbol] = struct{}{}
+		bound := analyzer.boundExpression(symbol)
+		if bound == nil {
+			return expression
+		}
+		expression = bound
+	}
+	return nil
 }
 
 func (analyzer *activationAnalyzer) followDeclaration(declaration *ast.Node) {

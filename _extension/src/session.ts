@@ -115,10 +115,10 @@ export class SessionManager implements vscode.Disposable {
     }
 
     registerContentMappers(contributorId: string, contributions: readonly ContentMapperContribution[]): vscode.Disposable {
-        validateContentMapperRegistration(contributorId, contributions);
         if (this.contentMapperRegistrations.has(contributorId)) {
             throw new Error(`Content mapper contributor '${contributorId}' is already registered.`);
         }
+        validateContentMapperRegistration(contributorId, contributions, this.contentMapperRegistrations);
         this.contentMapperRegistrations.set(contributorId, contributions);
         void this.syncContentMapperContributions();
         let disposed = false;

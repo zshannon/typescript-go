@@ -219,6 +219,53 @@ export default function App() {
 	}
 }
 
+func TestDeriveActivationPropagatesHookArgumentsIntoInvokedParameters(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.ts": `
+import { useContextObservation, useContextState } from "@flickfyi/core"
+import { Application } from "fyi.flick.test-host"
+function invoke<Address>(hook: (address: Address, options: { optional: true }) => unknown, address: Address, options: { optional: true }) {
+	hook(address, options)
+}
+export default function App() {
+	invoke(useContextState, Application.conversation.states.messages, { optional: true })
+	invoke(useContextObservation, Application.conversation.streams.events, { optional: true })
+	return null
+}
+`,
+	})
+	program, hostContext, response := typecheckActivationRequest(t, files)
+	if len(response.Errors) > 0 {
+		t.Fatalf("typecheck failed: %v", response.Errors)
+	}
+
+	result, errors := deriveActivation(context.Background(), program, "./index.ts", hostContext)
+	if len(errors) > 0 {
+		t.Fatalf("activation failed: %v", errors)
+	}
+	if got, want := len(result.Explanation.References), 2; got != want {
+		t.Fatalf("indirect hook references = %d, want %d: %#v", got, want, result.Explanation.References)
+	}
+	if got, want := result.Explanation.References[0].Context, "application/conversation#states/messages"; got != want {
+		t.Fatalf("indirect state context = %q, want %q", got, want)
+	}
+	if got, want := result.Explanation.References[0].Hook, "useContextState"; got != want {
+		t.Fatalf("indirect state hook = %q, want %q", got, want)
+	}
+	if result.Explanation.References[0].Required {
+		t.Fatal("indirect state reference is required, want optional")
+	}
+	if got, want := result.Explanation.References[1].Context, "application/conversation#streams/events"; got != want {
+		t.Fatalf("indirect observation context = %q, want %q", got, want)
+	}
+	if got, want := result.Explanation.References[1].Hook, "useContextObservation"; got != want {
+		t.Fatalf("indirect observation hook = %q, want %q", got, want)
+	}
+	if result.Explanation.References[1].Required {
+		t.Fatal("indirect observation reference is required, want optional")
+	}
+}
+
 func TestDeriveActivationFollowsCallableValuesThroughCompositeExpressions(t *testing.T) {
 	files := activationRequestFiles(map[string]string{
 		"/index.ts": `

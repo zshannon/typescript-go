@@ -1,4 +1,4 @@
-import * as vscode from "vscode";
+import type * as vscode from "vscode";
 
 export interface ContentMapperManifest {
     readonly name: string;
@@ -57,13 +57,30 @@ export function serializeContentMapperContributions(
     return result;
 }
 
-export function validateContentMapperRegistration(contributorId: string, contributions: readonly ContentMapperContribution[]): void {
+export function validateContentMapperRegistration(
+    contributorId: string,
+    contributions: readonly ContentMapperContribution[],
+    registrations?: ReadonlyMap<string, readonly ContentMapperContribution[]>,
+): void {
     if (!contributorId) {
         throw new TypeError("Content mapper contributor ID must not be empty.");
     }
+    const claimedExtensions = new Set<string>();
+    for (const registeredContributions of registrations?.values() ?? []) {
+        for (const contribution of registeredContributions) {
+            if (contribution.inferredProject) {
+                contribution.extensions.forEach(extension => claimedExtensions.add(extension));
+            }
+        }
+    }
     for (const contribution of contributions) {
-        if (contribution.extensions.length === 0 || contribution.extensions.some(extension => !extension.startsWith(".") || extension.length === 1)) {
+        if (contribution.extensions.length === 0) {
             throw new TypeError("Content mapper contributions require non-empty extensions beginning with '.'.");
+        }
+        for (const extension of contribution.extensions) {
+            if (!isValidContentMapperExtension(extension)) {
+                throw new TypeError(`Content mapper contribution has invalid extension '${extension}'.`);
+            }
         }
         const inferredProject = contribution.inferredProject;
         if (inferredProject?.options === null || Array.isArray(inferredProject?.options) || inferredProject?.options !== undefined && typeof inferredProject.options !== "object") {
@@ -74,6 +91,14 @@ export function validateContentMapperRegistration(contributorId: string, contrib
         }
         if (inferredProject?.manifest.cwd && inferredProject.manifest.cwd.scheme !== "file") {
             throw new TypeError("Content mapper contribution cwd must be a file URI.");
+        }
+        if (inferredProject) {
+            for (const extension of contribution.extensions) {
+                if (claimedExtensions.has(extension)) {
+                    throw new TypeError(`Content mapper contributions both claim extension '${extension}'.`);
+                }
+                claimedExtensions.add(extension);
+            }
         }
     }
 }
@@ -91,3 +116,22 @@ export function documentMatchesContentMapperContributions(
     }
     return false;
 }
+
+function isValidContentMapperExtension(extension: string): boolean {
+    return /^\.[^./\\]+$/.test(extension) && !nativeTypeScriptExtensions.has(extension);
+}
+
+const nativeTypeScriptExtensions = new Set([
+    ".cjs",
+    ".cts",
+    ".d.cts",
+    ".d.mts",
+    ".d.ts",
+    ".js",
+    ".json",
+    ".jsx",
+    ".mjs",
+    ".mts",
+    ".ts",
+    ".tsx",
+]);
