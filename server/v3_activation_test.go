@@ -217,6 +217,34 @@ export default function App() {
 	}
 }
 
+func TestDeriveActivationDoesNotDuplicateNestedHookCalls(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.ts": `
+import { useContextState } from "@flickfyi/core"
+import { Application } from "fyi.flick.test-host"
+function consume(value: unknown) {
+	return value
+}
+export default function App() {
+	consume(useContextState(Application.conversation.states.messages))
+	return null
+}
+`,
+	})
+	program, hostContext, response := typecheckActivationRequest(t, files)
+	if len(response.Errors) > 0 {
+		t.Fatalf("typecheck failed: %v", response.Errors)
+	}
+
+	result, errors := deriveActivation(context.Background(), program, "./index.ts", hostContext)
+	if len(errors) > 0 {
+		t.Fatalf("activation failed: %v", errors)
+	}
+	if len(result.Explanation.References) != 1 {
+		t.Fatalf("nested hook references = %d, want 1", len(result.Explanation.References))
+	}
+}
+
 func TestDeriveActivationReportsSpanEndingAtEOF(t *testing.T) {
 	files := activationRequestFiles(map[string]string{
 		"/index.ts": `import { useContextState } from "@flickfyi/core"

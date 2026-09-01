@@ -66,6 +66,7 @@ type activationAnalyzer struct {
 	errors            []DiagnosticErrorV2
 	references        []ActivationReference
 	visitedCallables  map[*ast.Node]struct{}
+	visitedCalls      map[*ast.Node]struct{}
 	visitedReferences map[*ast.Symbol]struct{}
 }
 
@@ -134,6 +135,7 @@ func deriveActivation(ctx context.Context, program *compiler.Program, entryPoint
 		contract:          hostContext.contract,
 		references:        make([]ActivationReference, 0),
 		visitedCallables:  make(map[*ast.Node]struct{}),
+		visitedCalls:      make(map[*ast.Node]struct{}),
 		visitedReferences: make(map[*ast.Symbol]struct{}),
 	}
 	analyzer.visitEntryPoint(sourceFile)
@@ -268,6 +270,11 @@ func (analyzer *activationAnalyzer) visitNode(node *ast.Node) {
 }
 
 func (analyzer *activationAnalyzer) visitCall(call *ast.Node) {
+	if _, ok := analyzer.visitedCalls[call]; ok {
+		return
+	}
+	analyzer.visitedCalls[call] = struct{}{}
+
 	signature := analyzer.checker.GetResolvedSignature(call)
 	if hookName := analyzer.hookName(signature, call.Expression()); hookName != "" {
 		analyzer.recordHook(call, hookName)
