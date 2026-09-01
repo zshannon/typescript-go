@@ -264,6 +264,25 @@ func TestParseV3Multipart_TooManyFiles(t *testing.T) {
 	}
 }
 
+func TestParseV3Multipart_ReservedCompilationFilesDoNotCountTowardSourceLimit(t *testing.T) {
+	files := map[string][]byte{
+		"/package.json":        []byte(`{"name":"test","main":"src/index.ts"}`),
+		"/bun.lock":            []byte(`{}`),
+		activationOverridePath: []byte(`{"scope":"application"}`),
+	}
+	for _, name := range hostContractFileNames {
+		files[hostContractPrefix+name] = []byte(`{}`)
+	}
+	for i := 0; i < maxFilesPerRequest; i++ {
+		files[fmt.Sprintf("/src/file%d.ts", i)] = []byte(`export const x = 1;`)
+	}
+	buf, ct := buildMultipart(files)
+
+	if _, err := parseV3Multipart(buf, ct); err != nil {
+		t.Fatalf("reserved compilation files reduced source limit: %v", err)
+	}
+}
+
 // Task 5: parsePackageJSON and esbuildOptions tests
 
 func TestParsePackageJSON_Valid(t *testing.T) {

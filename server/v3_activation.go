@@ -278,6 +278,9 @@ func (analyzer *activationAnalyzer) visitCall(call *ast.Node) {
 		analyzer.followDeclaration(signature.Declaration())
 	}
 	analyzer.followExpression(call.Expression())
+	for _, argument := range call.Arguments() {
+		analyzer.visitCallableValue(argument)
+	}
 }
 
 func (analyzer *activationAnalyzer) hookName(signature *checker.Signature, expression *ast.Node) string {

@@ -663,7 +663,7 @@ func (fs *diskFS) WalkDir(root string, walkFn vfs.WalkDirFunc) error { return ni
 func (fs *diskFS) Realpath(path string) string                       { return path }
 
 func calculateLineColumn(text string, pos int) (int, int) {
-	if pos < 0 || pos >= len(text) {
+	if pos < 0 || pos > len(text) {
 		return 0, 0
 	}
 	line, col := 0, 0

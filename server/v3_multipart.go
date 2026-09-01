@@ -15,7 +15,7 @@ import (
 // name is a file path and the value is the file content.
 //
 // Limits (using package-level constants):
-//   - max 100 source files + 2 config files (package.json, bun.lock)
+//   - max 100 source files; package, lock, and reserved Flick inputs are excluded
 //   - 1MB per file
 //   - 10MB total
 //
@@ -82,7 +82,7 @@ func parseV3Multipart(body io.Reader, contentType string) (map[string][]byte, er
 	// Count source files (non-config)
 	sourceFiles := 0
 	for path := range files {
-		if path != "/package.json" && path != "/bun.lock" {
+		if path != "/package.json" && path != "/bun.lock" && path != activationOverridePath && !isHostContractFile(path) {
 			sourceFiles++
 		}
 	}

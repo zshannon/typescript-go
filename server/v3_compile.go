@@ -248,6 +248,12 @@ func compileV3WithHost(ctx context.Context, files map[string][]byte, pkg *v3Pack
 						return api.OnResolveResult{Path: resolvedPath, Namespace: "virtual"}, nil
 					}
 
+					// The request-local host runtime must be bundled even when the
+					// package configuration externalizes other dependencies.
+					if contract != nil && args.Path == contract.packageJSON.Name {
+						return api.OnResolveResult{Path: args.Path, Namespace: "virtual"}, nil
+					}
+
 					// Check if bare import maps to a global variable (exact match only)
 					if _, ok := globals[args.Path]; ok {
 						return api.OnResolveResult{Path: args.Path, Namespace: "globals"}, nil

@@ -183,6 +183,64 @@ export default memo(App)
 	}
 }
 
+func TestDeriveActivationFollowsCallableArguments(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.ts": `
+import { useContextState } from "@flickfyi/core"
+import { Application } from "fyi.flick.test-host"
+function invoke(callback: () => void) {
+	callback()
+}
+function Conversation() {
+	useContextState(Application.conversation.states.messages)
+}
+export default function App() {
+	invoke(Conversation)
+	return null
+}
+`,
+	})
+	program, hostContext, response := typecheckActivationRequest(t, files)
+	if len(response.Errors) > 0 {
+		t.Fatalf("typecheck failed: %v", response.Errors)
+	}
+
+	result, errors := deriveActivation(context.Background(), program, "./index.ts", hostContext)
+	if len(errors) > 0 {
+		t.Fatalf("activation failed: %v", errors)
+	}
+	if len(result.Explanation.References) != 1 {
+		t.Fatalf("callable argument references = %d, want 1", len(result.Explanation.References))
+	}
+	if got, want := result.Explanation.References[0].Context, "application/conversation#states/messages"; got != want {
+		t.Fatalf("callable argument context = %q, want %q", got, want)
+	}
+}
+
+func TestDeriveActivationReportsSpanEndingAtEOF(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.ts": `import { useContextState } from "@flickfyi/core"
+import { Application } from "fyi.flick.test-host"
+export default () => useContextState(Application.conversation.states.messages)`,
+	})
+	program, hostContext, response := typecheckActivationRequest(t, files)
+	if len(response.Errors) > 0 {
+		t.Fatalf("typecheck failed: %v", response.Errors)
+	}
+
+	result, errors := deriveActivation(context.Background(), program, "./index.ts", hostContext)
+	if len(errors) > 0 {
+		t.Fatalf("activation failed: %v", errors)
+	}
+	if len(result.Explanation.References) != 1 {
+		t.Fatalf("references = %d, want 1", len(result.Explanation.References))
+	}
+	span := result.Explanation.References[0].Span
+	if span.End.Line != 3 || span.End.Column <= span.Start.Column {
+		t.Fatalf("EOF span end = %#v, start = %#v", span.End, span.Start)
+	}
+}
+
 func TestDeriveActivationFollowsLocalDefaultExportAlias(t *testing.T) {
 	files := activationRequestFiles(map[string]string{
 		"/index.ts": `
@@ -677,6 +735,43 @@ export const value = Application.conversation.states.messages`,
 	}
 	if !strings.Contains(response.Code, "apple:bundle-id:fyi.flick.test-host/application/conversation#states/messages") {
 		t.Fatalf("compiled code did not include the host runtime: %s", response.Code)
+	}
+}
+
+func TestCompileV3BundlesHostRuntimeWhenListedExternal(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.ts": `import { Application } from "fyi.flick.test-host"
+export const value = Application.conversation.states.messages`,
+	})
+	setupActivationDependencyCache(t, []byte("activation-test-lock"))
+	hostContext, err := parseHostCompilationContext(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, external := range []string{activationPackage, "*"} {
+		t.Run(external, func(t *testing.T) {
+			pkg, err := parsePackageJSON(files["/package.json"])
+			if err != nil {
+				t.Fatal(err)
+			}
+			pkg.Esbuild.External = []string{external}
+
+			response := compileV3WithHost(
+				context.Background(),
+				files,
+				pkg,
+				files["/tsconfig.json"],
+				[]byte("activation-test-lock"),
+				hostContext.contract,
+			)
+			if len(response.Errors) > 0 {
+				t.Fatalf("host compile failed: %v", response.Errors)
+			}
+			if !strings.Contains(response.Code, "apple:bundle-id:fyi.flick.test-host/application/conversation#states/messages") {
+				t.Fatalf("compiled code did not include the host runtime: %s", response.Code)
+			}
+		})
 	}
 }
 
