@@ -308,7 +308,7 @@ func (analyzer *activationAnalyzer) hookNameFromDeclaration(declaration *ast.Nod
 		return ""
 	}
 	sourceFile := ast.GetSourceFileOfNode(declaration)
-	if sourceFile == nil || !strings.Contains(sourceFile.FileName(), "/node_modules/@flickfyi/core/") {
+	if sourceFile == nil || !strings.HasPrefix(sourceFile.FileName(), "/node_modules/@flickfyi/core/") {
 		return ""
 	}
 	return name

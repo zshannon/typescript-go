@@ -69,6 +69,36 @@ export function unused() {
 	}
 }
 
+func TestDeriveActivationIgnoresSubmittedSDKLookalikes(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.ts": `
+import { useContextState } from "./src/node_modules/@flickfyi/core/lookalike"
+import { Application } from "fyi.flick.test-host"
+export default function App() {
+	useContextState(Application.conversation.states.messages)
+	return null
+}
+`,
+		"/src/node_modules/@flickfyi/core/lookalike.ts": `
+export function useContextState(value: unknown) {
+	return value
+}
+`,
+	})
+	program, hostContext, response := typecheckActivationRequest(t, files)
+	if len(response.Errors) > 0 {
+		t.Fatalf("typecheck failed: %v", response.Errors)
+	}
+
+	result, errors := deriveActivation(context.Background(), program, "./index.ts", hostContext)
+	if len(errors) > 0 {
+		t.Fatalf("activation failed: %v", errors)
+	}
+	if len(result.Explanation.References) != 0 {
+		t.Fatalf("submitted SDK lookalike references = %d, want 0: %#v", len(result.Explanation.References), result.Explanation.References)
+	}
+}
+
 func TestDeriveActivationSelectsRequiredRootScope(t *testing.T) {
 	files := activationRequestFiles(map[string]string{
 		"/index.ts": `
