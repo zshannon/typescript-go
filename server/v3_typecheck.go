@@ -193,6 +193,7 @@ func typecheckV3WithContext(ctx context.Context, files map[string][]byte, tsconf
 func typecheckV3WithHost(ctx context.Context, files map[string][]byte, tsconfigRaw []byte, lockContent []byte, contract *hostContract, programOut **compiler.Program) (response TypecheckV2Response) {
 	ctx, span := startSpan(ctx, "fly_tsgo.v3.typecheck",
 		attribute.Int("fly_tsgo.files.count", len(files)),
+		attribute.Bool("fly_tsgo.host_contract.present", contract != nil),
 	)
 	var fs *diskFS
 	typecheckStart := time.Now()

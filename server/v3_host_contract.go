@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"path"
 	"regexp"
 	"strings"
+
+	"go.opentelemetry.io/otel/attribute"
 )
 
 const (
@@ -92,6 +95,36 @@ func parseHostCompilationContext(files map[string][]byte) (*hostCompilationConte
 	}
 
 	return context, nil
+}
+
+func parseHostCompilationContextWithTracing(ctx context.Context, files map[string][]byte) (result *hostCompilationContext, err error) {
+	hostFileCount := 0
+	for fileName := range files {
+		if strings.HasPrefix(fileName, hostContractPrefix) {
+			hostFileCount++
+		}
+	}
+	_, overridePresent := files[activationOverridePath]
+	_, span := startSpan(ctx, "fly_tsgo.host_contract.parse",
+		attribute.Int("fly_tsgo.host_contract.files.count", hostFileCount),
+		attribute.Bool("fly_tsgo.host_contract.override.present", overridePresent),
+		attribute.Bool("fly_tsgo.host_contract.provided", hostFileCount > 0),
+	)
+	defer func() {
+		span.SetAttributes(attribute.Bool("fly_tsgo.host_contract.success", err == nil))
+		if result != nil && result.contract != nil {
+			span.SetAttributes(
+				attribute.Int("fly_tsgo.host_contract.declarations.bytes", len(result.contract.declarations)),
+				attribute.Int("fly_tsgo.host_contract.exports.count", len(result.contract.manifest.Exports)),
+				attribute.String("fly_tsgo.host_contract.provider", result.contract.manifest.Name),
+				attribute.Int("fly_tsgo.host_contract.runtime.bytes", len(result.contract.runtime)),
+			)
+		}
+		recordSpanError(span, "err-host-contract-parse", err)
+		span.End()
+	}()
+
+	return parseHostCompilationContext(files)
 }
 
 func parseHostContract(files map[string][]byte) (*hostContract, error) {

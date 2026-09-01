@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/microsoft/typescript-go/internal/checker"
 	"github.com/microsoft/typescript-go/internal/compiler"
 	"github.com/microsoft/typescript-go/internal/scanner"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 var contextHookNames = map[string]struct{}{
@@ -67,14 +69,56 @@ type activationAnalyzer struct {
 	visitedReferences map[*ast.Symbol]struct{}
 }
 
-func deriveActivation(ctx context.Context, program *compiler.Program, entryPoint string, hostContext *hostCompilationContext) (ActivationResult, []DiagnosticErrorV2) {
+func deriveActivation(ctx context.Context, program *compiler.Program, entryPoint string, hostContext *hostCompilationContext) (result ActivationResult, diagnostics []DiagnosticErrorV2) {
+	hostPresent := hostContext != nil && hostContext.contract != nil
+	overridePresent := hostContext != nil && hostContext.overrideScope != ""
+	ctx, span := startSpan(ctx, "fly_tsgo.activation.derive",
+		attribute.String("fly_tsgo.activation.entry_point", normalizeV3EntryPoint(entryPoint)),
+		attribute.Bool("fly_tsgo.activation.host.present", hostPresent),
+		attribute.Bool("fly_tsgo.activation.override.present", overridePresent),
+	)
+	errorSlug := ""
+	referenceCount := 0
+	requiredReferenceCount := 0
+	var compilerTrace *otelCompilerTracer
+	defer func() {
+		if compilerTrace != nil {
+			compilerTrace.flush(ctx)
+		}
+		span.SetAttributes(
+			attribute.Int("fly_tsgo.activation.errors.count", len(diagnostics)),
+			attribute.Int("fly_tsgo.activation.references.count", referenceCount),
+			attribute.Int("fly_tsgo.activation.required_references.count", requiredReferenceCount),
+			attribute.Bool("fly_tsgo.activation.success", len(diagnostics) == 0),
+		)
+		if hostPresent {
+			span.SetAttributes(attribute.String("fly_tsgo.activation.provider", hostContext.contract.manifest.Name))
+		}
+		if result.Explanation.ActivationScope != "" {
+			span.SetAttributes(attribute.String("fly_tsgo.activation.scope", result.Explanation.ActivationScope))
+		}
+		if len(diagnostics) > 0 {
+			if errorSlug == "" {
+				errorSlug = "err-activation-derive"
+			}
+			recordSpanError(span, errorSlug, errors.New(diagnostics[0].Message))
+		}
+		span.End()
+	}()
+
 	if program == nil || hostContext == nil || hostContext.contract == nil {
+		errorSlug = "err-activation-precondition"
 		return ActivationResult{}, []DiagnosticErrorV2{{Message: "activation analysis requires a typechecked host compilation"}}
+	}
+	if tracer, ok := program.Tracing().(*otelCompilerTracer); ok {
+		compilerTrace = tracer
+		compilerTrace.setContext(ctx)
 	}
 
 	entryPoint = normalizeV3EntryPoint(entryPoint)
 	sourceFile := program.GetSourceFile(entryPoint)
 	if sourceFile == nil {
+		errorSlug = "err-activation-entry-point"
 		return ActivationResult{}, []DiagnosticErrorV2{{
 			File:    entryPoint,
 			Message: "activation analysis could not find the package entry point",
@@ -93,10 +137,18 @@ func deriveActivation(ctx context.Context, program *compiler.Program, entryPoint
 		visitedReferences: make(map[*ast.Symbol]struct{}),
 	}
 	analyzer.visitEntryPoint(sourceFile)
+	referenceCount = len(analyzer.references)
+	for _, reference := range analyzer.references {
+		if reference.Required {
+			requiredReferenceCount++
+		}
+	}
 	if err := ctx.Err(); err != nil {
+		errorSlug = "err-activation-cancelled"
 		return ActivationResult{}, []DiagnosticErrorV2{{Message: "activation analysis cancelled: " + err.Error()}}
 	}
 	if len(analyzer.errors) > 0 {
+		errorSlug = "err-activation-reference"
 		return ActivationResult{}, analyzer.errors
 	}
 
@@ -120,6 +172,7 @@ func deriveActivation(ctx context.Context, program *compiler.Program, entryPoint
 
 	scope, err := analyzer.activationScope(hostContext.overrideScope)
 	if err != nil {
+		errorSlug = "err-activation-scope"
 		return ActivationResult{}, []DiagnosticErrorV2{{Message: err.Error()}}
 	}
 

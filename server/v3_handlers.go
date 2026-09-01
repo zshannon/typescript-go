@@ -25,7 +25,7 @@ func typecheckV3Handler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	hostContext, err := parseHostCompilationContext(files)
+	hostContext, err := parseHostCompilationContextWithTracing(ctx, files)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -85,7 +85,7 @@ func compileV3Handler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	hostContext, err := parseHostCompilationContext(files)
+	hostContext, err := parseHostCompilationContextWithTracing(ctx, files)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

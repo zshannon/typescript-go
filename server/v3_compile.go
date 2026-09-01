@@ -66,6 +66,7 @@ func compileV3WithContext(ctx context.Context, files map[string][]byte, pkg *v3P
 func compileV3WithHost(ctx context.Context, files map[string][]byte, pkg *v3PackageJSON, tsconfigRaw []byte, lockContent []byte, contract *hostContract) (response BuildV2Response) {
 	ctx, span := startSpan(ctx, "fly_tsgo.v3.compile",
 		attribute.Int("fly_tsgo.files.count", len(files)),
+		attribute.Bool("fly_tsgo.host_contract.present", contract != nil),
 	)
 	compileStart := time.Now()
 	defer func() {
