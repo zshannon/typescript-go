@@ -1,5 +1,0 @@
-# Ignore platform-specific binaries (they're built per-platform)
-*.dylib
-*.so
-*.dll
-*.h
