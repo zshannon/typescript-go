@@ -73,6 +73,8 @@ jobs:
     env:
       DISK_CACHE_PATH: /data/cache
       GHCR_REGISTRY_AUTH: ${{ github.actor }}:${{ github.token }}
+      OTEL_EXPORTER_OTLP_ENDPOINT: https://traceway.flick.fyi/api/otel
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       OTEL_SERVICE_NAME: fly-tsgo-exedev
 
     steps:
@@ -87,9 +89,9 @@ jobs:
           AWS_REGION: op://chci4awhcucoy66jgoombntpu4/FLY_TSGO_TIGRIS/AWS_REGION
           AWS_SECRET_ACCESS_KEY: op://chci4awhcucoy66jgoombntpu4/FLY_TSGO_TIGRIS/AWS_SECRET_ACCESS_KEY
           EXE_DEV_SSH_PRIVATE_KEY: op://tsgo Production/EXE_DEV/private key?ssh-format=openssh
-          HONEYCOMB_API_KEY: op://chci4awhcucoy66jgoombntpu4/FLY_TSGO_HONEYCOMB/credential
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.ONEPASSWORD_SERVICE_ACCOUNT }}
           S3_BUCKET: op://chci4awhcucoy66jgoombntpu4/FLY_TSGO_TIGRIS/S3_BUCKET
+          TRACEWAY_OTLP_TOKEN: ${{ secrets.TRACEWAY_OTLP_TOKEN_REF }}
           TSGO_AUTH_PUBLIC_KEY: op://chci4awhcucoy66jgoombntpu4/flick-staging-tsgo/public-key
 
       - uses: webfactory/ssh-agent@v0.10.0
@@ -114,9 +116,9 @@ jobs:
           EXEDEV_IMAGE: ${{ inputs.image }}
           EXEDEV_MEMORY: ${{ inputs.memory }}
           EXEDEV_REGION: ${{ inputs.region }}
-          HONEYCOMB_API_KEY: ${{ steps.load_secrets.outputs.HONEYCOMB_API_KEY }}
           REPLACE_EXISTING: ${{ inputs.replace_existing }}
           S3_BUCKET: ${{ steps.load_secrets.outputs.S3_BUCKET }}
+          TRACEWAY_OTLP_TOKEN: ${{ steps.load_secrets.outputs.TRACEWAY_OTLP_TOKEN }}
           TSGO_AUTH_PUBLIC_KEY: ${{ steps.load_secrets.outputs.TSGO_AUTH_PUBLIC_KEY }}
           VM_NAME: ${{ inputs.vm_name }}
         run: |
@@ -139,7 +141,9 @@ jobs:
             --env "AWS_REGION=$AWS_REGION" \
             --env "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" \
             --env "DISK_CACHE_PATH=$DISK_CACHE_PATH" \
-            --env "HONEYCOMB_API_KEY=$HONEYCOMB_API_KEY" \
+            --env "OTEL_EXPORTER_OTLP_ENDPOINT=$OTEL_EXPORTER_OTLP_ENDPOINT" \
+            --env "OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer%20$TRACEWAY_OTLP_TOKEN" \
+            --env "OTEL_EXPORTER_OTLP_PROTOCOL=$OTEL_EXPORTER_OTLP_PROTOCOL" \
             --env "OTEL_SERVICE_NAME=$OTEL_SERVICE_NAME" \
             --env "S3_BUCKET=$S3_BUCKET" \
             --env "TSGO_AUTH_PUBLIC_KEY=$TSGO_AUTH_PUBLIC_KEY" \

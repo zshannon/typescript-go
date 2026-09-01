@@ -264,6 +264,26 @@ func TestParseV3Multipart_TooManyFiles(t *testing.T) {
 	}
 }
 
+func TestParseV3Multipart_ConfigAndReservedCompilationFilesDoNotCountTowardSourceLimit(t *testing.T) {
+	files := map[string][]byte{
+		"/package.json":        []byte(`{"name":"test","main":"src/index.ts"}`),
+		"/bun.lock":            []byte(`{}`),
+		"/tsconfig.json":       []byte(`{"compilerOptions":{}}`),
+		activationOverridePath: []byte(`{"scope":"application"}`),
+	}
+	for _, name := range hostContractFileNames {
+		files[hostContractPrefix+name] = []byte(`{}`)
+	}
+	for i := 0; i < maxFilesPerRequest; i++ {
+		files[fmt.Sprintf("/src/file%d.ts", i)] = []byte(`export const x = 1;`)
+	}
+	buf, ct := buildMultipart(files)
+
+	if _, err := parseV3Multipart(buf, ct); err != nil {
+		t.Fatalf("config or reserved compilation files reduced source limit: %v", err)
+	}
+}
+
 // Task 5: parsePackageJSON and esbuildOptions tests
 
 func TestParsePackageJSON_Valid(t *testing.T) {
@@ -979,6 +999,9 @@ func TestV3CompileHandler_Success(t *testing.T) {
 	}
 	if result.Code == "" {
 		t.Fatal("expected compiled code")
+	}
+	if result.Activation != nil {
+		t.Fatalf("activation = %#v, want nil without a host contract", result.Activation)
 	}
 }
 
@@ -2124,7 +2147,7 @@ func TestLoaderForPath(t *testing.T) {
 		{api.LoaderJSX, "/src/component.jsx"},
 		{api.LoaderJSON, "/data/config.json"},
 		{api.LoaderJS, "/lib/utils.mjs"},
-		{api.LoaderDefault, "/lib/main.js"},
+		{api.LoaderJS, "/lib/main.js"},
 		{api.LoaderDefault, "/styles.css"},
 	}
 	for _, tt := range tests {

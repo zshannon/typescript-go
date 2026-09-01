@@ -186,9 +186,14 @@ func typecheckV3(files map[string][]byte, tsconfigRaw []byte, lockContent []byte
 
 // typecheckV3WithContext performs typechecking for v3 requests.
 // Config files (package.json, bun.lock, tsconfig.json) are excluded from the diskFS.
-func typecheckV3WithContext(ctx context.Context, files map[string][]byte, tsconfigRaw []byte, lockContent []byte) (response TypecheckV2Response) {
+func typecheckV3WithContext(ctx context.Context, files map[string][]byte, tsconfigRaw []byte, lockContent []byte) TypecheckV2Response {
+	return typecheckV3WithHost(ctx, files, tsconfigRaw, lockContent, nil, nil)
+}
+
+func typecheckV3WithHost(ctx context.Context, files map[string][]byte, tsconfigRaw []byte, lockContent []byte, contract *hostContract, programOut **compiler.Program) (response TypecheckV2Response) {
 	ctx, span := startSpan(ctx, "fly_tsgo.v3.typecheck",
 		attribute.Int("fly_tsgo.files.count", len(files)),
+		attribute.Bool("fly_tsgo.host_contract.present", contract != nil),
 	)
 	var fs *diskFS
 	typecheckStart := time.Now()
@@ -226,7 +231,7 @@ func typecheckV3WithContext(ctx context.Context, files map[string][]byte, tsconf
 	var fileNames []string
 	for path, content := range files {
 		// Skip config files
-		if path == "/package.json" || path == "/bun.lock" || path == "/tsconfig.json" {
+		if path == "/package.json" || path == "/bun.lock" || path == "/tsconfig.json" || isFlickCompilationFile(path) {
 			continue
 		}
 
@@ -249,6 +254,10 @@ func typecheckV3WithContext(ctx context.Context, files map[string][]byte, tsconf
 		if strings.HasSuffix(normalized, ".ts") || strings.HasSuffix(normalized, ".tsx") {
 			fileNames = append(fileNames, normalized)
 		}
+	}
+
+	if contract != nil {
+		contract.install(fs)
 	}
 
 	if len(fileNames) == 0 {
@@ -279,7 +288,7 @@ func typecheckV3WithContext(ctx context.Context, files map[string][]byte, tsconf
 	_, hostSpan := startSpan(ctx, "typescript.compiler_host.create")
 	wrappedFS := bundled.WrapFS(fs)
 
-	parsedOptions := &core.ParsedOptions{
+	parsedOptions := &tsoptions.ParsedOptions{
 		CompilerOptions: compilerOptions,
 		FileNames:       fileNames,
 	}
@@ -289,7 +298,7 @@ func typecheckV3WithContext(ctx context.Context, files map[string][]byte, tsconf
 	}
 
 	extendedConfigCache := &tsc.ExtendedConfigCache{}
-	host := compiler.NewCachedFSCompilerHost("/", wrappedFS, bundled.LibPath(), extendedConfigCache, nil)
+	host := compiler.NewCachedFSCompilerHost("/", wrappedFS, bundled.LibPath(), extendedConfigCache, nil, nil)
 	hostSpan.End()
 
 	compilerTrace := newOTelCompilerTracer(ctx)
@@ -300,6 +309,9 @@ func typecheckV3WithContext(ctx context.Context, files map[string][]byte, tsconf
 		Host:    host,
 		Tracing: asCompilerPerformanceTracer(compilerTrace),
 	})
+	if programOut != nil {
+		*programOut = program
+	}
 	compilerTrace.flush(programCtx)
 	programSpan.End()
 	span.SetAttributes(attribute.Int("fly_tsgo.typecheck.entrypoints.count", len(fileNames)))

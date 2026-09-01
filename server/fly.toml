@@ -11,6 +11,9 @@ image = "ghcr.io/zshannon/typescript-go/server:latest"
 AWS_ENDPOINT_URL_S3 = "https://t3.storage.dev"
 AWS_REGION = "auto"
 DISK_CACHE_PATH = "/data/cache"
+OTEL_EXPORTER_OTLP_ENDPOINT = "https://traceway.flick.fyi/api/otel"
+OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf"
+OTEL_SERVICE_NAME = "fly-tsgo"
 S3_BUCKET = "fly-tsgo-node-modules"
 
 [[mounts]]

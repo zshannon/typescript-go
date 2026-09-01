@@ -108,9 +108,24 @@ export const schema = z.object({ name: z.string() });
 
 All other files are treated as source files. Paths must not start with `/node_modules/` (reserved for installed deps).
 
+#### Ad hoc host-targeted compilation
+
+A request may provide exactly one generated host contract through these reserved multipart paths:
+
+| File | Purpose |
+|------|---------|
+| `/.flick/host/index.d.ts` | Typed host capability surface |
+| `/.flick/host/index.js` | Runtime host address values bundled into the Flick |
+| `/.flick/host/manifest.json` | Exported activation scopes and capabilities |
+| `/.flick/host/package.json` | Request-local module metadata |
+
+The four files are an all-or-nothing request input. The server validates them, mounts the package only in that request's virtual filesystem, and does not register or cache the host contract globally. `/v3/typecheck` accepts the host contract for module resolution. `/v3/compile` additionally derives an `activation` result from statically reachable SDK hook calls.
+
+Compilation may also include `/.flick/activation.json` with `{"scope":"<exported-scope>"}` to resolve a demonstrated sibling-scope ambiguity. An override requires a host contract and is rejected by `/v3/typecheck`.
+
 #### Limits
 
-- Max 100 source files per request (plus `package.json`, `bun.lock`, `tsconfig.json`)
+- Max 100 source files per request (plus `package.json`, `bun.lock`, `tsconfig.json`, and the reserved host/activation inputs above)
 - Max 1 MB per file
 - Max 10 MB total payload
 
@@ -128,7 +143,7 @@ All other files are treated as source files. Paths must not start with `/node_mo
 }
 
 // compile success
-{"code": "...bundled JavaScript..."}
+{"code": "...bundled JavaScript...", "activation": {"explanation": {}, "manifest": {}}}
 
 // compile errors
 {

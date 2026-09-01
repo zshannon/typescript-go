@@ -352,7 +352,12 @@ const enumDefs = [
     { name: "ModuleDetectionKind", goPrefix: "ModuleDetectionKind", goFile: "internal/core/compileroptions.go", outDir: "_packages/native-preview/src/enums" },
     { name: "NewLineKind", goPrefix: "NewLineKind", goFile: "internal/core/compileroptions.go", outDir: "_packages/native-preview/src/enums" },
     { name: "JsxEmit", goPrefix: "JsxEmit", goFile: "internal/core/compileroptions.go", outDir: "_packages/native-preview/src/enums" },
+    { name: "ScriptKind", goPrefix: "ScriptKind", goFile: "internal/core/scriptkind.go", outDir: "_packages/native-preview/src/enums" },
     { name: "TokenFlags", goPrefix: "TokenFlags", goFile: "internal/ast/tokenflags.go", outDir: "_packages/native-preview/src/enums" },
+    { name: "DiagnosticDirectivePolicy", goPrefix: "MappedDiagnosticDirectivePolicy", goFile: "internal/ast/ast.go", outDir: "_packages/native-preview/src/enums" },
+    { name: "SpanMapKind", goPrefix: "Kind", goFile: "internal/spanmap/spanmap.go", outDir: "_packages/native-preview/src/enums" },
+    { name: "SpanMapFidelity", goPrefix: "Fidelity", goFile: "internal/spanmap/spanmap.go", outDir: "_packages/native-preview/src/enums" },
+    { name: "SpanMapFeature", goPrefix: "Feature", goFile: "internal/spanmap/spanmap.go", outDir: "_packages/native-preview/src/enums" },
     { name: "NodeBuilderFlags", goPrefix: "Flags", goFile: "internal/nodebuilder/types.go", outDir: "_packages/native-preview/src/enums" },
     { name: "CompletionItemKind", goPrefix: "CompletionItemKind", goFile: "internal/lsp/lsproto/lsp_generated.go", outDir: "_packages/native-preview/src/enums" },
     { name: "EmitOnly", goPrefix: "Emit", goFile: "internal/compiler/emitter.go", outDir: "_packages/native-preview/src/enums", excludeMembers: ["OnlyBuilderSignature"] },
@@ -370,7 +375,7 @@ function parseGoConstBlock(block, def) {
     const prefix = def.goPrefix;
     const members = [];
     let iotaCounter = 0;
-    let hasIota = false;
+    let iotaExpression;
 
     for (const rawLine of block.split("\n")) {
         const line = rawLine.replace(/\/\/.*$/, "").trim();
@@ -379,7 +384,7 @@ function parseGoConstBlock(block, def) {
         // Match: PrefixName Type = value  or  PrefixName = value
         const fullMatch = line.match(new RegExp(`^(${prefix}\\w+)\\s+(?:\\S+\\s*)?=\\s*(.+)$`));
         // Match bare iota continuation: just PrefixName
-        const bareMatch = !fullMatch && hasIota
+        const bareMatch = !fullMatch && iotaExpression !== undefined
             ? line.match(new RegExp(`^(${prefix}\\w+)$`))
             : null;
 
@@ -393,12 +398,12 @@ function parseGoConstBlock(block, def) {
         if (def.stringEnum) {
             tsValue = parseGoStringValue(goValue, def.valueReplacements ?? {});
         }
-        else if (goValue === "iota") {
-            tsValue = String(iotaCounter);
-            hasIota = true;
+        else if (goValue.includes("iota")) {
+            iotaExpression = goValue;
+            tsValue = goValue.replace(/\biota\b/g, String(iotaCounter));
         }
-        else if (hasIota && goValue === "") {
-            tsValue = String(iotaCounter);
+        else if (iotaExpression !== undefined && goValue === "") {
+            tsValue = iotaExpression.replace(/\biota\b/g, String(iotaCounter));
         }
         else {
             // Replace Go bitwise NOT (^) with TypeScript (~)
@@ -570,6 +575,12 @@ export const generateAST = task({
     name: "generate:ast",
     description: "Generates AST and encoder files from ast.json.",
     run: () => $`node --experimental-strip-types --no-warnings ./_scripts/generate.ts`,
+});
+
+export const generateAPI = task({
+    name: "generate:api",
+    description: "Generates API files from internal/api/proto.go and internal/api/session.go.",
+    run: () => $`go -C ./_tools run ./gen-proto ../internal/api/proto.go ../_packages/native-preview/src/api/proto.generated.ts`,
 });
 
 // ── Vendored npm dependencies ───────────────────────────────────
@@ -773,10 +784,17 @@ async function runTests() {
     }
 }
 
+async function runTestExtension() {
+    await $`npm test -w _extension`;
+}
+
 export const test = task({
     name: "test",
     description: "Runs all tests. This is the most typical test task to need.",
-    run: runTests,
+    run: async () => {
+        await runTests();
+        await runTestExtension();
+    },
 });
 
 async function runTestBenchmarks() {
@@ -796,13 +814,20 @@ async function runTestTools() {
 }
 
 async function runTestAPI() {
-    await $`npm run -w @typescript/native-preview test:only`;
+    // await $`npm run -w @typescript/native-preview test:only`; // doesn't work on windows - some path escaping isn't done correctly, test runner runs no tests
+    await _$({ verbose: "short", stdio: "inherit", cwd: "./_packages/native-preview" })`node --experimental-strip-types --no-warnings --conditions @typescript/source --test ./test/**/*.test.ts`;
 }
 
 export const testTools = task({
     name: "test:tools",
     description: "Runs all tests in the _tools module.",
     run: runTestTools,
+});
+
+export const testExtension = task({
+    name: "test:extension",
+    description: "Runs the VS Code extension tests.",
+    run: runTestExtension,
 });
 
 export const buildAPI = task({
@@ -816,6 +841,7 @@ export const buildAPI = task({
 export const buildAPITests = task({
     name: "build:api:test",
     description: "Builds the @typescript/native-preview JS API tests.",
+    dependencies: [generateEnums, generateAPI],
     run: async () => {
         await $`npm run -w @typescript/native-preview build:test`;
     },
@@ -835,6 +861,7 @@ export const testAll = task({
     run: async () => {
         // Prevent interleaving by running these directly instead of in parallel.
         await runTests();
+        await runTestExtension();
         await runTestBenchmarks();
         await runTestTools();
         await runTestAPI();

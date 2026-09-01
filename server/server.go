@@ -104,8 +104,9 @@ type TypecheckV2Response struct {
 }
 
 type BuildV2Response struct {
-	Code   string              `json:"code,omitempty"`
-	Errors []DiagnosticErrorV2 `json:"errors,omitempty"`
+	Activation *ActivationResult   `json:"activation,omitempty"`
+	Code       string              `json:"code,omitempty"`
+	Errors     []DiagnosticErrorV2 `json:"errors,omitempty"`
 }
 
 // V2 API limits
@@ -662,19 +663,17 @@ func (fs *diskFS) WalkDir(root string, walkFn vfs.WalkDirFunc) error { return ni
 func (fs *diskFS) Realpath(path string) string                       { return path }
 
 func calculateLineColumn(text string, pos int) (int, int) {
-	if pos < 0 || pos >= len(text) {
+	if pos < 0 || pos > len(text) {
 		return 0, 0
 	}
-	line, col := 0, 0
+	line, lineStart := 0, 0
 	for i := 0; i < pos; i++ {
 		if text[i] == '\n' {
 			line++
-			col = 0
-		} else {
-			col++
+			lineStart = i + 1
 		}
 	}
-	return line, col
+	return line, int(core.UTF16Len(text[lineStart:pos]))
 }
 
 func typecheckTypeScript(code string, version string) TypecheckResponse {
@@ -722,7 +721,7 @@ func typecheckTypeScript(code string, version string) TypecheckResponse {
 	}
 
 	// Create parsed options
-	parsedOptions := &core.ParsedOptions{
+	parsedOptions := &tsoptions.ParsedOptions{
 		CompilerOptions: compilerOptions,
 		FileNames:       []string{fileName},
 	}
@@ -736,7 +735,7 @@ func typecheckTypeScript(code string, version string) TypecheckResponse {
 	extendedConfigCache := &tsc.ExtendedConfigCache{}
 
 	// Create host
-	host := compiler.NewCachedFSCompilerHost("/", wrappedFS, bundled.LibPath(), extendedConfigCache, nil)
+	host := compiler.NewCachedFSCompilerHost("/", wrappedFS, bundled.LibPath(), extendedConfigCache, nil, nil)
 
 	// Create program
 	program := compiler.NewProgram(compiler.ProgramOptions{
@@ -1524,7 +1523,7 @@ func typecheckTypeScriptV2(files map[string]string, entryPoints []string, versio
 		Lib:                              []string{"ES2022"},
 	}
 
-	parsedOptions := &core.ParsedOptions{
+	parsedOptions := &tsoptions.ParsedOptions{
 		CompilerOptions: compilerOptions,
 		FileNames:       fileNames,
 	}
@@ -1534,7 +1533,7 @@ func typecheckTypeScriptV2(files map[string]string, entryPoints []string, versio
 	}
 
 	extendedConfigCache := &tsc.ExtendedConfigCache{}
-	host := compiler.NewCachedFSCompilerHost("/", wrappedFS, bundled.LibPath(), extendedConfigCache, nil)
+	host := compiler.NewCachedFSCompilerHost("/", wrappedFS, bundled.LibPath(), extendedConfigCache, nil, nil)
 
 	program := compiler.NewProgram(compiler.ProgramOptions{
 		Config: config,
