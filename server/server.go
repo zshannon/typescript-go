@@ -666,16 +666,14 @@ func calculateLineColumn(text string, pos int) (int, int) {
 	if pos < 0 || pos > len(text) {
 		return 0, 0
 	}
-	line, col := 0, 0
+	line, lineStart := 0, 0
 	for i := 0; i < pos; i++ {
 		if text[i] == '\n' {
 			line++
-			col = 0
-		} else {
-			col++
+			lineStart = i + 1
 		}
 	}
-	return line, col
+	return line, int(core.UTF16Len(text[lineStart:pos]))
 }
 
 func typecheckTypeScript(code string, version string) TypecheckResponse {

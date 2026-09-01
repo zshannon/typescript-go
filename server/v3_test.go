@@ -264,10 +264,11 @@ func TestParseV3Multipart_TooManyFiles(t *testing.T) {
 	}
 }
 
-func TestParseV3Multipart_ReservedCompilationFilesDoNotCountTowardSourceLimit(t *testing.T) {
+func TestParseV3Multipart_ConfigAndReservedCompilationFilesDoNotCountTowardSourceLimit(t *testing.T) {
 	files := map[string][]byte{
 		"/package.json":        []byte(`{"name":"test","main":"src/index.ts"}`),
 		"/bun.lock":            []byte(`{}`),
+		"/tsconfig.json":       []byte(`{"compilerOptions":{}}`),
 		activationOverridePath: []byte(`{"scope":"application"}`),
 	}
 	for _, name := range hostContractFileNames {
@@ -279,7 +280,7 @@ func TestParseV3Multipart_ReservedCompilationFilesDoNotCountTowardSourceLimit(t 
 	buf, ct := buildMultipart(files)
 
 	if _, err := parseV3Multipart(buf, ct); err != nil {
-		t.Fatalf("reserved compilation files reduced source limit: %v", err)
+		t.Fatalf("config or reserved compilation files reduced source limit: %v", err)
 	}
 }
 
@@ -998,6 +999,9 @@ func TestV3CompileHandler_Success(t *testing.T) {
 	}
 	if result.Code == "" {
 		t.Fatal("expected compiled code")
+	}
+	if result.Activation != nil {
+		t.Fatalf("activation = %#v, want nil without a host contract", result.Activation)
 	}
 }
 

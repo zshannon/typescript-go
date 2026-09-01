@@ -261,6 +261,12 @@ func (analyzer *activationAnalyzer) visitNode(node *ast.Node) {
 		analyzer.visitCall(node)
 	case ast.IsJsxOpeningElement(node), ast.IsJsxSelfClosingElement(node):
 		analyzer.followExpression(node.TagName())
+	case ast.IsJsxAttribute(node):
+		analyzer.visitCallableValue(node.Initializer())
+	case ast.IsReturnStatement(node):
+		analyzer.visitCallableValue(node.Expression())
+	case ast.IsBinaryExpression(node) && ast.IsAssignmentOperator(node.AsBinaryExpression().OperatorToken.Kind):
+		analyzer.visitCallableValue(node.AsBinaryExpression().Right)
 	}
 
 	node.ForEachChild(func(child *ast.Node) bool {
@@ -308,7 +314,7 @@ func (analyzer *activationAnalyzer) hookNameFromDeclaration(declaration *ast.Nod
 		return ""
 	}
 	sourceFile := ast.GetSourceFileOfNode(declaration)
-	if sourceFile == nil || !strings.Contains(sourceFile.FileName(), "/node_modules/@flickfyi/core/") {
+	if sourceFile == nil || !strings.HasPrefix(sourceFile.FileName(), "/node_modules/@flickfyi/core/") {
 		return ""
 	}
 	return name
@@ -450,8 +456,28 @@ func (analyzer *activationAnalyzer) followDeclaration(declaration *ast.Node) {
 	switch {
 	case ast.IsFunctionLike(declaration):
 		analyzer.visitCallable(declaration)
-	case ast.IsVariableDeclaration(declaration), ast.IsPropertyAssignment(declaration):
+	case ast.IsClassLike(declaration):
+		analyzer.visitCallableValue(declaration)
+	case ast.IsVariableDeclaration(declaration), ast.IsPropertyAssignment(declaration), ast.IsPropertyDeclaration(declaration):
 		analyzer.visitCallableValue(declaration.Initializer())
+	case ast.IsShorthandPropertyAssignment(declaration):
+		valueSymbol := analyzer.resolveAlias(analyzer.checker.GetShorthandAssignmentValueSymbol(declaration))
+		if valueSymbol == nil {
+			return
+		}
+		for _, valueDeclaration := range valueSymbol.Declarations {
+			analyzer.followDeclaration(valueDeclaration)
+		}
+	case ast.IsBindingElement(declaration):
+		for parent := declaration.Parent; parent != nil; parent = parent.Parent {
+			if ast.IsVariableDeclaration(parent) {
+				analyzer.visitCallableValue(parent.Initializer())
+				return
+			}
+			if ast.IsFunctionLike(parent) || ast.IsSourceFile(parent) {
+				return
+			}
+		}
 	default:
 		if declaration.Body() != nil {
 			analyzer.visitCallable(declaration)
@@ -460,22 +486,25 @@ func (analyzer *activationAnalyzer) followDeclaration(declaration *ast.Node) {
 }
 
 func (analyzer *activationAnalyzer) visitCallableValue(node *ast.Node) {
-	if node == nil {
+	if node == nil || analyzer.context.Err() != nil {
 		return
 	}
 	if ast.IsFunctionLike(node) {
 		analyzer.visitCallable(node)
 		return
 	}
-	if ast.IsCallExpression(node) {
-		for _, argument := range node.Arguments() {
-			analyzer.visitCallableValue(argument)
-		}
+	switch {
+	case ast.IsCallExpression(node):
+		analyzer.visitCall(node)
+	case ast.IsJsxOpeningElement(node), ast.IsJsxSelfClosingElement(node):
+		analyzer.followExpression(node.TagName())
 	}
-	analyzer.visitNode(node)
 	analyzer.followExpression(node)
+	node.ForEachChild(func(child *ast.Node) bool {
+		analyzer.visitCallableValue(child)
+		return false
+	})
 }
-
 func (analyzer *activationAnalyzer) visitCallable(declaration *ast.Node) {
 	if declaration == nil {
 		return
@@ -528,11 +557,7 @@ func (analyzer *activationAnalyzer) addError(node *ast.Node, message string) {
 }
 
 func (contract *hostContract) contextPath(uri string) (string, bool) {
-	prefix := contract.manifest.Name + "/"
-	if !strings.HasPrefix(uri, prefix) {
-		return "", false
-	}
-	return strings.TrimPrefix(uri, prefix), true
+	return strings.CutPrefix(uri, contract.manifest.Name+"/")
 }
 
 func (contract *hostContract) rootScope() string {
@@ -603,7 +628,7 @@ func isUserDeclaration(declaration *ast.Node) bool {
 	sourceFile := ast.GetSourceFileOfNode(declaration)
 	return sourceFile != nil &&
 		!sourceFile.IsDeclarationFile &&
-		!strings.Contains(sourceFile.FileName(), "/node_modules/")
+		!strings.HasPrefix(sourceFile.FileName(), "/node_modules/")
 }
 
 func normalizeV3EntryPoint(entryPoint string) string {

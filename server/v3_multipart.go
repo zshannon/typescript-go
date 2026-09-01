@@ -79,10 +79,10 @@ func parseV3Multipart(body io.Reader, contentType string) (map[string][]byte, er
 		}
 	}
 
-	// Count source files (non-config)
+	// Count source files. Package, lock, TypeScript config, activation, and host-contract inputs are excluded.
 	sourceFiles := 0
 	for path := range files {
-		if path != "/package.json" && path != "/bun.lock" && path != activationOverridePath && !isHostContractFile(path) {
+		if path != "/package.json" && path != "/bun.lock" && path != "/tsconfig.json" && path != activationOverridePath && !isHostContractFile(path) {
 			sourceFiles++
 		}
 	}

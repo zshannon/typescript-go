@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -217,6 +219,190 @@ export default function App() {
 	}
 }
 
+func TestDeriveActivationFollowsCallableValuesThroughCompositeExpressions(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.ts": `
+import { useContextState } from "@flickfyi/core"
+import { Application } from "fyi.flick.test-host"
+declare const flag: boolean
+function invoke(callback: () => void) {
+	callback()
+}
+function Empty() {}
+function Conversation() {
+	useContextState(Application.conversation.states.messages)
+}
+export default function App() {
+	invoke(flag ? Conversation : Empty)
+	return null
+}
+`,
+	})
+	program, hostContext, response := typecheckActivationRequest(t, files)
+	if len(response.Errors) > 0 {
+		t.Fatalf("typecheck failed: %v", response.Errors)
+	}
+
+	result, errors := deriveActivation(context.Background(), program, "./index.ts", hostContext)
+	if len(errors) > 0 {
+		t.Fatalf("activation failed: %v", errors)
+	}
+	if len(result.Explanation.References) != 1 {
+		t.Fatalf("composite callable references = %d, want 1: %#v", len(result.Explanation.References), result.Explanation.References)
+	}
+}
+
+func TestDeriveActivationFollowsAssignedAndDestructuredCallableValues(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.ts": `
+import { useContextState } from "@flickfyi/core"
+import { Application } from "fyi.flick.test-host"
+function invoke(callback: () => void) {
+	callback()
+}
+function Empty() {}
+function Conversation() {
+	useContextState(Application.conversation.states.messages)
+}
+const callbacks = { Conversation }
+const { Conversation: selected } = callbacks
+let callback = Empty
+callback = selected
+export default function App() {
+	invoke(callback)
+	return null
+}
+`,
+	})
+	program, hostContext, response := typecheckActivationRequest(t, files)
+	if len(response.Errors) > 0 {
+		t.Fatalf("typecheck failed: %v", response.Errors)
+	}
+
+	result, errors := deriveActivation(context.Background(), program, "./index.ts", hostContext)
+	if len(errors) > 0 {
+		t.Fatalf("activation failed: %v", errors)
+	}
+	if len(result.Explanation.References) != 1 {
+		t.Fatalf("assigned callable references = %d, want 1: %#v", len(result.Explanation.References), result.Explanation.References)
+	}
+}
+
+func TestDeriveActivationFollowsDefaultClassMethods(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.ts": `
+import { useContextState } from "@flickfyi/core"
+import { Application } from "fyi.flick.test-host"
+export default class App {
+	render() {
+		return useContextState(Application.conversation.states.messages)
+	}
+}
+`,
+	})
+	program, hostContext, response := typecheckActivationRequest(t, files)
+	if len(response.Errors) > 0 {
+		t.Fatalf("typecheck failed: %v", response.Errors)
+	}
+
+	result, errors := deriveActivation(context.Background(), program, "./index.ts", hostContext)
+	if len(errors) > 0 {
+		t.Fatalf("activation failed: %v", errors)
+	}
+	if len(result.Explanation.References) != 1 {
+		t.Fatalf("default class references = %d, want 1: %#v", len(result.Explanation.References), result.Explanation.References)
+	}
+}
+
+func TestDeriveActivationFollowsCallableJSXProperties(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.tsx": `
+import { useContextState } from "@flickfyi/core"
+import { Application } from "fyi.flick.test-host"
+function Wrapper(_: { render: () => unknown }) {
+	return null
+}
+function Conversation() {
+	return useContextState(Application.conversation.states.messages)
+}
+export default function App() {
+	return <Wrapper render={Conversation} />
+}
+`,
+	})
+	program, hostContext, response := typecheckActivationRequest(t, files)
+	if len(response.Errors) > 0 {
+		t.Fatalf("typecheck failed: %v", response.Errors)
+	}
+
+	result, errors := deriveActivation(context.Background(), program, "./index.tsx", hostContext)
+	if len(errors) > 0 {
+		t.Fatalf("activation failed: %v", errors)
+	}
+	if len(result.Explanation.References) != 1 {
+		t.Fatalf("JSX callable property references = %d, want 1: %#v", len(result.Explanation.References), result.Explanation.References)
+	}
+}
+
+func TestDeriveActivationTreatsNestedNodeModulesDirectoryAsUserCode(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.ts": `
+import { Conversation } from "./src/node_modules/conversation"
+export default function App() {
+	Conversation()
+	return null
+}
+`,
+		"/src/node_modules/conversation.ts": `
+import { useContextState } from "@flickfyi/core"
+import { Application } from "fyi.flick.test-host"
+export function Conversation() {
+	useContextState(Application.conversation.states.messages)
+}
+`,
+	})
+	program, hostContext, response := typecheckActivationRequest(t, files)
+	if len(response.Errors) > 0 {
+		t.Fatalf("typecheck failed: %v", response.Errors)
+	}
+
+	result, errors := deriveActivation(context.Background(), program, "./index.ts", hostContext)
+	if len(errors) > 0 {
+		t.Fatalf("activation failed: %v", errors)
+	}
+	if len(result.Explanation.References) != 1 {
+		t.Fatalf("nested node_modules references = %d, want 1: %#v", len(result.Explanation.References), result.Explanation.References)
+	}
+}
+
+func TestDeriveActivationDoesNotTreatNestedLookalikeCoreAsSDK(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.ts": `
+import { Application } from "fyi.flick.test-host"
+import { useContextState } from "./src/node_modules/@flickfyi/core/lookalike"
+export default function App() {
+	useContextState(Application.conversation.states.messages)
+	return null
+}
+`,
+		"/src/node_modules/@flickfyi/core/lookalike.ts": `
+export function useContextState(_: unknown) {}
+`,
+	})
+	program, hostContext, response := typecheckActivationRequest(t, files)
+	if len(response.Errors) > 0 {
+		t.Fatalf("typecheck failed: %v", response.Errors)
+	}
+
+	result, errors := deriveActivation(context.Background(), program, "./index.ts", hostContext)
+	if len(errors) > 0 {
+		t.Fatalf("activation failed: %v", errors)
+	}
+	if len(result.Explanation.References) != 0 {
+		t.Fatalf("lookalike SDK references = %d, want 0: %#v", len(result.Explanation.References), result.Explanation.References)
+	}
+}
+
 func TestDeriveActivationDoesNotDuplicateNestedHookCalls(t *testing.T) {
 	files := activationRequestFiles(map[string]string{
 		"/index.ts": `
@@ -266,6 +452,29 @@ export default () => useContextState(Application.conversation.states.messages)`,
 	span := result.Explanation.References[0].Span
 	if span.End.Line != 3 || span.End.Column <= span.Start.Column {
 		t.Fatalf("EOF span end = %#v, start = %#v", span.End, span.Start)
+	}
+}
+
+func TestDeriveActivationReportsUTF16Columns(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.ts": "import { useContextState } from \"@flickfyi/core\"\n" +
+			"import { Application } from \"fyi.flick.test-host\"\n" +
+			"export default () => { const emoji = \"😀\"; return useContextState(Application.conversation.states.messages) }",
+	})
+	program, hostContext, response := typecheckActivationRequest(t, files)
+	if len(response.Errors) > 0 {
+		t.Fatalf("typecheck failed: %v", response.Errors)
+	}
+
+	result, errors := deriveActivation(context.Background(), program, "./index.ts", hostContext)
+	if len(errors) > 0 {
+		t.Fatalf("activation failed: %v", errors)
+	}
+	if len(result.Explanation.References) != 1 {
+		t.Fatalf("references = %d, want 1", len(result.Explanation.References))
+	}
+	if got, want := result.Explanation.References[0].Span.Start.Column, 51; got != want {
+		t.Fatalf("UTF-16 start column = %d, want %d", got, want)
 	}
 }
 
@@ -800,6 +1009,50 @@ export const value = Application.conversation.states.messages`,
 				t.Fatalf("compiled code did not include the host runtime: %s", response.Code)
 			}
 		})
+	}
+}
+
+func TestCompileV3HandlerReturnsHostActivationWhenSkippingTypecheck(t *testing.T) {
+	files := activationRequestFiles(map[string]string{
+		"/index.ts": `
+import { useContextState } from "@flickfyi/core"
+import { Application } from "fyi.flick.test-host"
+export default function App() {
+	return useContextState(Application.conversation.states.messages)
+}
+`,
+	})
+	setupActivationDependencyCache(t, files["/bun.lock"])
+
+	multipartFiles := make(map[string]string, len(files))
+	for path, content := range files {
+		multipartFiles[path] = string(content)
+	}
+	body, contentType := buildV3Multipart(multipartFiles)
+	req := httptest.NewRequest(http.MethodPost, "/v3/compile?skip_typecheck=true", body)
+	req.Header.Set("Content-Type", contentType)
+	response := httptest.NewRecorder()
+
+	compileV3Handler(response, req)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", response.Code, http.StatusOK, response.Body.String())
+	}
+	var result BuildV2Response
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Errors) > 0 {
+		t.Fatalf("compile errors: %v", result.Errors)
+	}
+	if result.Code == "" {
+		t.Fatal("expected compiled code")
+	}
+	if result.Activation == nil {
+		t.Fatal("expected host activation")
+	}
+	if got, want := len(result.Activation.Explanation.References), 1; got != want {
+		t.Fatalf("activation references = %d, want %d: %#v", got, want, result.Activation.Explanation.References)
 	}
 }
 
